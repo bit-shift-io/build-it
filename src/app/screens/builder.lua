@@ -60,11 +60,10 @@ local function problemsMessage(problems)
 	return #problems == 1 and "1 design file could not be read." or #problems .. " design files could not be read."
 end
 
-function BuilderScreen.new(config)
+-- library: the design library (read once per launch by src/app/flow.lua);
+-- problems lists its files that could not be read ({ name, reason }).
+function BuilderScreen.new(config, library, problems)
 	local cfg = config.builder
-	-- The design library, read once per launch; problems lists the files
-	-- that could not be read ({ name, reason }).
-	local library, problems = DesignStore.load(config.designs.dir)
 	return {
 		config = config,
 		cfg = cfg,

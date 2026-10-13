@@ -8,6 +8,7 @@ local defaultTestFiles = {
 	"tests/integration/builder_undo_test.lua",
 	"tests/integration/hand_harvest_test.lua",
 	"tests/integration/design_save_test.lua",
+	"tests/integration/place_building_test.lua",
 }
 
 local tests = {}

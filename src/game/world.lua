@@ -2,7 +2,9 @@
 --   { width = <tiles>, height = <tiles>,
 --     terrain = { [index] = "grass"|"water" },   -- optional, all grass when nil
 --     nodes = { <node>, ... },                   -- optional, the node pool
---     nodeAt = { [index] = <node> } }            -- optional, nodes by tile
+--     nodeAt = { [index] = <node> },             -- optional, nodes by tile
+--     buildingAt = { [index] = <building> },     -- optional, footprint tiles
+--     portAt = { [index] = <port> } }            -- optional, port tiles
 -- index = y * width + x + 1 for tile (x, y), 0-based. A literal
 -- { width, height } table is a valid all-grass, empty world.
 --
@@ -68,10 +70,41 @@ function World.removeNode(world, node)
 	end
 end
 
--- True when nothing may stand on tile (x, y): water or a node. Tiles off the
--- world are not blocked here; Mover clamps to the world edge.
+-- The building whose footprint covers tile (x, y), or nil.
+function World.buildingAt(world, x, y)
+	local i = index(world, x, y)
+	return i and world.buildingAt and world.buildingAt[i] or nil
+end
+
+-- The building port facing tile (x, y), or nil.
+function World.portAt(world, x, y)
+	local i = index(world, x, y)
+	return i and world.portAt and world.portAt[i] or nil
+end
+
+-- Marks a building's footprint tiles and its port tiles
+-- (src/game/buildings/building.lua). The footprint must lie in the world.
+function World.addBuilding(world, building)
+	world.buildingAt = world.buildingAt or {}
+	world.portAt = world.portAt or {}
+	for y = building.tileY, building.tileY + building.depth - 1 do
+		for x = building.tileX, building.tileX + building.width - 1 do
+			world.buildingAt[assert(index(world, x, y), "building outside the world")] = building
+		end
+	end
+	for _, port in ipairs(building.ports) do
+		local i = index(world, port.x, port.y)
+		if i then
+			world.portAt[i] = port
+		end
+	end
+end
+
+-- True when nothing may stand on tile (x, y): water, a node or a building.
+-- Port tiles stay open. Tiles off the world are not blocked here; Mover
+-- clamps to the world edge.
 function World.isBlocked(world, x, y)
-	return World.terrainAt(world, x, y) == "water" or World.nodeAt(world, x, y) ~= nil
+	return World.terrainAt(world, x, y) == "water" or World.nodeAt(world, x, y) ~= nil or World.buildingAt(world, x, y) ~= nil
 end
 
 -- The world's size in pixels.

@@ -5,6 +5,7 @@ local Rng = require("src.core.rng")
 local World = require("src.game.world")
 local CharacterSystem = require("src.game.systems.character_system")
 local NodeSystem = require("src.game.systems.node_system")
+local BuildingSystem = require("src.game.systems.building_system")
 local Inventory = require("src.game.components.inventory")
 
 local Session = {}
@@ -34,7 +35,7 @@ function Session.new(world, config, seed)
 		seed = seed,
 		rng = Rng.new(seed),
 		intents = {},
-		pools = { characters = {}, nodes = world.nodes or {} },
+		pools = { characters = {}, nodes = world.nodes or {}, buildings = {} },
 	}
 	local cx, cy = World.center(world, config)
 	table.insert(ctx.pools.characters, newCharacter(1, 1, cx, cy, config))
@@ -44,10 +45,12 @@ end
 -- The whole frame order, in one place. ctx.dt must already be set.
 --   1. Intents: `app` (or a test) fills ctx.intents[player] before the step.
 --   2. Characters: walk, then hand-harvest.
---   3. Despawn sweep (last): depleted nodes leave the pool. Nothing is ever
+--   3. Buildings: place the ones players asked for (intent.place).
+--   4. Despawn sweep (last): depleted nodes leave the pool. Nothing is ever
 --      removed mid-iteration.
 function Session.step(ctx)
 	CharacterSystem.update(ctx)
+	BuildingSystem.update(ctx)
 	NodeSystem.despawn(ctx)
 end
 

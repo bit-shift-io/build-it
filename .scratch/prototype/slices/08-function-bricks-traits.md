@@ -22,6 +22,7 @@ Complexity: 6 (design 2, scope 2, tests 0, hazards 2)
 - [ ] Cost shows red where the inventory is short.
 - [ ] Each invalid design shows the specific rule it breaks.
 - [ ] Save in the builder is refused while the draft breaks a rule (slice 09 built save before validation existed and only requires at least one brick).
+- [ ] Slice 10 placed buildings before 08 existed: port bricks must carry the role field its placement reads, and the real cost (bricks + baseplate) must replace its baseplate-only cost seam, so placement pays the full cost.
 
 ## Blocked by
 7

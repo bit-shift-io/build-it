@@ -58,6 +58,10 @@ return {
 	-- The planks and stone a new game's inventory starts with.
 	stockpile = { plank = 50, stone = 50 },
 
+	-- What placing a building costs (src/game/builder/cost.lua): items per
+	-- baseplate tile. Placeholder until bricks carry their own costs.
+	costs = { baseplatePerTile = { plank = 2 } },
+
 	-- Props (src/game/props/): seeded variants per kind, baked once into a
 	-- cache under the save directory (src/app/bake/prop_cache.lua). seed is
 	-- the base every (kind, variant) seed derives from; changing it, or

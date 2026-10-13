@@ -20,4 +20,22 @@ function Inventory.add(inv, item, n)
 	inv.counts[item] = (inv.counts[item] or 0) + (n or 1)
 end
 
+-- Whether `inv` holds every item of `cost` ({ [item] = n }).
+function Inventory.has(inv, cost)
+	for item, n in pairs(cost) do
+		if Inventory.count(inv, item) < n then
+			return false
+		end
+	end
+	return true
+end
+
+-- Takes `cost` ({ [item] = n }) out of `inv`. Check Inventory.has first.
+function Inventory.spend(inv, cost)
+	assert(Inventory.has(inv, cost), "cannot afford")
+	for item, n in pairs(cost) do
+		inv.counts[item] = inv.counts[item] - n
+	end
+end
+
 return Inventory

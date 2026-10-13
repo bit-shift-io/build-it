@@ -1,6 +1,7 @@
 -- Draws the flat tile world: terrain and grid (render/terrain.lua), then
--- every baked sprite on its tile -- resource nodes (render/nodes.lua) and
--- the test house row -- sorted by depth. Everything goes through the one
+-- building port tile markers on the ground (render/buildings.lua), then
+-- every baked sprite on its tile -- resource nodes (render/nodes.lua),
+-- buildings and the test house row -- sorted by depth. Everything goes through the one
 -- 3/4 projection (src/game/projection.lua), the same one the baker uses.
 -- Reads ctx, never mutates it.
 local Projection = require("src.game.projection")
@@ -8,6 +9,7 @@ local TestHouse = require("src.game.blocks.test_house")
 local Baker = require("src.app.bake.baker")
 local Terrain = require("src.app.render.terrain")
 local NodesRender = require("src.app.render.nodes")
+local BuildingsRender = require("src.app.render.buildings")
 
 local WorldRender = {}
 
@@ -70,6 +72,8 @@ function WorldRender.draw(ctx, zoom)
 		})
 	end
 	NodesRender.addDraws(draws, ctx, scale)
+	BuildingsRender.addDraws(draws, ctx, scale)
+	BuildingsRender.drawPorts(ctx, p)
 	drawSprites(draws, p)
 end
 

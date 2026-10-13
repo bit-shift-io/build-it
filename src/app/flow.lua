@@ -9,16 +9,21 @@
 -- "Builder"), and keeps its draft between visits.
 local WorldScreen = require("src.app.screens.world")
 local BuilderScreen = require("src.app.screens.builder")
+local DesignStore = require("src.app.design_store")
 
 local Flow = {}
 
 local SCREENS = { world = WorldScreen, builder = BuilderScreen }
 
+-- The design library is read once per launch (src/app/design_store.lua)
+-- and shared: the builder saves into it, the world places from it.
 function Flow.new(ctx, config)
+	local library, problems = DesignStore.load(config.designs.dir)
 	return {
 		screen = "world",
-		world = WorldScreen.new(ctx),
-		builder = BuilderScreen.new(config),
+		library = library,
+		world = WorldScreen.new(ctx, library),
+		builder = BuilderScreen.new(config, library, problems),
 	}
 end
 
