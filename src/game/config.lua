@@ -42,11 +42,21 @@ return {
 		rockFields = { count = 18, radius = { 2, 4 }, density = 0.6, falloff = 0.5 },
 	},
 
-	-- Resource nodes: what a fresh node of each kind holds.
+	-- Resource nodes: what a fresh node of each kind holds, the item one
+	-- harvest cycle takes from it, and stageAt: the remaining fractions at or
+	-- below which it steps to stage 2, 3, ... A node at 0 is depleted and
+	-- vanishes, freeing its tile.
 	nodes = {
-		tree = { amount = 10 },
-		rock = { amount = 8 },
+		tree = { amount = 10, item = "log", stageAt = { 0.6, 0.3 } },
+		rock = { amount = 8, item = "stone", stageAt = { 0.6, 0.3 } },
 	},
+
+	-- Hand harvesting: seconds per cycle (each yields 1 item) and how near
+	-- the character may stand, in px from its centre to the node's tile.
+	harvest = { handCycle = 0.5, reach = 12 },
+
+	-- The planks and stone a new game's inventory starts with.
+	stockpile = { plank = 50, stone = 50 },
 
 	-- Props (src/game/props/): seeded variants per kind, baked once into a
 	-- cache under the save directory (src/app/bake/prop_cache.lua). seed is

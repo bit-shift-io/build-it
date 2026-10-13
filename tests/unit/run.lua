@@ -20,6 +20,8 @@ local defaultTestFiles = {
 	"tests/unit/builder_camera_test.lua",
 	"tests/unit/bricks_test.lua",
 	"tests/unit/history_test.lua",
+	"tests/unit/inventory_test.lua",
+	"tests/unit/harvestable_test.lua",
 }
 
 local tests = {}

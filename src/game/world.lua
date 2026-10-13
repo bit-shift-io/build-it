@@ -54,6 +54,20 @@ function World.addNode(world, node)
 	return node
 end
 
+-- Removes a node from the pool and clears its tile, so the tile unblocks.
+function World.removeNode(world, node)
+	local i = assert(index(world, node.tileX, node.tileY), "node outside the world")
+	if world.nodeAt[i] == node then
+		world.nodeAt[i] = nil
+	end
+	for k, n in ipairs(world.nodes) do
+		if n == node then
+			table.remove(world.nodes, k)
+			return
+		end
+	end
+end
+
 -- True when nothing may stand on tile (x, y): water or a node. Tiles off the
 -- world are not blocked here; Mover clamps to the world edge.
 function World.isBlocked(world, x, y)

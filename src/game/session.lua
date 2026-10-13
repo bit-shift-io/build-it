@@ -4,6 +4,8 @@
 local Rng = require("src.core.rng")
 local World = require("src.game.world")
 local CharacterSystem = require("src.game.systems.character_system")
+local NodeSystem = require("src.game.systems.node_system")
+local Inventory = require("src.game.components.inventory")
 
 local Session = {}
 
@@ -15,6 +17,8 @@ local function newCharacter(id, player, x, y, config)
 		y = y,
 		size = config.character.size,
 		mover = { speed = config.character.speed },
+		inventory = Inventory.new(config.stockpile),
+		harvester = { progress = 0 },
 	}
 end
 
@@ -39,11 +43,12 @@ end
 
 -- The whole frame order, in one place. ctx.dt must already be set.
 --   1. Intents: `app` (or a test) fills ctx.intents[player] before the step.
---   2. Characters: walk.
--- A despawn sweep joins as the last step once anything can be removed;
--- nothing is ever removed mid-iteration.
+--   2. Characters: walk, then hand-harvest.
+--   3. Despawn sweep (last): depleted nodes leave the pool. Nothing is ever
+--      removed mid-iteration.
 function Session.step(ctx)
 	CharacterSystem.update(ctx)
+	NodeSystem.despawn(ctx)
 end
 
 -- One fixed step: `app` accumulates real time and calls this every 1/60 s.

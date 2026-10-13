@@ -10,7 +10,7 @@ Domain terms for Build-it. Code, docs and conversation use these words with thes
 
 ## Resource node
 - **Definition:** A harvestable thing on a tile: a tree or a rock.
-- **Boundary:** Holds a remaining amount and a stage. A depleted tree leaves a stump. A depleted rock disappears. Saplings are tree nodes not yet harvestable.
+- **Boundary:** Holds a remaining amount and a stage. A depleted node disappears and frees its tile. Saplings are tree nodes not yet harvestable.
 
 ## Item
 - **Definition:** A countable unit of a resource: log, stone or plank.
