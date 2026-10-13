@@ -15,6 +15,9 @@ local defaultTestFiles = {
 	"tests/unit/tree_prop_test.lua",
 	"tests/unit/rock_prop_test.lua",
 	"tests/unit/world_gen_test.lua",
+	"tests/unit/draft_test.lua",
+	"tests/unit/pick_test.lua",
+	"tests/unit/builder_camera_test.lua",
 }
 
 local tests = {}

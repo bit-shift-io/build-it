@@ -4,7 +4,9 @@
 -- once a `love` global exists (set `_G.love = LoveMock.new()` first in the
 -- integration tier).
 --
--- Shims love.keyboard.isDown and love.joystick.getJoysticks.
+-- Shims love.keyboard.isDown and love.joystick.getJoysticks. Key taps and
+-- mouse events go straight to the harnessed game's LÖVE-style callbacks
+-- (tap, click, drag below).
 local FrameStepper = require("tests.support.frame_stepper")
 
 local FakeInput = {}
@@ -79,8 +81,42 @@ local function runUntil(game, predicate, maxFrames)
 	error(string.format("runUntil: predicate not satisfied within %d frames", maxFrames))
 end
 
+-- One key press as LÖVE delivers it: a keypressed event, then one frame.
+local function tap(game, key)
+	game:keypressed(key)
+	FrameStepper.step(game, 1)
+end
+
+-- A mouse click at screen (x, y) with button (1 left, 2 right): the pointer
+-- moves there, then presses and releases without moving.
+local function click(game, button, x, y)
+	game:mousemoved(x, y, 0, 0)
+	game:mousepressed(x, y, button)
+	game:mousereleased(x, y, button)
+	FrameStepper.step(game, 1)
+end
+
+-- A drag with `button` held from (x1, y1) to (x2, y2), in a few moves.
+local function drag(game, button, x1, y1, x2, y2)
+	local MOVES = 4
+	game:mousemoved(x1, y1, 0, 0)
+	game:mousepressed(x1, y1, button)
+	local x, y = x1, y1
+	for i = 1, MOVES do
+		local nx, ny = x1 + (x2 - x1) * i / MOVES, y1 + (y2 - y1) * i / MOVES
+		game:mousemoved(nx, ny, nx - x, ny - y)
+		x, y = nx, ny
+		FrameStepper.step(game, 1)
+	end
+	game:mousereleased(x2, y2, button)
+	FrameStepper.step(game, 1)
+end
+
 return {
 	FakeInput = FakeInput,
 	holdFor = holdFor,
 	runUntil = runUntil,
+	tap = tap,
+	click = click,
+	drag = drag,
 }

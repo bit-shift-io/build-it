@@ -64,4 +64,41 @@ return {
 		maxZoom = 4,
 		zoomStep = 1.1, -- zoom factor per wheel notch
 	},
+
+	-- The builder screen (src/game/builder/, src/app/screens/builder.lua).
+	-- Bricks sit on the stud grid (studsPerTile per tile side) and stack in
+	-- layers one stud tall. The baseplate is minBaseplate..maxBaseplate tiles
+	-- per side; no brick may reach above maxLayers.
+	builder = {
+		studsPerTile = 4,
+		minBaseplate = 1,
+		maxBaseplate = 4,
+		maxLayers = 12,
+		brick = { width = 2, depth = 2 }, -- studs
+		-- Orbit camera, in studs and radians. distance is from the target;
+		-- the camera never comes nearer than the model's bounding radius plus
+		-- nearMargin, so orbiting and zooming never clip the model.
+		camera = {
+			fov = math.rad(45),
+			yaw = math.rad(30),
+			pitch = math.rad(40),
+			minPitch = math.rad(8),
+			maxPitch = math.rad(85),
+			distance = 16,
+			maxDistance = 80,
+			nearMargin = 2,
+			orbitSpeed = 0.01, -- radians per pixel dragged
+			zoomStep = 1.1, -- distance factor per wheel notch
+		},
+		-- A right-button press that moves less than this many pixels before
+		-- release is a click (remove a brick), not an orbit drag.
+		clickSlop = 4,
+		sidebarWidth = 200,
+		colors = {
+			baseplate = { 0.3, 0.55, 0.3 },
+			baseplateStud = { 0.34, 0.6, 0.34 },
+			brick = { 0.8, 0.25, 0.2 },
+			brickAlt = { 0.72, 0.22, 0.18 },
+		},
+	},
 }

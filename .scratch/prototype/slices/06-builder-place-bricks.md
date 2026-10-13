@@ -1,4 +1,4 @@
-Status: pending
+Status: done
 Complexity: 7 (design 2, scope 2, tests 2, hazards 1)
 
 # Builder: place and remove bricks

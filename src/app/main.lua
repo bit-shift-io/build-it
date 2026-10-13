@@ -1,14 +1,12 @@
 -- LÖVE callbacks and the fixed-timestep accumulator. This is the only module
 -- main.lua requires; every other app module hangs off it. No game or core
 -- module may require anything from here (docs/ARCHITECTURE.md "Layers").
+-- Every callback goes to src/app/flow.lua, which owns the screens.
 local Session = require("src.game.session")
 local WorldGen = require("src.game.world_gen")
 local Config = require("src.game.config")
-local Input = require("src.app.input")
-local Camera = require("src.app.camera")
+local Flow = require("src.app.flow")
 local Screen = require("src.app.screen")
-local WorldRender = require("src.app.render.world")
-local CharacterRender = require("src.app.render.character")
 
 -- Fixed timestep of 1/60 s (docs/ARCHITECTURE.md "Rules"): the simulation
 -- must be deterministic for a given seed and input sequence, which a
@@ -17,9 +15,7 @@ local FIXED_DT = 1 / 60
 local SEED = 1
 
 local App = {
-	ctx = nil,
-	camera = nil,
-	player = nil,
+	flow = nil,
 	accumulator = 0,
 }
 
@@ -46,30 +42,39 @@ function love.load(args)
 	end
 
 	love.graphics.setBackgroundColor(Screen.BACKGROUND)
-	App.ctx = Session.new(WorldGen.generate(Config, SEED), Config, SEED)
-	App.player = App.ctx.pools.characters[1]
-	App.camera = Camera.new(App.player.x, App.player.y)
+	App.flow = Flow.new(Session.new(WorldGen.generate(Config, SEED), Config, SEED), Config)
 end
 
-function love.wheelmoved(_, y)
-	Camera.zoomBy(App.camera, y, Config.camera)
+function love.keypressed(key)
+	Flow.keypressed(App.flow, key)
+end
+
+function love.mousepressed(x, y, button)
+	Flow.mousepressed(App.flow, x, y, button)
+end
+
+function love.mousereleased(x, y, button)
+	Flow.mousereleased(App.flow, x, y, button)
+end
+
+function love.mousemoved(x, y, dx, dy)
+	Flow.mousemoved(App.flow, x, y, dx, dy)
+end
+
+function love.wheelmoved(x, y)
+	Flow.wheelmoved(App.flow, x, y)
 end
 
 function love.update(dt)
 	App.accumulator = App.accumulator + dt
 	while App.accumulator >= FIXED_DT do
-		Input.updateIntents(App.ctx)
-		Session.advance(App.ctx, FIXED_DT)
+		Flow.update(App.flow, FIXED_DT)
 		App.accumulator = App.accumulator - FIXED_DT
 	end
-	Camera.follow(App.camera, App.player.x, App.player.y)
 end
 
 function love.draw()
-	Camera.attach(App.camera, Screen.dimensions())
-	WorldRender.draw(App.ctx, App.camera.zoom)
-	CharacterRender.draw(App.ctx)
-	Camera.detach()
+	Flow.draw(App.flow)
 end
 
 return App

@@ -1,15 +1,13 @@
 -- Boots a session the same way src/app/main.lua does, but from a literal
--- world table -- never a file path. Works under plain LuaJIT with no `love`
--- global, because src/game has none (docs/ARCHITECTURE.md "Layers").
--- game:draw() reaches into src/app/render, which uses love.*; only the e2e
--- tier, with a real `love`, calls it.
+-- world table -- never a file path -- and routes every LÖVE-style callback
+-- through the same src/app/flow.lua the app uses. Needs a `love` global
+-- (the integration tier's love_mock, or real LÖVE under e2e) for input.
+-- game:draw() reaches into src/app/render, which uses love.graphics; only
+-- the e2e tier, with a real `love`, calls it.
 local Session = require("src.game.session")
 local Config = require("src.game.config")
-local Input = require("src.app.input")
-local Camera = require("src.app.camera")
+local Flow = require("src.app.flow")
 local Screen = require("src.app.screen")
-local WorldRender = require("src.app.render.world")
-local CharacterRender = require("src.app.render.character")
 
 local GameHarness = {}
 
@@ -23,28 +21,39 @@ local DEFAULT_SEED = 1
 function GameHarness.startSession(world, opts)
 	opts = opts or {}
 
-	local ctx = Session.new(world, opts.config or Config, opts.seed or DEFAULT_SEED)
-	local player = ctx.pools.characters[1]
-	local camera = Camera.new(player.x, player.y)
+	local config = opts.config or Config
+	local ctx = Session.new(world, config, opts.seed or DEFAULT_SEED)
+	local flow = Flow.new(ctx, config)
 
-	local game = { ctx = ctx, camera = camera }
+	local game = { ctx = ctx, flow = flow, camera = flow.world.camera }
 
-	-- Same order as src/app/main.lua's fixed step: read devices, step, follow.
+	-- One fixed step, as src/app/main.lua runs per accumulated 1/60 s.
 	function game:update(dt)
-		-- With no `love` global (plain integration tests) intents are set
-		-- directly on ctx.intents instead.
-		if love then
-			Input.updateIntents(ctx)
-		end
-		Session.advance(ctx, dt)
-		Camera.follow(camera, player.x, player.y)
+		Flow.update(flow, dt)
 	end
 
 	function game:draw()
-		Camera.attach(camera, Screen.dimensions())
-		WorldRender.draw(ctx, camera.zoom)
-		CharacterRender.draw(ctx)
-		Camera.detach()
+		Flow.draw(flow)
+	end
+
+	function game:keypressed(key)
+		Flow.keypressed(flow, key)
+	end
+
+	function game:mousepressed(x, y, button)
+		Flow.mousepressed(flow, x, y, button)
+	end
+
+	function game:mousereleased(x, y, button)
+		Flow.mousereleased(flow, x, y, button)
+	end
+
+	function game:mousemoved(x, y, dx, dy)
+		Flow.mousemoved(flow, x, y, dx, dy)
+	end
+
+	function game:wheelmoved(x, y)
+		Flow.wheelmoved(flow, x, y)
 	end
 
 	if opts.real and _G.E2E_ON_GAME_STARTED then
