@@ -1,0 +1,37 @@
+{
+    // Uses tomblind.local-lua-debugger-vscode ("lua-local").
+    // The extension puts its debugger on LUA_PATH and sets LOCAL_LUA_DEBUGGER_VSCODE=1;
+    // main.lua calls require('lldebugger').start() when the `debug` arg is present.
+    // Always the pinned LÖVE 12 build, never `love` on PATH (that is 11.5);
+    // see docs/memory/love-12-pinned-build.md.
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lua-local",
+            "request": "launch",
+            "name": "Run Game",
+            "cwd": "${workspaceFolder}",
+            "scriptRoots": ["${workspaceFolder}"],
+            "program": {
+                "command": "/Applications/love12.app/Contents/MacOS/love"
+            },
+            "args": [
+                "${workspaceFolder}"
+            ]
+        },
+        {
+            "type": "lua-local",
+            "request": "launch",
+            "name": "Debug",
+            "cwd": "${workspaceFolder}",
+            "scriptRoots": ["${workspaceFolder}"],
+            "program": {
+                "command": "/Applications/love12.app/Contents/MacOS/love"
+            },
+            "args": [
+                "${workspaceFolder}",
+                "debug"
+            ]
+        }
+    ]
+}

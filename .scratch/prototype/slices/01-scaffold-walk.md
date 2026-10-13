@@ -1,4 +1,4 @@
-Status: pending
+Status: done
 Complexity: 6 (design 1, scope 2, tests 2, hazards 1)
 
 # Scaffold and walk a placeholder character
