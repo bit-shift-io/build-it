@@ -5,6 +5,7 @@ local defaultTestFiles = {
 	"tests/integration/walk_test.lua",
 	"tests/integration/water_blocks_test.lua",
 	"tests/integration/builder_flow_test.lua",
+	"tests/integration/builder_undo_test.lua",
 }
 
 local tests = {}

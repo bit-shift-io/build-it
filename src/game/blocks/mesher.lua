@@ -3,7 +3,8 @@
 --
 -- Output: { <vertex>, ... }, every 3 vertices one triangle, wound so that
 -- cross(b - a, c - a) points along the face's outward normal.
---   vertex = { x, y, z, nx, ny, nz, r, g, b }
+--   vertex = { x, y, z, nx, ny, nz, r, g, b, material }
+-- material is the cell's (nil when it has none).
 -- Positions are in model cells (x east, y south, z up; src/game/blocks/model.lua).
 local Mesher = {}
 
@@ -86,6 +87,7 @@ local function emit(out, cell, face)
 				r = color[1],
 				g = color[2],
 				b = color[3],
+				material = cell.material,
 			})
 		end
 	end

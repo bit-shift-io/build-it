@@ -74,7 +74,35 @@ return {
 		minBaseplate = 1,
 		maxBaseplate = 4,
 		maxLayers = 12,
-		brick = { width = 2, depth = 2 }, -- studs
+		-- The brick palette (src/game/builder/bricks.lua), unturned
+		-- footprints in studs. A slope's `slope` row is the edge it falls
+		-- toward: one stud row of 45-degree slope, the rest full height.
+		bricks = {
+			{ name = "1x1", width = 1, depth = 1 },
+			{ name = "1x2", width = 2, depth = 1 },
+			{ name = "1x4", width = 4, depth = 1 },
+			{ name = "2x2", width = 2, depth = 2 },
+			{ name = "2x4", width = 4, depth = 2 },
+			{ name = "slope", width = 2, depth = 2, slope = "S" },
+		},
+		materials = { "plank", "stone" },
+		-- Paint colours, free and cosmetic; bricks store an index into it.
+		palette = {
+			{ 0.79, 0.1, 0.09 }, -- red
+			{ 0.95, 0.47, 0.12 }, -- orange
+			{ 0.98, 0.79, 0.05 }, -- yellow
+			{ 0.95, 0.89, 0.71 }, -- tan
+			{ 0.35, 0.67, 0.25 }, -- lime green
+			{ 0.13, 0.45, 0.2 }, -- dark green
+			{ 0.36, 0.69, 0.86 }, -- light blue
+			{ 0.05, 0.3, 0.62 }, -- blue
+			{ 0.54, 0.27, 0.62 }, -- purple
+			{ 0.35, 0.2, 0.12 }, -- brown
+			{ 0.95, 0.95, 0.95 }, -- white
+			{ 0.1, 0.1, 0.1 }, -- black
+		},
+		-- The brick in hand when the builder opens.
+		held = { shape = "2x2", rotation = 0, material = "plank", paint = 1 },
 		-- Orbit camera, in studs and radians. distance is from the target;
 		-- the camera never comes nearer than the model's bounding radius plus
 		-- nearMargin, so orbiting and zooming never clip the model.
@@ -97,8 +125,6 @@ return {
 		colors = {
 			baseplate = { 0.3, 0.55, 0.3 },
 			baseplateStud = { 0.34, 0.6, 0.34 },
-			brick = { 0.8, 0.25, 0.2 },
-			brickAlt = { 0.72, 0.22, 0.18 },
 		},
 	},
 }

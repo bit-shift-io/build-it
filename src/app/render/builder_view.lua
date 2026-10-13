@@ -7,18 +7,16 @@ local Model = require("src.game.blocks.model")
 local Mesher = require("src.game.blocks.mesher")
 local Draft = require("src.game.builder.draft")
 local BuilderCamera = require("src.app.builder_camera")
+local Baker = require("src.app.bake.baker")
 local Screen = require("src.app.screen")
 
 local BuilderView = {}
 
 local SHADER_PATH = "src/app/bake/block_shader.glsl"
 
--- Same layout as the baker's (docs/memory/love-12-mesh-vertex-format.md).
-local VERTEX_FORMAT = {
-	{ name = "VertexPosition", format = "floatvec3", location = 0 },
-	{ name = "VertexColor", format = "floatvec4", location = 2 },
-	{ name = "VertexNormal", format = "floatvec3", location = 3 },
-}
+-- The block shader's layout (Baker.VERTEX_FORMAT); only the layout and
+-- material ids are shared, the builder never bakes.
+local VERTEX_FORMAT = Baker.VERTEX_FORMAT
 
 -- The baseplate's slab reaches this far below its top, in layers; matches
 -- src/game/builder/pick.lua, so what is drawn is what is picked.
@@ -29,6 +27,7 @@ local SIDEBAR_BACKGROUND = { 0.13, 0.14, 0.16, 1 }
 local BUTTON_COLOR = { 0.24, 0.26, 0.3, 1 }
 local TEXT_COLOR = { 0.92, 0.92, 0.92, 1 }
 local WARNING_COLOR = { 1, 0.6, 0.4, 1 }
+local SELECTED_COLOR = { 1, 0.85, 0.3, 1 }
 
 local shader = nil
 -- Colour and depth targets the size of the window, remade when it resizes.
@@ -95,9 +94,11 @@ local function draftTriangles(screen)
 	return cached.triangles
 end
 
-local function ghostTriangles(place, cfg)
+-- The held brick at placement cell `place`, as Draft.place would put it.
+local function ghostTriangles(place, held, cfg)
 	local ghost = Draft.new()
-	table.insert(ghost.bricks, { x = place.x, y = place.y, z = place.z, width = cfg.brick.width, depth = cfg.brick.depth })
+	ghost.width, ghost.depth = cfg.maxBaseplate, cfg.maxBaseplate
+	Draft.place(ghost, place.x, place.y, place.z, cfg, held)
 	return Mesher.mesh(Draft.toModel(ghost, cfg))
 end
 
@@ -105,7 +106,7 @@ local function projectedMesh(view, triangles, alpha)
 	local vertices = {}
 	for i, v in ipairs(triangles) do
 		local sx, sy, z = BuilderCamera.project(view, v.x, v.y, v.z)
-		vertices[i] = { sx, sy, z, v.r, v.g, v.b, alpha, v.nx, v.ny, v.nz }
+		vertices[i] = { sx, sy, z, v.r, v.g, v.b, alpha, v.nx, v.ny, v.nz, Baker.materialId(v), v.x, v.y, v.z }
 	end
 	return love.graphics.newMesh(VERTEX_FORMAT, vertices, "triangles", "stream")
 end
@@ -126,7 +127,7 @@ function BuilderView.draw(screen, view, ghost)
 	love.graphics.draw(mesh)
 	if ghost then
 		-- Depth-tested against the draft, but never hides what is behind it.
-		local ghostMesh = projectedMesh(view, ghostTriangles(ghost, screen.cfg), GHOST_ALPHA)
+		local ghostMesh = projectedMesh(view, ghostTriangles(ghost, screen.held, screen.cfg), GHOST_ALPHA)
 		love.graphics.setDepthMode("lequal", false)
 		love.graphics.draw(ghostMesh)
 		ghostMesh:release()
@@ -140,30 +141,66 @@ function BuilderView.draw(screen, view, ghost)
 	love.graphics.pop()
 end
 
--- The sidebar: the baseplate size, its resize buttons, and why the last
--- resize was refused.
+-- Whether sidebar button `b` is the held brick's current choice.
+local function selected(screen, b)
+	return b.kind ~= "resize" and screen.held[b.kind] == b.value
+end
+
+local HELP = table.concat({
+	"Left click: place",
+	"Shift+click: paint",
+	"Right click: remove",
+	"Right drag: orbit",
+	"Wheel: zoom",
+	"R: turn brick",
+	"Ctrl+Z: undo",
+	"Ctrl+Shift+Z: redo",
+	"Esc: back",
+}, "\n")
+
+-- The sidebar: the baseplate size and its resize buttons, why the last
+-- resize was refused, and the held brick's shape, material and paint.
 function BuilderView.drawSidebar(screen, buttons)
 	local _, h = Screen.dimensions()
-	local d = screen.draft
+	local d, cfg = screen.draft, screen.cfg
+	local font = love.graphics.getFont()
 	love.graphics.push("all")
 	love.graphics.setColor(SIDEBAR_BACKGROUND)
-	love.graphics.rectangle("fill", 0, 0, screen.cfg.sidebarWidth, h)
+	love.graphics.rectangle("fill", 0, 0, cfg.sidebarWidth, h)
 	love.graphics.setColor(TEXT_COLOR)
 	love.graphics.print("Builder", 16, 16)
 	love.graphics.print(string.format("Baseplate %d x %d tiles", d.width, d.depth), 16, 40)
+	local lastResize = nil
 	for _, b in ipairs(buttons) do
-		love.graphics.setColor(BUTTON_COLOR)
-		love.graphics.rectangle("fill", b.x, b.y, b.width, b.height, 4, 4)
-		love.graphics.setColor(TEXT_COLOR)
-		love.graphics.printf(b.label, b.x, b.y + (b.height - love.graphics.getFont():getHeight()) / 2, b.width, "center")
+		if b.heading then
+			love.graphics.setColor(TEXT_COLOR)
+			love.graphics.print(b.heading, 16, b.y - font:getHeight() - 4)
+		end
+		if b.kind == "paint" then
+			local c = cfg.palette[b.value]
+			love.graphics.setColor(c[1], c[2], c[3], 1)
+			love.graphics.rectangle("fill", b.x, b.y, b.width, b.height, 3, 3)
+		else
+			love.graphics.setColor(BUTTON_COLOR)
+			love.graphics.rectangle("fill", b.x, b.y, b.width, b.height, 4, 4)
+			love.graphics.setColor(TEXT_COLOR)
+			love.graphics.printf(b.label, b.x, b.y + (b.height - font:getHeight()) / 2, b.width, "center")
+		end
+		if selected(screen, b) then
+			love.graphics.setColor(SELECTED_COLOR)
+			love.graphics.setLineWidth(2)
+			love.graphics.rectangle("line", b.x - 1, b.y - 1, b.width + 2, b.height + 2, 4, 4)
+		end
+		if b.kind == "resize" then
+			lastResize = b
+		end
 	end
-	local last = buttons[#buttons]
-	if screen.message then
+	if screen.message and lastResize then
 		love.graphics.setColor(WARNING_COLOR)
-		love.graphics.printf(screen.message, 16, last.y + last.height + 16, screen.cfg.sidebarWidth - 32)
+		love.graphics.printf(screen.message, 16, lastResize.y + lastResize.height + 8, cfg.sidebarWidth - 32)
 	end
 	love.graphics.setColor(TEXT_COLOR)
-	love.graphics.printf("Left click: place\nRight click: remove\nRight drag: orbit\nWheel: zoom\nEsc: back", 16, h - 112, screen.cfg.sidebarWidth - 32)
+	love.graphics.printf(HELP, 16, h - 9 * font:getHeight() - 16, cfg.sidebarWidth - 32)
 	love.graphics.pop()
 end
 

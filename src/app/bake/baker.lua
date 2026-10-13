@@ -13,13 +13,30 @@ local Baker = {}
 
 local SHADER_PATH = "src/app/bake/block_shader.glsl"
 
+-- The block shader's vertex layout, shared with the builder's live view.
 -- LÖVE 12 vertex formats need an explicit location per attribute; the shader
--- declares VertexNormal at location 3 to match.
-local VERTEX_FORMAT = {
+-- declares the custom ones at the same locations
+-- (docs/memory/love-12-mesh-vertex-format.md). A vertex is
+--   { px, py, depth, r, g, b, a, nx, ny, nz, materialId, mx, my, mz }
+-- with (mx, my, mz) its model-space position in cells, which the shader
+-- patterns the material texture by.
+Baker.VERTEX_FORMAT = {
 	{ name = "VertexPosition", format = "floatvec3", location = 0 },
 	{ name = "VertexColor", format = "floatvec4", location = 2 },
 	{ name = "VertexNormal", format = "floatvec3", location = 3 },
+	{ name = "VertexMaterial", format = "float", location = 4 },
+	{ name = "VertexModel", format = "floatvec3", location = 5 },
 }
+local VERTEX_FORMAT = Baker.VERTEX_FORMAT
+
+-- The shader's id per material (config.builder.materials); a cell with no
+-- material is 0, untextured.
+local MATERIAL_IDS = { plank = 1, stone = 2 }
+
+-- The shader's material id for mesher vertex `v`.
+function Baker.materialId(v)
+	return v.material and assert(MATERIAL_IDS[v.material], "unknown material " .. v.material) or 0
+end
 
 local DEPTH_FORMAT = "depth24"
 
@@ -66,7 +83,8 @@ local function meshVertices(model, p, frame, bounds)
 		local x, y, z = v.x / cpt, v.y / cpt, v.z / cpt
 		local px, py = Projection.modelToSprite(p, frame, x, y, z)
 		local t = (nearest - Projection.depth(p, x, y, z)) / span -- 0 nearest, 1 farthest
-		out[i] = { px, py, NEAREST_Z + t * (FARTHEST_Z - NEAREST_Z), v.r, v.g, v.b, 1, v.nx, v.ny, v.nz }
+		local depth = NEAREST_Z + t * (FARTHEST_Z - NEAREST_Z)
+		out[i] = { px, py, depth, v.r, v.g, v.b, 1, v.nx, v.ny, v.nz, Baker.materialId(v), v.x, v.y, v.z }
 	end
 	return out
 end

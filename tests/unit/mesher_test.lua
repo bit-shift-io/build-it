@@ -100,3 +100,10 @@ test("Mesher.mesh culls matching slope ends in a roof row, not mismatched ones",
 	}))
 	assertEqual(8 + 8, triangleCount(mismatched))
 end)
+
+test("every vertex carries its cell's material, nil when it has none", function()
+	local verts = Mesher.mesh(modelOf({ { x = 0, y = 0, z = 0, material = "stone" }, { x = 3, y = 0, z = 0 } }))
+	for _, v in ipairs(verts) do
+		assertEqual(v.x <= 1 and "stone" or nil, v.material)
+	end
+end)

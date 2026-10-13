@@ -6,9 +6,15 @@
 -- width/depth are the baseplate in tiles. Brick space is the block model's
 -- (x east, y south, z up) in studs, with z counting brick layers one stud
 -- tall; the baseplate's north-west top corner is the origin.
---   brick = { x, y, z, width, depth } -- studs; occupies x .. x+width-1
+--   brick = { x, y, z, width, depth, -- studs; occupies x .. x+width-1
+--             shape, rotation, material, paint }
+-- shape names one of cfg.bricks, rotation counts quarter turns clockwise
+-- (src/game/builder/bricks.lua), width/depth are the turned footprint, and
+-- paint indexes cfg.palette. A held brick is the same minus the position:
+--   held = { shape, rotation, material, paint } -- defaults to cfg.held
 -- cfg is config.builder.
 local Model = require("src.game.blocks.model")
+local Bricks = require("src.game.builder.bricks")
 
 local Draft = {}
 
@@ -48,8 +54,20 @@ local function onBaseplate(brick, width, depth, cfg)
 		and brick.y + brick.depth <= depth * studs
 end
 
-local function newBrick(x, y, z, cfg)
-	return { x = x, y = y, z = z, width = cfg.brick.width, depth = cfg.brick.depth }
+local function newBrick(x, y, z, cfg, held)
+	held = held or cfg.held
+	local width, depth = Bricks.footprint(held.shape, held.rotation, cfg)
+	return {
+		x = x,
+		y = y,
+		z = z,
+		width = width,
+		depth = depth,
+		shape = held.shape,
+		rotation = held.rotation,
+		material = held.material,
+		paint = held.paint,
+	}
 end
 
 local function check(draft, brick, cfg)
@@ -67,17 +85,18 @@ local function check(draft, brick, cfg)
 	return true
 end
 
--- Whether Draft.place would take a brick at (x, y, z): true, or false and
--- the reason it would give.
-function Draft.fits(draft, x, y, z, cfg)
-	return check(draft, newBrick(x, y, z, cfg), cfg)
+-- Whether Draft.place would take the held brick at (x, y, z): true, or
+-- false and the reason it would give.
+function Draft.fits(draft, x, y, z, cfg, held)
+	return check(draft, newBrick(x, y, z, cfg, held), cfg)
 end
 
--- Places a cfg.brick-sized brick with its north-west bottom cell at
--- (x, y, z). Returns the brick, or nil and why: "outside" the baseplate,
--- "too high" for cfg.maxLayers, or "overlap" with another brick.
-function Draft.place(draft, x, y, z, cfg)
-	local brick = newBrick(x, y, z, cfg)
+-- Places a copy of the held brick with its turned footprint's north-west
+-- bottom cell at (x, y, z). Returns the brick, or nil and why: "outside"
+-- the baseplate, "too high" for cfg.maxLayers, or "overlap" with another
+-- brick.
+function Draft.place(draft, x, y, z, cfg, held)
+	local brick = newBrick(x, y, z, cfg, held)
 	local ok, reason = check(draft, brick, cfg)
 	if not ok then
 		return nil, reason
@@ -103,30 +122,39 @@ function Draft.resize(draft, width, depth, cfg)
 	return true
 end
 
--- The draft as a block model on the stud grid: one box cell per stud a
--- brick covers. Bricks alternate between two shades so neighbours read as
--- separate bricks until paint arrives.
+-- The draft as a block model on the stud grid: one cell per stud a brick
+-- covers (Bricks.cells), in the brick's paint and material.
 function Draft.toModel(draft, cfg)
 	local m = Model.new(cfg.studsPerTile, draft.width, draft.depth)
-	for i, b in ipairs(draft.bricks) do
-		local color = i % 2 == 1 and cfg.colors.brick or cfg.colors.brickAlt
-		for x = b.x, b.x + b.width - 1 do
-			for y = b.y, b.y + b.depth - 1 do
-				Model.addCell(m, { x = x, y = y, z = b.z, color = color })
-			end
+	for _, b in ipairs(draft.bricks) do
+		local color = cfg.palette[b.paint]
+		for _, c in ipairs(Bricks.cells(b, cfg)) do
+			c.color, c.material = color, b.material
+			Model.addCell(m, c)
 		end
 	end
 	return m
 end
 
 -- Takes `brick` off the draft. Bricks resting on it stay where they are.
+-- True when the brick was on the draft.
 function Draft.remove(draft, brick)
 	for i, b in ipairs(draft.bricks) do
 		if b == brick then
 			table.remove(draft.bricks, i)
-			return
+			return true
 		end
 	end
+	return false
+end
+
+-- Paints `brick` with cfg.palette[paint]. True when its colour changed.
+function Draft.paint(_, brick, paint)
+	if brick.paint == paint then
+		return false
+	end
+	brick.paint = paint
+	return true
 end
 
 return Draft

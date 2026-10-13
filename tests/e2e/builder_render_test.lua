@@ -7,6 +7,7 @@ local Fake = require("tests.support.fake_input")
 local Config = require("src.game.config")
 local BuilderScreen = require("src.app.screens.builder")
 local BuilderCamera = require("src.app.builder_camera")
+local Bricks = require("src.game.builder.bricks")
 
 local CFG = Config.builder
 
@@ -100,4 +101,83 @@ test("hovering a free spot shows a see-through ghost brick there", function()
 	local r1, g1 = colorAt(after, sx, sy)
 	assertTrue(r1 - g1 > r0 - g0 + 0.1, "expected the ghost to tint the baseplate red")
 	assertEqual(0, #builder.draft.bricks)
+end)
+
+local function clickButton(game, builder, label)
+	for _, b in ipairs(BuilderScreen.buttons(builder)) do
+		if b.label == label then
+			Fake.click(game, 1, b.x + b.width / 2, b.y + b.height / 2)
+			return
+		end
+	end
+	error("no sidebar button " .. label)
+end
+
+test("plank and stone bricks look different under the same paint", function()
+	local game = GameHarness.startSession({ width = 20, height = 20 }, { real = true })
+	Fake.tap(game, "b")
+	local builder = game.flow.builder
+	for _, label in ipairs({ "Width +", "Width +", "Depth +", "Depth +" }) do
+		clickButton(game, builder, label)
+	end
+	clickButton(game, builder, "2x4")
+	-- One row per paint: plank on the west, stone on the east.
+	local paints = { 1, 11, 8, 12 } -- red, white, blue, black
+	for row, paint in ipairs(paints) do
+		local y = (row - 1) * 3
+		clickButton(game, builder, "paint:" .. paint)
+		clickButton(game, builder, "Plank")
+		Fake.click(game, 1, pixelOf(builder, 3, y + 1, 0))
+		clickButton(game, builder, "Stone")
+		Fake.click(game, 1, pixelOf(builder, 9, y + 1, 0))
+	end
+	assertEqual(2 * #paints, #builder.draft.bricks)
+	game:mousemoved(5, 5, 0, 0)
+	local pixels = renderFrame(game)
+	Capture.capture("plank_vs_stone")
+
+	-- Corresponding points on each pair's top faces differ in pattern.
+	for row, paint in ipairs(paints) do
+		local y = (row - 1) * 3
+		local diff, n = 0, 0
+		for i = 0, 6 do
+			for j = 0, 3 do
+				local px, py = 1.3 + i * 0.5, y + 0.2 + j * 0.45
+				local r1, g1, b1 = colorAt(pixels, pixelOf(builder, px, py, 1))
+				local r2, g2, b2 = colorAt(pixels, pixelOf(builder, px + 6, py, 1))
+				diff = diff + math.abs(r1 - r2) + math.abs(g1 - g2) + math.abs(b1 - b2)
+				n = n + 1
+			end
+		end
+		assertTrue(diff / n > 0.04, string.format("expected plank and stone to differ under paint %d (mean diff %.3f)", paint, diff / n))
+	end
+end)
+
+test("every brick shape draws, turned", function()
+	local game = GameHarness.startSession({ width = 20, height = 20 }, { real = true })
+	Fake.tap(game, "b")
+	local builder = game.flow.builder
+	for _, label in ipairs({ "Width +", "Width +", "Width +", "Depth +", "Depth +", "Depth +" }) do
+		clickButton(game, builder, label)
+	end
+	-- Each shape twice, in its own paint: as authored, and turned a quarter
+	-- 4 studs south of it.
+	for i, shape in ipairs(CFG.bricks) do
+		clickButton(game, builder, shape.name)
+		clickButton(game, builder, i % 2 == 1 and "Plank" or "Stone")
+		clickButton(game, builder, "paint:" .. i)
+		local x = 1 + ((i - 1) % 3) * 5
+		local y = math.floor((i - 1) / 3) * 8
+		local w, d = Bricks.footprint(shape.name, 0, CFG)
+		Fake.click(game, 1, pixelOf(builder, x + w / 2, y + d / 2, 0))
+		Fake.tap(game, "r")
+		Fake.click(game, 1, pixelOf(builder, x + d / 2, y + 4 + w / 2, 0))
+		Fake.tap(game, "r")
+		Fake.tap(game, "r")
+		Fake.tap(game, "r")
+	end
+	assertEqual(2 * #CFG.bricks, #builder.draft.bricks)
+	game:mousemoved(5, 5, 0, 0)
+	renderFrame(game)
+	Capture.capture("shapes")
 end)

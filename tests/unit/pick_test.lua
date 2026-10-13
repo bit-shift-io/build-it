@@ -96,3 +96,13 @@ test("a ray onto the seam between two brick tops stacks on top, not beside", fun
 	assertEqual(1, hit.place.z)
 	assertEqual(1, hit.place.x)
 end)
+
+test("the held brick's turned footprint centres on the hit and stays on the baseplate", function()
+	local held = { shape = "1x4", rotation = 1, material = "plank", paint = 1 } -- 1 wide, 4 deep
+	local hit = Pick.cast(draft2x2(), { 3.3, 2.7, 20 }, DOWN, CFG, held)
+	assertEqual(3, hit.place.x)
+	assertEqual(1, hit.place.y)
+	hit = Pick.cast(draft2x2(), { 7.5, 7.5, 20 }, DOWN, CFG, held)
+	assertEqual(7, hit.place.x)
+	assertEqual(4, hit.place.y)
+end)
