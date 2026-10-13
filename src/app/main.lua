@@ -66,7 +66,7 @@ end
 
 function love.draw()
 	Camera.attach(App.camera, Screen.dimensions())
-	WorldRender.draw(App.ctx)
+	WorldRender.draw(App.ctx, App.camera.zoom)
 	CharacterRender.draw(App.ctx)
 	Camera.detach()
 end

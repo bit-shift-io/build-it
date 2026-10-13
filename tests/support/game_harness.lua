@@ -42,7 +42,7 @@ function GameHarness.startSession(world, opts)
 
 	function game:draw()
 		Camera.attach(camera, Screen.dimensions())
-		WorldRender.draw(ctx)
+		WorldRender.draw(ctx, camera.zoom)
 		CharacterRender.draw(ctx)
 		Camera.detach()
 	end

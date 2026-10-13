@@ -56,8 +56,18 @@ function Capture.capture(name)
 	love.graphics.setCanvas()
 	love.graphics.pop()
 
+	return Capture.captureTexture(name, canvas)
+end
+
+-- Writes a texture (e.g. a baked sprite) as-is to <outputDir>/<name>.png,
+-- returning the path written. Same e2e-only rule as Capture.capture.
+function Capture.captureTexture(name, texture)
+	if not context then
+		error("Capture.captureTexture() called outside the e2e tier; move this scenario to tests/e2e/.", 2)
+	end
+
 	-- LÖVE 12 replaces Texture:newImageData with readbackTexture.
-	local imageData = love.graphics.readbackTexture(canvas)
+	local imageData = love.graphics.readbackTexture(texture)
 	local fileData = imageData:encode("png")
 
 	local path = context.outputDir .. "/" .. name .. ".png"

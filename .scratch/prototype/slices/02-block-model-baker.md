@@ -1,4 +1,4 @@
-Status: pending
+Status: done
 Complexity: 8 (design 2, scope 2, tests 2, hazards 2)
 
 # Block model and baker
