@@ -1,4 +1,4 @@
-Status: pending
+Status: done
 Complexity: 6 (design 1, scope 2, tests 1, hazards 2)
 
 # Seeded world and baked props

@@ -3,6 +3,7 @@
 -- test-unit.sh stays fast. Register every new test file below or it never runs.
 local defaultTestFiles = {
 	"tests/integration/walk_test.lua",
+	"tests/integration/water_blocks_test.lua",
 }
 
 local tests = {}

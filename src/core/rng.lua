@@ -41,4 +41,36 @@ function Rng.new(seed)
 	return rng
 end
 
+-- a * b mod 2^32 for 32-bit a, b, split so no product passes 2^53 and loses
+-- precision as a double.
+local function mul32(a, b)
+	local high, low = math.floor(a / 65536), a % 65536
+	return ((high * b % 65536) * 65536 + low * b) % MODULUS
+end
+
+-- Folds the high bits into the low ones (an add-shift: no bit library, so
+-- this runs under any Lua).
+local function fold(h, shift)
+	return (h + math.floor(h / shift)) % MODULUS
+end
+
+-- A 32-bit seed from any parts (strings or numbers), e.g. Rng.hash("tree", 3).
+-- Use it to derive independent streams: an LCG seeded with neighbouring
+-- integers gives near-identical first draws, a hashed seed does not.
+-- FNV-1a-style over the parts' bytes (add in place of xor), then a
+-- murmur3-style finaliser.
+function Rng.hash(...)
+	local h = 2166136261
+	for i = 1, select("#", ...) do
+		local s = tostring((select(i, ...)))
+		for k = 1, #s do
+			h = mul32((h + s:byte(k)) % MODULUS, 16777619)
+		end
+		h = mul32((h + 0x1f) % MODULUS, 16777619) -- part separator
+	end
+	h = mul32(fold(h, 65536), 0x85ebca6b)
+	h = mul32(fold(h, 8192), 0xc2b2ae35)
+	return fold(h, 65536)
+end
+
 return Rng

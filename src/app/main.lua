@@ -2,6 +2,7 @@
 -- main.lua requires; every other app module hangs off it. No game or core
 -- module may require anything from here (docs/ARCHITECTURE.md "Layers").
 local Session = require("src.game.session")
+local WorldGen = require("src.game.world_gen")
 local Config = require("src.game.config")
 local Input = require("src.app.input")
 local Camera = require("src.app.camera")
@@ -45,7 +46,7 @@ function love.load(args)
 	end
 
 	love.graphics.setBackgroundColor(Screen.BACKGROUND)
-	App.ctx = Session.new(Config.world, Config, SEED)
+	App.ctx = Session.new(WorldGen.generate(Config, SEED), Config, SEED)
 	App.player = App.ctx.pools.characters[1]
 	App.camera = Camera.new(App.player.x, App.player.y)
 end

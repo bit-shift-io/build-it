@@ -44,3 +44,14 @@ test("Rng:int returns integers in [min, max] inclusive, hitting both ends", func
 	end
 	assertTrue(sawMin and sawMax, "expected both ends of the range to appear")
 end)
+
+test("Rng.hash derives a stable 32-bit seed from its parts, decorrelating near inputs", function()
+	local a, b = Rng.hash("tree", 1), Rng.hash("tree", 2)
+	assertEqual(a, Rng.hash("tree", 1), "expected the same parts to hash the same")
+	assertTrue(a ~= b, "expected different parts to hash differently")
+	assertTrue(a >= 0 and a < 4294967296 and math.floor(a) == a, "expected a 32-bit integer")
+	assertTrue(Rng.hash("tree", 12) ~= Rng.hash("tree1", 2), "expected part boundaries to matter")
+	-- Neighbouring seeds' first draws land far apart, not a hair apart.
+	local first1, first2 = Rng.new(a):next(), Rng.new(b):next()
+	assertTrue(math.abs(first1 - first2) > 0.01, "expected decorrelated first draws")
+end)

@@ -18,7 +18,9 @@ local function newCharacter(id, player, x, y, config)
 	}
 end
 
--- world: a literal world table (src/game/world.lua). seed fixes ctx.rng.
+-- world: a world table (src/game/world.lua), literal or from
+-- src/game/world_gen.lua. seed fixes ctx.rng. The world's node pool is
+-- ctx.pools.nodes (the same table).
 function Session.new(world, config, seed)
 	local ctx = {
 		dt = 0,
@@ -28,7 +30,7 @@ function Session.new(world, config, seed)
 		seed = seed,
 		rng = Rng.new(seed),
 		intents = {},
-		pools = { characters = {} },
+		pools = { characters = {}, nodes = world.nodes or {} },
 	}
 	local cx, cy = World.center(world, config)
 	table.insert(ctx.pools.characters, newCharacter(1, 1, cx, cy, config))
