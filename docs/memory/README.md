@@ -7,3 +7,4 @@ Situational facts: true only when touching a particular area. One fact per file.
 - [love-12-mesh-vertex-format.md](love-12-mesh-vertex-format.md) — `newMesh` vertex formats need a `location` per attribute; custom shader attributes bind by `layout (location = N) in`
 - [love-12-depth-canvas.md](love-12-depth-canvas.md) — depth canvases on Metal: `depthstencil` canvas or `depth = true`; clip z stays GL-style [-1, 1], smaller is nearer with `"less"`
 - [love-12-canvas-dpiscale.md](love-12-canvas-dpiscale.md) — `newCanvas` takes the window DPI scale; use `{ dpiscale = 1 }` for canvases that are read back, saved or used as atlases
+- [love-12-no-filesystem-rename.md](love-12-no-filesystem-rename.md) — no `love.filesystem.rename`; atomic writes go to `.tmp`, then `os.rename` under `getSaveDirectory()`

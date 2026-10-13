@@ -40,6 +40,10 @@ function GameHarness.startSession(world, opts)
 		Flow.keypressed(flow, key)
 	end
 
+	function game:textinput(text)
+		Flow.textinput(flow, text)
+	end
+
 	function game:mousepressed(x, y, button)
 		Flow.mousepressed(flow, x, y, button)
 	end

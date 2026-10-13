@@ -64,6 +64,11 @@ return {
 	-- variants, rebakes every kind.
 	props = { variants = 8, seed = 1, cacheDir = "props" },
 
+	-- The design library (src/game/designs/, src/app/design_store.lua): one
+	-- file per design under `dir` in the save directory, shared by every
+	-- world. Names are labels of at most maxNameLength characters.
+	designs = { dir = "designs", maxNameLength = 24 },
+
 	character = {
 		size = 16, -- placeholder square side, px
 		speed = 160, -- walk speed, px/s

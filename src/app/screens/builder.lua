@@ -6,11 +6,19 @@
 -- every draft change. Sidebar buttons resize the baseplate and pick the
 -- held brick's shape, material and paint.
 --
+-- The Design section names the draft (click Name, type, Enter), saves it to
+-- the design library (src/app/design_store.lua) as a new version of the
+-- design it was opened from, or as a new design; New starts an empty draft;
+-- Open lists the library's designs in place of the brick pickers, and a
+-- click opens a design's latest version for editing.
+--
 -- Picking runs through src/game/builder/pick.lua with the ray from the same
 -- camera view the screen draws with.
 local Draft = require("src.game.builder.draft")
 local Pick = require("src.game.builder.pick")
 local History = require("src.game.builder.history")
+local Library = require("src.game.designs.library")
+local DesignStore = require("src.app.design_store")
 local BuilderCamera = require("src.app.builder_camera")
 local BuilderView = require("src.app.render.builder_view")
 local Screen = require("src.app.screen")
@@ -28,6 +36,11 @@ local MESSAGE_HEIGHT = 40
 local HEADING_HEIGHT = 20
 local SHAPE_COLUMNS, SHAPE_HEIGHT = 3, 28
 local SWATCH_COLUMNS, SWATCH_HEIGHT = 4, 24
+local DESIGN_ROW_HEIGHT = 28
+local DESIGN_LIST_HEIGHT = 24
+
+-- The label a design saved without a name gets.
+local DEFAULT_NAME = "Untitled"
 
 -- Shown when a resize is refused, keyed by Draft.resize's reason.
 local REFUSALS = {
@@ -35,12 +48,37 @@ local REFUSALS = {
 	bricks = "Bricks sit outside that size.",
 }
 
+-- Shown when a save is refused, keyed by Library.canSave's reason.
+local SAVE_REFUSALS = {
+	empty = "Place a brick before saving.",
+}
+
+local function problemsMessage(problems)
+	if #problems == 0 then
+		return nil
+	end
+	return #problems == 1 and "1 design file could not be read." or #problems .. " design files could not be read."
+end
+
 function BuilderScreen.new(config)
 	local cfg = config.builder
+	-- The design library, read once per launch; problems lists the files
+	-- that could not be read ({ name, reason }).
+	local library, problems = DesignStore.load(config.designs.dir)
 	return {
 		config = config,
 		cfg = cfg,
+		library = library,
+		problems = problems,
 		draft = Draft.new(),
+		-- The design the draft was opened from or last saved as (nil for a
+		-- new one), and its name as typed.
+		designId = nil,
+		name = "",
+		-- Whether typed text goes to the name.
+		typingName = false,
+		-- Whether the sidebar lists the library instead of the brick pickers.
+		browsing = false,
 		-- Undo/redo for every draft change (src/game/builder/history.lua).
 		history = History.new(),
 		-- The brick in hand: { shape, rotation, material, paint }.
@@ -52,8 +90,9 @@ function BuilderScreen.new(config)
 		mouseY = nil,
 		-- The right button's press, until release: { x, y, moved }.
 		rightPress = nil,
-		-- Why the last resize was refused, until the next one succeeds.
-		message = nil,
+		-- Why the last resize or save was refused, what a save did, or which
+		-- design files could not be read.
+		message = problemsMessage(problems),
 	}
 end
 
@@ -80,7 +119,7 @@ local function grid(out, screen, kind, items, columns, height, top)
 	for i, item in ipairs(items) do
 		local col, row = (i - 1) % columns, math.floor((i - 1) / columns)
 		table.insert(out, {
-			kind = kind,
+			kind = item.kind or kind,
 			label = item.label,
 			value = item.value,
 			x = PAD + col * (width + GAP),
@@ -94,10 +133,14 @@ end
 
 -- The sidebar's buttons, each { kind, label, x, y, width, height, ... }:
 --   kind "resize": dw/dd, the change to the baseplate's width/depth in tiles
+--   kind "name": the name field; "save", "new", "open": the design actions
 --   kind "shape" | "material" | "paint": value, what it sets on the held
 --     brick (a cfg.bricks name, a cfg.materials name, a cfg.palette index;
 --     swatches are labelled "paint:<index>")
--- The first button of each picker kind has `heading`, its section title.
+--   kind "design": value, a library design's id, while browsing replaces
+--     the pickers
+-- The first button of each section after the resize rows has `heading`,
+-- its section title.
 function BuilderScreen.buttons(screen)
 	local cfg = screen.cfg
 	local half = (cfg.sidebarWidth - 3 * PAD) / 2
@@ -114,24 +157,43 @@ function BuilderScreen.buttons(screen)
 	end
 	y = y + MESSAGE_HEIGHT
 
-	local sections = {
-		{ kind = "shape", heading = "Brick (R turns)", columns = SHAPE_COLUMNS, height = SHAPE_HEIGHT, items = {} },
-		{ kind = "material", heading = "Material", columns = 2, height = SHAPE_HEIGHT, items = {} },
-		{ kind = "paint", heading = "Paint (shift-click)", columns = SWATCH_COLUMNS, height = SWATCH_HEIGHT, items = {} },
-	}
-	for _, shape in ipairs(cfg.bricks) do
-		table.insert(sections[1].items, { label = shape.name, value = shape.name })
-	end
-	for _, material in ipairs(cfg.materials) do
-		table.insert(sections[2].items, { label = capitalised(material), value = material })
-	end
-	for i in ipairs(cfg.palette) do
-		table.insert(sections[3].items, { label = "paint:" .. i, value = i })
+	y = y + HEADING_HEIGHT
+	local full = cfg.sidebarWidth - 2 * PAD
+	table.insert(out, { kind = "name", label = "Name", heading = "Design", x = PAD, y = y, width = full, height = DESIGN_ROW_HEIGHT })
+	y = grid(out, screen, nil, {
+		{ kind = "save", label = "Save" },
+		{ kind = "new", label = "New" },
+		{ kind = "open", label = "Open" },
+	}, 3, DESIGN_ROW_HEIGHT, y + DESIGN_ROW_HEIGHT + GAP)
+
+	local sections
+	if screen.browsing then
+		sections = { { kind = "design", heading = "Open a design", columns = 1, height = DESIGN_LIST_HEIGHT, items = {} } }
+		for _, design in ipairs(screen.library.designs) do
+			table.insert(sections[1].items, { label = design.name .. "  v" .. #design.versions, value = design.id })
+		end
+	else
+		sections = {
+			{ kind = "shape", heading = "Brick (R turns)", columns = SHAPE_COLUMNS, height = SHAPE_HEIGHT, items = {} },
+			{ kind = "material", heading = "Material", columns = 2, height = SHAPE_HEIGHT, items = {} },
+			{ kind = "paint", heading = "Paint (shift-click)", columns = SWATCH_COLUMNS, height = SWATCH_HEIGHT, items = {} },
+		}
+		for _, shape in ipairs(cfg.bricks) do
+			table.insert(sections[1].items, { label = shape.name, value = shape.name })
+		end
+		for _, material in ipairs(cfg.materials) do
+			table.insert(sections[2].items, { label = capitalised(material), value = material })
+		end
+		for i in ipairs(cfg.palette) do
+			table.insert(sections[3].items, { label = "paint:" .. i, value = i })
+		end
 	end
 	for _, section in ipairs(sections) do
 		local first = #out + 1
 		y = grid(out, screen, section.kind, section.items, section.columns, section.height, y + HEADING_HEIGHT)
-		out[first].heading = section.heading
+		if out[first] then
+			out[first].heading = section.heading
+		end
 	end
 	return out
 end
@@ -195,11 +257,93 @@ local function remove(screen, x, y)
 	end
 end
 
+local function setTyping(screen, on)
+	if screen.typingName ~= on then
+		screen.typingName = on
+		love.keyboard.setTextInput(on)
+	end
+end
+
+-- Starts editing `draft` as design `id` (nil for a new design) named `name`.
+-- Undo never reaches back into what was being edited before.
+local function startEditing(screen, draft, id, name)
+	screen.draft = draft
+	screen.designId = id
+	screen.name = name
+	screen.history = History.new()
+	screen.browsing = false
+	changed(screen)
+end
+
+-- Saves the draft as the next version of its design (or a new design),
+-- unless Library.canSave refuses it. Never checks what it would cost.
+local function save(screen)
+	local ok, reason = Library.canSave(screen.draft)
+	if not ok then
+		screen.message = SAVE_REFUSALS[reason]
+		return
+	end
+	local name = screen.name ~= "" and screen.name or DEFAULT_NAME
+	local design, n = Library.save(screen.library, screen.designId, name, screen.draft)
+	local written, err = DesignStore.write(screen.config.designs.dir, design)
+	if not written then
+		screen.message = "Could not save: " .. tostring(err)
+		return
+	end
+	screen.designId, screen.name = design.id, design.name
+	screen.message = string.format("Saved %s (version %d).", design.name, n)
+end
+
+-- Opens the latest version of library design `id` into the builder.
+local function open(screen, id)
+	local design = Library.design(screen.library, id)
+	local n = #design.versions
+	startEditing(screen, Library.toDraft(design.versions[n]), design.id, design.name)
+	screen.message = string.format("Opened %s (version %d).", design.name, n)
+end
+
 local function press(screen, b)
 	if b.kind == "resize" then
 		resize(screen, b)
+	elseif b.kind == "name" then
+		setTyping(screen, true)
+	elseif b.kind == "save" then
+		save(screen)
+	elseif b.kind == "new" then
+		startEditing(screen, Draft.new(), nil, "")
+		screen.message = nil
+	elseif b.kind == "open" then
+		screen.browsing = not screen.browsing
+	elseif b.kind == "design" then
+		open(screen, b.value)
 	else
 		screen.held[b.kind] = b.value
+	end
+end
+
+-- Whether typed text and keys go to the design's name.
+function BuilderScreen.typing(screen)
+	return screen.typingName
+end
+
+-- The number of UTF-8 characters in `s`.
+local function length(s)
+	return select(2, s:gsub("[^\128-\191]", ""))
+end
+
+function BuilderScreen.textinput(screen, text)
+	if screen.typingName and length(screen.name) + length(text) <= screen.config.designs.maxNameLength then
+		screen.name = screen.name .. text
+	end
+end
+
+-- Keys while typing a name: backspace deletes the last character; Enter or
+-- Esc stops typing. Every other key is text, never a builder command.
+local function typingKey(screen, key)
+	if key == "backspace" then
+		screen.name = screen.name:match("^(.-)[^\128-\191]?[\128-\191]*$")
+	elseif key == "return" or key == "kpenter" or key == "escape" then
+		setTyping(screen, false)
 	end
 end
 
@@ -209,7 +353,9 @@ local function modifier(name)
 end
 
 function BuilderScreen.keypressed(screen, key)
-	if key == "r" then
+	if screen.typingName then
+		typingKey(screen, key)
+	elseif key == "r" then
 		screen.held.rotation = (screen.held.rotation + 1) % 4
 	elseif key == "z" and modifier("ctrl") then
 		local step = modifier("shift") and History.redo or History.undo
@@ -223,6 +369,7 @@ end
 function BuilderScreen.mousepressed(screen, x, y, button)
 	if button == 1 then
 		local b = buttonAt(screen, x, y)
+		setTyping(screen, b ~= nil and b.kind == "name")
 		if b then
 			press(screen, b)
 		elseif modifier("shift") then

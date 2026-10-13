@@ -21,6 +21,7 @@ Complexity: 6 (design 2, scope 2, tests 0, hazards 2)
 - [ ] Placing a stone brick visibly raises health and lowers productivity in the sidebar.
 - [ ] Cost shows red where the inventory is short.
 - [ ] Each invalid design shows the specific rule it breaks.
+- [ ] Save in the builder is refused while the draft breaks a rule (slice 09 built save before validation existed and only requires at least one brick).
 
 ## Blocked by
 7

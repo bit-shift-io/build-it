@@ -49,6 +49,10 @@ function love.keypressed(key)
 	Flow.keypressed(App.flow, key)
 end
 
+function love.textinput(text)
+	Flow.textinput(App.flow, text)
+end
+
 function love.mousepressed(x, y, button)
 	Flow.mousepressed(App.flow, x, y, button)
 end

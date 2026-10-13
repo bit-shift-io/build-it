@@ -22,6 +22,8 @@ local defaultTestFiles = {
 	"tests/unit/history_test.lua",
 	"tests/unit/inventory_test.lua",
 	"tests/unit/harvestable_test.lua",
+	"tests/unit/design_codec_test.lua",
+	"tests/unit/design_library_test.lua",
 }
 
 local tests = {}

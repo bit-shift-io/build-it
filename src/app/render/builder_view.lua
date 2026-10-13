@@ -28,6 +28,8 @@ local BUTTON_COLOR = { 0.24, 0.26, 0.3, 1 }
 local TEXT_COLOR = { 0.92, 0.92, 0.92, 1 }
 local WARNING_COLOR = { 1, 0.6, 0.4, 1 }
 local SELECTED_COLOR = { 1, 0.85, 0.3, 1 }
+local FIELD_COLOR = { 0.08, 0.09, 0.1, 1 }
+local PLACEHOLDER_COLOR = { 0.55, 0.55, 0.55, 1 }
 
 local shader = nil
 -- Colour and depth targets the size of the window, remade when it resizes.
@@ -141,9 +143,31 @@ function BuilderView.draw(screen, view, ghost)
 	love.graphics.pop()
 end
 
--- Whether sidebar button `b` is the held brick's current choice.
+-- Whether sidebar button `b` is on: the held brick's current choice, the
+-- name field while typing, Open while browsing, or the design being edited.
 local function selected(screen, b)
-	return b.kind ~= "resize" and screen.held[b.kind] == b.value
+	if b.kind == "name" then
+		return screen.typingName
+	elseif b.kind == "open" then
+		return screen.browsing
+	elseif b.kind == "design" then
+		return b.value == screen.designId
+	end
+	return screen.held[b.kind] ~= nil and screen.held[b.kind] == b.value
+end
+
+-- The name field: the typed name, a caret while typing, or a placeholder.
+local function drawNameField(screen, b, font)
+	love.graphics.setColor(FIELD_COLOR)
+	love.graphics.rectangle("fill", b.x, b.y, b.width, b.height, 4, 4)
+	local text, color = screen.name, TEXT_COLOR
+	if screen.typingName then
+		text = text .. "|"
+	elseif text == "" then
+		text, color = "Click to name", PLACEHOLDER_COLOR
+	end
+	love.graphics.setColor(color)
+	love.graphics.printf(text, b.x + 8, b.y + (b.height - font:getHeight()) / 2, b.width - 16, "left")
 end
 
 local HELP = table.concat({
@@ -158,8 +182,10 @@ local HELP = table.concat({
 	"Esc: back",
 }, "\n")
 
--- The sidebar: the baseplate size and its resize buttons, why the last
--- resize was refused, and the held brick's shape, material and paint.
+-- The sidebar: the baseplate size and its resize buttons, the last message
+-- (a refused resize or save, a save, unreadable design files), the design's
+-- name and actions, and the held brick's shape, material and paint -- or,
+-- while browsing, the library's designs.
 function BuilderView.drawSidebar(screen, buttons)
 	local _, h = Screen.dimensions()
 	local d, cfg = screen.draft, screen.cfg
@@ -180,6 +206,8 @@ function BuilderView.drawSidebar(screen, buttons)
 			local c = cfg.palette[b.value]
 			love.graphics.setColor(c[1], c[2], c[3], 1)
 			love.graphics.rectangle("fill", b.x, b.y, b.width, b.height, 3, 3)
+		elseif b.kind == "name" then
+			drawNameField(screen, b, font)
 		else
 			love.graphics.setColor(BUTTON_COLOR)
 			love.graphics.rectangle("fill", b.x, b.y, b.width, b.height, 4, 4)

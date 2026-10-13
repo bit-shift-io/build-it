@@ -87,6 +87,15 @@ local function tap(game, key)
 	FrameStepper.step(game, 1)
 end
 
+-- Typed text as LÖVE delivers it: one textinput event per character, then
+-- one frame. Only text: keys such as "backspace" or "return" are taps.
+local function typeText(game, text)
+	for char in text:gmatch("[^\128-\191][\128-\191]*") do
+		game:textinput(char)
+	end
+	FrameStepper.step(game, 1)
+end
+
 -- A mouse click at screen (x, y) with button (1 left, 2 right): the pointer
 -- moves there, then presses and releases without moving.
 local function click(game, button, x, y)
@@ -117,6 +126,7 @@ return {
 	holdFor = holdFor,
 	runUntil = runUntil,
 	tap = tap,
+	typeText = typeText,
 	click = click,
 	drag = drag,
 }

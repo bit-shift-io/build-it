@@ -1,4 +1,4 @@
-Status: pending
+Status: done
 Complexity: 5 (design 1, scope 2, tests 1, hazards 1)
 
 # Design library and versions
@@ -24,7 +24,7 @@ Complexity: 5 (design 1, scope 2, tests 1, hazards 1)
 - [ ] Each version has 4 baked facings available to the world.
 
 ## Blocked by
-8
+7
 
 ## Gotchas
 - Write files atomically (temp then rename) so a crash mid-save never corrupts the library.
