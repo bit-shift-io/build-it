@@ -17,7 +17,9 @@ local PropCache = {}
 
 local PADDING = 2 -- clear pixels around each sprite, so filtering never bleeds
 
--- kinds: { [name] = <Registry kind> } (normally Registry.KINDS).
+-- kinds: { [name] = <Registry kind> } (normally Registry.KINDS, or
+-- { character = Registry.CHARACTER } for the character's frames, which share
+-- the cache directory). A kind's variant count is Registry.variants.
 -- cache.baked lists every "<kind>@<scale>" atlas this cache had to bake.
 function PropCache.new(kinds, config)
 	return { kinds = kinds, config = config, dir = config.props.cacheDir, atlases = {}, baked = {} }
@@ -28,7 +30,7 @@ local function baseName(def, scale)
 end
 
 local function spriteCount(cache, def)
-	return cache.config.props.variants * def.stages
+	return Registry.variants(def, cache.config) * def.stages
 end
 
 local function newSprite(image, atlasW, atlasH, s)
@@ -116,7 +118,7 @@ local function bake(cache, def, scale)
 	local entries, baked = {}, {}
 	local x, y, shelfHeight, atlasW = PADDING, PADDING, 0, 0
 	for stage = 1, def.stages do
-		for variant = 1, config.props.variants do
+		for variant = 1, Registry.variants(def, config) do
 			local sprite = Baker.bake(Registry.model(def, variant, stage, config), "N", config, scale)
 			local f = sprite.frame
 			entries[#entries + 1] = {

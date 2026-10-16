@@ -7,6 +7,7 @@
 local World = require("src.game.world")
 local Building = require("src.game.buildings.building")
 local Cost = require("src.game.builder.cost")
+local Bricks = require("src.game.builder.bricks")
 local Inventory = require("src.game.components.inventory")
 
 local Placement = {}
@@ -28,33 +29,19 @@ end
 local CLOCKWISE = { N = "E", E = "S", S = "W", W = "N" }
 local STEP = { N = { 0, -1 }, E = { 1, 0 }, S = { 0, 1 }, W = { -1, 0 } }
 
--- The footprint edge a ground-level brick touches, or nil. A brick in a
--- corner touches two edges; the north or south one wins.
-local function edgeOf(b, widthStuds, depthStuds)
-	if b.y == 0 then
-		return "N"
-	elseif b.y + b.depth == depthStuds then
-		return "S"
-	elseif b.x == 0 then
-		return "W"
-	elseif b.x + b.width == widthStuds then
-		return "E"
-	end
-	return nil
-end
-
 -- The ports of `version` turned to `facing`, with its footprint's
 -- north-west tile on world tile (tileX, tileY), in brick order:
 --   { kind = "input"|"output", side = <facing of the edge>, x, y }
 -- A port is a brick carrying `port` ("input" or "output") at ground level
--- (z = 0) on the footprint edge. It faces the tile just outside that edge,
+-- (z = 0) on the footprint edge (Bricks.edge, which also settles a corner
+-- port's edge). It faces the tile just outside that edge,
 -- beside the footprint tile under the brick's centre. cfg is
 -- config.builder.
 function Placement.ports(version, facing, tileX, tileY, cfg)
 	local studs = cfg.studsPerTile
 	local ports = {}
 	for _, b in ipairs(version.bricks) do
-		local side = b.port and b.z == 0 and edgeOf(b, version.width * studs, version.depth * studs)
+		local side = b.port and Bricks.edge(b, version, cfg)
 		if side then
 			local x = math.floor((b.x + b.width / 2) / studs)
 			local y = math.floor((b.y + b.depth / 2) / studs)
@@ -134,7 +121,7 @@ function Placement.place(ctx, character, request)
 	local ports = Placement.ports(version, request.facing, request.tileX, request.tileY, ctx.config.builder)
 	Inventory.spend(character.inventory, Cost.of(version, ctx.config))
 	local pool = ctx.pools.buildings
-	local building = Building.new(#pool + 1, request, width, depth, ports)
+	local building = Building.new(#pool + 1, request, width, depth, ports, ctx.config)
 	table.insert(pool, building)
 	World.addBuilding(ctx.world, building)
 	return building

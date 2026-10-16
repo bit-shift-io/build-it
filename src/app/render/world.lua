@@ -75,6 +75,7 @@ function WorldRender.draw(ctx, zoom)
 	BuildingsRender.addDraws(draws, ctx, scale)
 	BuildingsRender.drawPorts(ctx, p)
 	drawSprites(draws, p)
+	BuildingsRender.drawStatus(ctx, p)
 end
 
 return WorldRender

@@ -3,7 +3,10 @@
 -- order").
 local Mover = require("src.game.components.mover")
 local Harvestable = require("src.game.components.harvestable")
+local Animator = require("src.game.components.animator")
 local World = require("src.game.world")
+local Ports = require("src.game.components.ports")
+local Aura = require("src.game.components.aura")
 
 local CharacterSystem = {}
 
@@ -43,10 +46,33 @@ local function harvestTarget(c, intent, ctx)
 	return best
 end
 
--- Hand-harvests while intent.harvest is set; progress resets when the work
--- stops or the target changes.
-local function harvest(c, intent, ctx)
-	local node = intent.harvest and harvestTarget(c, intent, ctx)
+-- The output port whose tile character `c` stands on, or nil.
+function CharacterSystem.outputPortUnder(c, ctx)
+	local tile = ctx.config.tileSize
+	local port = World.portAt(ctx.world, math.floor(c.x / tile), math.floor(c.y / tile))
+	return port and port.kind == "output" and port or nil
+end
+
+-- The port (either kind) whose tile character `c` stands on, or nil.
+local function portUnder(c, ctx)
+	local tile = ctx.config.tileSize
+	return World.portAt(ctx.world, math.floor(c.x / tile), math.floor(c.y / tile))
+end
+
+-- While intent.harvest is set: on an output port tile, collects its buffer;
+-- on an input port tile, delivers what the building consumes;
+-- elsewhere hand-harvests, progress resetting when the work stops or the
+-- target changes.
+local function harvest(c, intent, ctx, aura)
+	local port = intent.harvest and portUnder(c, ctx)
+	if port and port.kind == "output" then
+		Ports.collect(port, c.inventory)
+	elseif port and port.kind == "input" then
+		Ports.deliver(port, port.building, c.inventory)
+	else
+		port = nil
+	end
+	local node = intent.harvest and not port and harvestTarget(c, intent, ctx)
 	if not node then
 		c.harvester.progress = 0
 		c.harvester.node = nil
@@ -56,14 +82,20 @@ local function harvest(c, intent, ctx)
 		c.harvester.progress = 0
 		c.harvester.node = node
 	end
-	Harvestable.work(c.harvester, node, ctx.dt, c.inventory, ctx.config)
+	Harvestable.work(c.harvester, node, ctx.dt * (1 + aura.harvestRate), c.inventory, ctx.config)
 end
 
 function CharacterSystem.update(ctx)
 	for _, c in ipairs(ctx.pools.characters) do
 		local intent = ctx.intents[c.player] or NO_INTENT
+		local fromX, fromY = c.x, c.y
+		local aura = Aura.at(ctx, c)
+		local baseSpeed = c.mover.speed
+		c.mover.speed = baseSpeed * (1 + aura.walkSpeed)
 		Mover.apply(c, intent, ctx)
-		harvest(c, intent, ctx)
+		c.mover.speed = baseSpeed
+		Animator.update(c.animator, c.x - fromX, c.y - fromY, ctx.config.character)
+		harvest(c, intent, ctx, aura)
 	end
 end
 

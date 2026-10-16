@@ -23,9 +23,33 @@ function GameHarness.startSession(world, opts)
 
 	local config = opts.config or Config
 	local ctx = Session.new(world, config, opts.seed or DEFAULT_SEED)
-	local flow = Flow.new(ctx, config)
+	return GameHarness.wrap(Flow.new(ctx, config), opts)
+end
 
-	local game = { ctx = ctx, flow = flow, camera = flow.world.camera }
+-- Boots the app as src/app/main.lua does: on the title screen (Continue /
+-- New game) over love.filesystem's save directory. game.ctx and
+-- game.camera follow the session once one starts. opts.config, opts.real
+-- as for startSession.
+function GameHarness.launch(opts)
+	opts = opts or {}
+	return GameHarness.wrap(Flow.launch(opts.config or Config), opts)
+end
+
+-- The game object over `flow`: callbacks routed through Flow.
+function GameHarness.wrap(flow, opts)
+	local game = setmetatable({ flow = flow }, {
+		__index = function(_, key)
+			if key == "ctx" then
+				return flow.ctx
+			elseif key == "camera" then
+				return flow.world and flow.world.camera
+			end
+		end,
+	})
+
+	function game:quit()
+		Flow.quit(flow)
+	end
 
 	-- One fixed step, as src/app/main.lua runs per accumulated 1/60 s.
 	function game:update(dt)

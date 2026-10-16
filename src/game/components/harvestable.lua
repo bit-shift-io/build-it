@@ -8,7 +8,7 @@ local Inventory = require("src.game.components.inventory")
 local Harvestable = {}
 
 function Harvestable.canHarvest(node)
-	return node.amount > 0 and not node.dead
+	return node.amount > 0 and not node.dead and not node.growing
 end
 
 -- The stage for `amount` left of `max`: one past each stageAt threshold the
@@ -24,8 +24,8 @@ local function stageFor(def, amount, max)
 end
 
 -- Takes one item out of the node: lowers amount, steps the stage, marks a
--- depleted node dead. Returns the item name.
-local function take(node, config)
+-- depleted node dead. Returns the item name. Check canHarvest first.
+function Harvestable.take(node, config)
 	local def = config.nodes[node.kind]
 	node.amount = node.amount - 1
 	node.stage = stageFor(def, node.amount, def.amount)
@@ -45,7 +45,7 @@ function Harvestable.work(harvester, node, dt, inventory, config)
 			harvester.progress = 0
 			return
 		end
-		Inventory.add(inventory, take(node, config), 1)
+		Inventory.add(inventory, Harvestable.take(node, config), 1)
 	end
 end
 

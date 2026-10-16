@@ -4,7 +4,11 @@
 -- right-click removes the brick under it; right-drag orbits; the wheel
 -- zooms. R turns the held brick. Ctrl+Z undoes and Ctrl+Shift+Z redoes
 -- every draft change. Sidebar buttons resize the baseplate and pick the
--- held brick's shape, material and paint.
+-- held brick's shape (plain, function, port or storage brick), material
+-- and paint. The info panel on the right shows the draft's traits, its cost
+-- against the player's inventory (red where short) and every design rule
+-- it breaks (src/game/builder/validate.lua); save is refused while it
+-- breaks one.
 --
 -- The Design section names the draft (click Name, type, Enter), saves it to
 -- the design library (src/app/design_store.lua) as a new version of the
@@ -18,6 +22,10 @@ local Draft = require("src.game.builder.draft")
 local Pick = require("src.game.builder.pick")
 local History = require("src.game.builder.history")
 local Library = require("src.game.designs.library")
+local Cost = require("src.game.builder.cost")
+local Traits = require("src.game.builder.traits")
+local Validate = require("src.game.builder.validate")
+local Inventory = require("src.game.components.inventory")
 local DesignStore = require("src.app.design_store")
 local BuilderCamera = require("src.app.builder_camera")
 local BuilderView = require("src.app.render.builder_view")
@@ -35,7 +43,7 @@ local MESSAGE_HEIGHT = 40
 -- Room above each picker section for its heading.
 local HEADING_HEIGHT = 20
 local SHAPE_COLUMNS, SHAPE_HEIGHT = 3, 28
-local SWATCH_COLUMNS, SWATCH_HEIGHT = 4, 24
+local SWATCH_COLUMNS, SWATCH_HEIGHT = 6, 24
 local DESIGN_ROW_HEIGHT = 28
 local DESIGN_LIST_HEIGHT = 24
 
@@ -48,10 +56,19 @@ local REFUSALS = {
 	bricks = "Bricks sit outside that size.",
 }
 
--- Shown when a save is refused, keyed by Library.canSave's reason.
-local SAVE_REFUSALS = {
-	empty = "Place a brick before saving.",
+-- What each design rule a draft breaks says (src/game/builder/validate.lua),
+-- in the info panel and when a save is refused, keyed by the rule's reason.
+BuilderScreen.PROBLEMS = {
+	["no function brick"] = "Add a saw, pickaxe, planter or saw bench.",
+	["no output port"] = "Add an output port.",
+	["port off edge"] = "Ports go on the baseplate's edge, at ground level.",
+	["saw bench without input"] = "A saw bench needs an input port.",
 }
+
+-- Shown when a save is refused, keyed by Library.canSave's reason.
+local SAVE_REFUSALS = setmetatable({
+	empty = "Place a brick before saving.",
+}, { __index = BuilderScreen.PROBLEMS })
 
 local function problemsMessage(problems)
 	if #problems == 0 then
@@ -61,14 +78,17 @@ local function problemsMessage(problems)
 end
 
 -- library: the design library (read once per launch by src/app/flow.lua);
--- problems lists its files that could not be read ({ name, reason }).
-function BuilderScreen.new(config, library, problems)
+-- problems lists its files that could not be read ({ name, reason });
+-- inventory is the player's (src/game/components/inventory.lua), read live
+-- to show what the draft's cost is short of. The builder never spends it.
+function BuilderScreen.new(config, library, problems, inventory)
 	local cfg = config.builder
 	return {
 		config = config,
 		cfg = cfg,
 		library = library,
 		problems = problems,
+		inventory = inventory,
 		draft = Draft.new(),
 		-- The design the draft was opened from or last saved as (nil for a
 		-- new one), and its name as typed.
@@ -95,11 +115,40 @@ function BuilderScreen.new(config, library, problems)
 	}
 end
 
--- The 3D view's rectangle: the window right of the sidebar.
+-- The 3D view's rectangle: the window between the sidebar and the info
+-- panel.
 function BuilderScreen.viewport(screen)
 	local w, h = Screen.dimensions()
 	local side = screen.cfg.sidebarWidth
-	return { x = side, y = 0, width = w - side, height = h }
+	return { x = side, y = 0, width = w - side - screen.cfg.infoWidth, height = h }
+end
+
+-- The info panel's rectangle, at the window's right edge.
+function BuilderScreen.infoPanel(screen)
+	local w, h = Screen.dimensions()
+	local width = screen.cfg.infoWidth
+	return { x = w - width, y = 0, width = width, height = h }
+end
+
+-- What the info panel shows for the draft, live:
+--   traits   = { productivity, capacity, reach, health } (Traits.of)
+--   cost     = { { item, need, have, short }, ... } by item name; short
+--              when the inventory holds less than the draft needs
+--   problems = the text of each design rule it breaks, in rule order
+function BuilderScreen.info(screen)
+	local cost = {}
+	for item, need in pairs(Cost.of(screen.draft, screen.config)) do
+		local have = Inventory.count(screen.inventory, item)
+		table.insert(cost, { item = item, need = need, have = have, short = have < need })
+	end
+	table.sort(cost, function(a, b)
+		return a.item < b.item
+	end)
+	local problems = {}
+	for i, reason in ipairs(Validate.problems(screen.draft, screen.cfg)) do
+		problems[i] = BuilderScreen.PROBLEMS[reason]
+	end
+	return { traits = Traits.of(screen.draft, screen.config), auras = Traits.auras(screen.draft, screen.config), cost = cost, problems = problems }
 end
 
 -- This frame's camera view (src/app/builder_camera.lua).
@@ -172,19 +221,23 @@ function BuilderScreen.buttons(screen)
 			table.insert(sections[1].items, { label = design.name .. "  v" .. #design.versions, value = design.id })
 		end
 	else
+		local plain = { kind = "shape", heading = "Brick (R turns)", columns = SHAPE_COLUMNS, height = SHAPE_HEIGHT, items = {} }
+		local special = { kind = "shape", heading = "Function bricks", columns = 2, height = SHAPE_HEIGHT, items = {} }
 		sections = {
-			{ kind = "shape", heading = "Brick (R turns)", columns = SHAPE_COLUMNS, height = SHAPE_HEIGHT, items = {} },
+			plain,
+			special,
 			{ kind = "material", heading = "Material", columns = 2, height = SHAPE_HEIGHT, items = {} },
 			{ kind = "paint", heading = "Paint (shift-click)", columns = SWATCH_COLUMNS, height = SWATCH_HEIGHT, items = {} },
 		}
 		for _, shape in ipairs(cfg.bricks) do
-			table.insert(sections[1].items, { label = shape.name, value = shape.name })
+			local hasRole = shape.ability or shape.port or shape.storage
+			table.insert(hasRole and special.items or plain.items, { label = shape.label or shape.name, value = shape.name })
 		end
 		for _, material in ipairs(cfg.materials) do
-			table.insert(sections[2].items, { label = capitalised(material), value = material })
+			table.insert(sections[3].items, { label = capitalised(material), value = material })
 		end
 		for i in ipairs(cfg.palette) do
-			table.insert(sections[3].items, { label = "paint:" .. i, value = i })
+			table.insert(sections[4].items, { label = "paint:" .. i, value = i })
 		end
 	end
 	for _, section in ipairs(sections) do
@@ -208,7 +261,7 @@ end
 
 -- What the cursor at (x, y) points at in the draft (Pick.cast), or nil.
 function BuilderScreen.hover(screen, x, y)
-	if x == nil or x < screen.cfg.sidebarWidth then
+	if x == nil or x < screen.cfg.sidebarWidth or x >= BuilderScreen.infoPanel(screen).x then
 		return nil
 	end
 	local origin, dir = BuilderCamera.ray(BuilderScreen.view(screen), x, y)
@@ -277,7 +330,7 @@ end
 -- Saves the draft as the next version of its design (or a new design),
 -- unless Library.canSave refuses it. Never checks what it would cost.
 local function save(screen)
-	local ok, reason = Library.canSave(screen.draft)
+	local ok, reason = Library.canSave(screen.draft, screen.cfg)
 	if not ok then
 		screen.message = SAVE_REFUSALS[reason]
 		return
@@ -415,6 +468,7 @@ function BuilderScreen.draw(screen)
 	end
 	BuilderView.draw(screen, BuilderScreen.view(screen), ghost)
 	BuilderView.drawSidebar(screen, BuilderScreen.buttons(screen))
+	BuilderView.drawInfo(screen, BuilderScreen.infoPanel(screen), BuilderScreen.info(screen))
 end
 
 return BuilderScreen

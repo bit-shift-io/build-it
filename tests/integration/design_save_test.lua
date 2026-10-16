@@ -43,6 +43,20 @@ local function designButton(id)
 	end
 end
 
+-- Makes the draft a valid design (src/game/builder/validate.lua) away from
+-- the studs the tests click: the baseplate grows to 2x1 tiles, and a saw
+-- and an output port go on its east tile. Returns how many bricks it added.
+local EXTRA = 2
+local function makeValid(game, builder)
+	Fake.click(game, 1, button(builder, "Width +"))
+	for _, b in ipairs({ { "Saw", 6.5, 0.5 }, { "Output port", 7, 3.5 } }) do
+		Fake.click(game, 1, button(builder, b[1]))
+		Fake.click(game, 1, pixelOf(builder, b[2], b[3], 0))
+	end
+	Fake.click(game, 1, button(builder, "2x2"))
+	return EXTRA
+end
+
 local function nameDesign(game, builder, name)
 	Fake.click(game, 1, button(builder, "Name"))
 	Fake.typeText(game, name)
@@ -51,6 +65,7 @@ end
 
 test("save, edit, save again, relaunch: the design keeps both versions", function()
 	local game, builder = launch()
+	makeValid(game, builder)
 	Fake.click(game, 1, pixelOf(builder, 2, 2, 0))
 	nameDesign(game, builder, "Hut")
 	Fake.click(game, 1, button(builder, "Save"))
@@ -68,8 +83,8 @@ test("save, edit, save again, relaunch: the design keeps both versions", functio
 	assertEqual(id, design.id)
 	assertEqual("Hut", design.name)
 	assertEqual(2, #design.versions)
-	assertEqual(1, #design.versions[1].bricks, "expected version 1 intact")
-	assertEqual(2, #design.versions[2].bricks)
+	assertEqual(1 + EXTRA, #design.versions[1].bricks, "expected version 1 intact")
+	assertEqual(2 + EXTRA, #design.versions[2].bricks)
 
 	local fromDisk = DesignStore.load(DIR)
 	assertEqual(2, #fromDisk.designs[1].versions)
@@ -88,6 +103,7 @@ end)
 
 test("open a saved design, edit it, save: a new version, the old one intact", function()
 	local game, builder, input = launch()
+	makeValid(game, builder)
 	Fake.click(game, 1, pixelOf(builder, 2, 2, 0))
 	nameDesign(game, builder, "Hut")
 	Fake.click(game, 1, button(builder, "Save"))
@@ -97,6 +113,7 @@ test("open a saved design, edit it, save: a new version, the old one intact", fu
 	Fake.click(game, 1, button(builder, "New"))
 	assertEqual(0, #builder.draft.bricks)
 	assertEqual("", builder.name)
+	makeValid(game, builder)
 	Fake.click(game, 1, pixelOf(builder, 2, 2, 0))
 	Fake.click(game, 1, pixelOf(builder, 2, 2, 1))
 	nameDesign(game, builder, "Tower")
@@ -107,21 +124,21 @@ test("open a saved design, edit it, save: a new version, the old one intact", fu
 	Fake.click(game, 1, button(builder, "Open"))
 	Fake.click(game, 1, button(builder, designButton(id)))
 	assertEqual("Hut", builder.name)
-	assertEqual(1, #builder.draft.bricks)
+	assertEqual(1 + EXTRA, #builder.draft.bricks)
 
 	-- Undo never reaches back past the open into another design.
 	input:press("lctrl")
 	Fake.tap(game, "z")
 	input:release("lctrl")
-	assertEqual(1, #builder.draft.bricks, "expected opening to start a fresh undo history")
+	assertEqual(1 + EXTRA, #builder.draft.bricks, "expected opening to start a fresh undo history")
 
 	Fake.click(game, 1, pixelOf(builder, 2, 2, 1))
 	Fake.click(game, 1, button(builder, "Save"))
 	local design = builder.library.designs[1]
 	assertEqual(id, design.id)
 	assertEqual(2, #design.versions)
-	assertEqual(1, #design.versions[1].bricks)
-	assertEqual(2, #design.versions[2].bricks)
+	assertEqual(1 + EXTRA, #design.versions[1].bricks)
+	assertEqual(2 + EXTRA, #design.versions[2].bricks)
 	assertEqual(1, #builder.library.designs[2].versions, "expected the other design untouched")
 end)
 
@@ -144,7 +161,7 @@ end)
 
 test("a corrupt design file is reported at launch, and the rest still load", function()
 	local game, builder = launch()
-	Fake.click(game, 1, pixelOf(builder, 2, 2, 0))
+	makeValid(game, builder)
 	Fake.click(game, 1, button(builder, "Save"))
 	assert(love.filesystem.write(DIR .. "/d9.design", "build-it-design 1\nbrick x=n:0\n"))
 

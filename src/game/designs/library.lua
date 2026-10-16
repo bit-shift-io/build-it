@@ -10,6 +10,7 @@
 -- so editing a draft never reaches a saved version. The name is a label
 -- only; ids ("d1", "d2", ...) name the files.
 local Codec = require("src.game.designs.codec")
+local Validate = require("src.game.builder.validate")
 
 local Library = {}
 
@@ -78,12 +79,17 @@ function Library.save(lib, id, name, draft)
 end
 
 -- Whether `draft` is a valid design to save: true, or false and why.
--- The one rule set the builder's save path checks; for now a design needs
--- at least one brick ("empty"). Cost never matters: designs save even when
--- unaffordable.
-function Library.canSave(draft)
+-- The one rule set the builder's save path checks: a design needs at least
+-- one brick ("empty"), then keeps every design rule (Validate.problems; the
+-- first broken one is the reason). Cost never matters: designs save even
+-- when unaffordable. cfg is config.builder.
+function Library.canSave(draft, cfg)
 	if #draft.bricks == 0 then
 		return false, "empty"
+	end
+	local problems = Validate.problems(draft, cfg)
+	if problems[1] then
+		return false, problems[1]
 	end
 	return true
 end

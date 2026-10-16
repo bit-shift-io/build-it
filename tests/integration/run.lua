@@ -9,6 +9,11 @@ local defaultTestFiles = {
 	"tests/integration/hand_harvest_test.lua",
 	"tests/integration/design_save_test.lua",
 	"tests/integration/place_building_test.lua",
+	"tests/integration/builder_traits_test.lua",
+	"tests/integration/woodcutter_test.lua",
+	"tests/integration/sawmill_test.lua",
+	"tests/integration/forester_test.lua",
+	"tests/integration/save_load_test.lua",
 }
 
 local tests = {}

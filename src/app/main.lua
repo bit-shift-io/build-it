@@ -2,8 +2,6 @@
 -- main.lua requires; every other app module hangs off it. No game or core
 -- module may require anything from here (docs/ARCHITECTURE.md "Layers").
 -- Every callback goes to src/app/flow.lua, which owns the screens.
-local Session = require("src.game.session")
-local WorldGen = require("src.game.world_gen")
 local Config = require("src.game.config")
 local Flow = require("src.app.flow")
 local Screen = require("src.app.screen")
@@ -12,7 +10,6 @@ local Screen = require("src.app.screen")
 -- must be deterministic for a given seed and input sequence, which a
 -- variable dt cannot guarantee.
 local FIXED_DT = 1 / 60
-local SEED = 1
 
 local App = {
 	flow = nil,
@@ -38,11 +35,23 @@ function love.load(args)
 		-- love.quit, replacing the ones below for the rest of this process.
 		local E2ERunner = require("tests.e2e.run")
 		E2ERunner.start(e2eTestFile, args)
+		-- Scenarios drive input through the harness; real device events
+		-- (a mouse passing over the window) must not reach the absent app flow.
+		love.keypressed, love.textinput, love.mousepressed = nil, nil, nil
+		love.mousereleased, love.mousemoved, love.wheelmoved = nil, nil, nil
 		return
 	end
 
+	for _, a in ipairs(args or {}) do
+		if a == "props" then
+			require("tools.prop_viewer.main").start()
+			love.quit = nil
+			return
+		end
+	end
+
 	love.graphics.setBackgroundColor(Screen.BACKGROUND)
-	App.flow = Flow.new(Session.new(WorldGen.generate(Config, SEED), Config, SEED), Config)
+	App.flow = Flow.launch(Config)
 end
 
 function love.keypressed(key)
@@ -79,6 +88,14 @@ end
 
 function love.draw()
 	Flow.draw(App.flow)
+end
+
+-- Autosaves the running world (src/app/save_store.lua); never blocks quitting.
+function love.quit()
+	if App.flow then
+		Flow.quit(App.flow)
+	end
+	return false
 end
 
 return App

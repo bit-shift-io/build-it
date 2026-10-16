@@ -36,6 +36,14 @@ test("each stage shrinks the tree: full, half-felled, stump", function()
 	end
 end)
 
+test("growth stages: a sapling is smaller than a young tree, which is smaller than a full tree", function()
+	assertEqual(5, Tree.STAGES)
+	for seed = 1, 8 do
+		local sapling, young, full = #tree(seed, 4).cells, #tree(seed, 5).cells, #tree(seed, 1).cells
+		assertTrue(sapling > 0 and sapling < young and young < full, string.format("seed %d: %d, %d, %d cells", seed, sapling, young, full))
+	end
+end)
+
 test("a tree is 16 voxels per tile and stands inside its 1x1 footprint on the ground", function()
 	local Model = require("src.game.blocks.model")
 	for seed = 1, 8 do

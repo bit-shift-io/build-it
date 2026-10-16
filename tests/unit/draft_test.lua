@@ -109,3 +109,19 @@ test("fits answers whether a brick would place there, without placing it", funct
 	assertEqual("overlap", reason)
 	assertEqual(1, #d.bricks)
 end)
+
+test("a tall brick fills every layer it stands in", function()
+	local d = Draft.new()
+	local saw = { shape = "saw", rotation = 0, material = "plank", paint = 1 }
+	local one = { shape = "1x1", rotation = 0, material = "plank", paint = 1 }
+	local b = assert(Draft.place(d, 0, 0, 0, CFG, saw))
+	assertEqual(b, Draft.brickAt(d, 2, 0, 2))
+	assertEqual(nil, Draft.brickAt(d, 2, 0, 3))
+	local _, reason = Draft.place(d, 1, 0, 2, CFG, one)
+	assertEqual("overlap", reason)
+	assertTrue(Draft.place(d, 0, 1, 0, CFG, saw), "beside it fits")
+	assertTrue(Draft.place(d, 1, 0, 3, CFG, one), "on top of it fits")
+	assertTrue(Draft.place(d, 0, 2, 1, CFG, one), "a brick may hang over nothing")
+	local _, high = Draft.place(d, 0, 3, CFG.maxLayers - 2, CFG, saw)
+	assertEqual("too high", high)
+end)

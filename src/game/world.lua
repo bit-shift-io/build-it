@@ -100,6 +100,24 @@ function World.addBuilding(world, building)
 	end
 end
 
+-- Clears a building's footprint and port tiles (the ones still its own).
+function World.removeBuilding(world, building)
+	for y = building.tileY, building.tileY + building.depth - 1 do
+		for x = building.tileX, building.tileX + building.width - 1 do
+			local i = index(world, x, y)
+			if world.buildingAt[i] == building then
+				world.buildingAt[i] = nil
+			end
+		end
+	end
+	for _, port in ipairs(building.ports) do
+		local i = index(world, port.x, port.y)
+		if i and world.portAt[i] == port then
+			world.portAt[i] = nil
+		end
+	end
+end
+
 -- True when nothing may stand on tile (x, y): water, a node or a building.
 -- Port tiles stay open. Tiles off the world are not blocked here; Mover
 -- clamps to the world edge.

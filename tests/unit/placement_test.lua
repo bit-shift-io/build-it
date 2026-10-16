@@ -91,9 +91,10 @@ end)
 
 local Cost = require("src.game.builder.cost")
 
-test("a version costs its baseplate per tile", function()
+test("a version costs its baseplate per tile plus its bricks", function()
 	local cost = Cost.of(asymmetric(), Config)
-	assertEqual(6 * Config.costs.baseplatePerTile.plank, cost.plank)
+	local bricks = 5 * Config.costs.perStud.plank.plank -- five 1x1 plank bricks
+	assertEqual(6 * Config.costs.baseplatePerTile.plank + bricks, cost.plank)
 end)
 
 local Session = require("src.game.session")

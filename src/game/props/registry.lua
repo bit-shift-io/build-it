@@ -7,6 +7,7 @@
 local Rng = require("src.core.rng")
 local Tree = require("src.game.props.tree")
 local Rock = require("src.game.props.rock")
+local Character = require("src.game.props.character")
 
 local Registry = {}
 
@@ -15,15 +16,32 @@ Registry.KINDS = {
 	rock = { kind = "rock", version = Rock.VERSION, stages = Rock.STAGES, generate = Rock.generate },
 }
 
+-- The character (src/game/props/character.lua): baked and cached like a
+-- prop, but never a resource node, so not in KINDS. Its variants are the 8
+-- facing directions and its stages the idle and walk frames. `variants`
+-- overrides config.props.variants.
+Registry.CHARACTER = {
+	kind = "character",
+	version = Character.VERSION,
+	variants = #Character.DIRECTIONS,
+	stages = Character.FRAMES,
+	generate = Character.generate,
+}
+
 -- The seed of one (kind, variant). Each gets its own rng from it, never a
 -- shared stream, so adding a kind or variant leaves every other unchanged.
 function Registry.seed(def, variant, config)
 	return Rng.hash(config.props.seed, def.kind, variant)
 end
 
--- The block model of a kind's variant (1..config.props.variants) at a stage.
+-- The block model of a kind's variant (1..Registry.variants) at a stage.
 function Registry.model(def, variant, stage, config)
-	return def.generate(Rng.new(Registry.seed(def, variant, config)), { stage = stage })
+	return def.generate(Rng.new(Registry.seed(def, variant, config)), { stage = stage, variant = variant })
+end
+
+-- How many variants a kind has: its own count, else config.props.variants.
+function Registry.variants(def, config)
+	return def.variants or config.props.variants
 end
 
 return Registry

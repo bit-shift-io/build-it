@@ -47,7 +47,7 @@ return {
 	-- below which it steps to stage 2, 3, ... A node at 0 is depleted and
 	-- vanishes, freeing its tile.
 	nodes = {
-		tree = { amount = 10, item = "log", stageAt = { 0.6, 0.3 } },
+		tree = { amount = 10, item = "log", stageAt = { 0.6, 0.3 }, growTime = 120 },
 		rock = { amount = 8, item = "stone", stageAt = { 0.6, 0.3 } },
 	},
 
@@ -59,8 +59,62 @@ return {
 	stockpile = { plank = 50, stone = 50 },
 
 	-- What placing a building costs (src/game/builder/cost.lua): items per
-	-- baseplate tile. Placeholder until bricks carry their own costs.
-	costs = { baseplatePerTile = { plank = 2 } },
+	-- baseplate tile, and items per stud of each brick's footprint by its
+	-- material. Function, port and storage bricks add their own `cost`
+	-- (builder.bricks) on top.
+	costs = {
+		baseplatePerTile = { plank = 2 },
+		perStud = { plank = { plank = 1 }, stone = { stone = 1 } },
+	},
+
+	-- What each brick adds to its design's traits (src/game/builder/traits.lua)
+	-- by its material. Productivity shortens cycles, capacity grows buffers
+	-- and storage, reach sets harvest and aura radius, health does nothing yet.
+	traits = {
+		plank = { productivity = 1, capacity = 1, reach = 1, health = 1 },
+		stone = { productivity = -1, capacity = 1, reach = 0, health = 3 },
+	},
+
+	-- Auras (docs/CONTEXT.md "Aura"): what each brick of a material adds to
+	-- its building's aura. Fractions: 0.1 is +10%. walkSpeed scales the
+	-- character's walk speed, harvestRate its hand-harvest speed, while it
+	-- is within the building's reach. Auras of several buildings add up.
+	auras = {
+		plank = { walkSpeed = 0.05, harvestRate = 0 },
+		stone = { walkSpeed = 0, harvestRate = 0.1 },
+	},
+
+	-- Building production (src/game/components/{function_brick,ports,storage}.lua).
+	--   abilities: the node kind each harvesting function brick works.
+	--   harvestCycle: seconds per item for one function brick at
+	--     productivity 0. Each productivity point adds productivityStep to
+	--     its speed (cycle = harvestCycle / speed), never below minSpeed.
+	--   reachBase, reachPerPoint: a building harvests nodes within
+	--     reachBase + floor(reach * reachPerPoint) tiles of its footprint,
+	--     counted in whole tiles in any direction (diagonals count as one),
+	--     so 1 means the ring of tiles touching the footprint.
+	--   bufferSize: items one port buffer holds at capacity 0.
+	--   capacityStep: each capacity point grows buffers and storage by this
+	--     fraction of their base size (rounded down).
+	production = {
+		abilities = { saw = "tree", pickaxe = "rock" },
+		-- planters: the node kind each planter ability plants, one sapling
+		-- per plantCycle seconds (scaled like harvestCycle). A sapling takes
+		-- nodes.<kind>.growTime seconds to grow (first half sapling, then young).
+		planters = { planter = "tree" },
+		plantCycle = 6,
+		harvestCycle = 3,
+		-- recipes: converting function bricks by ability; each cycle (seconds
+		-- at productivity 0, scaled like harvestCycle) takes `input` items
+		-- from input buffers or storage and yields one `output` item.
+		recipes = { sawbench = { input = { log = 2 }, output = "plank", cycle = 4 } },
+		productivityStep = 0.02,
+		minSpeed = 0.25,
+		reachBase = 2,
+		reachPerPoint = 0.25,
+		bufferSize = 4,
+		capacityStep = 0.05,
+	},
 
 	-- Props (src/game/props/): seeded variants per kind, baked once into a
 	-- cache under the save directory (src/app/bake/prop_cache.lua). seed is
@@ -73,9 +127,17 @@ return {
 	-- world. Names are labels of at most maxNameLength characters.
 	designs = { dir = "designs", maxNameLength = 24 },
 
+	-- The one world save slot (src/game/save/codec.lua,
+	-- src/app/save_store.lua): a file in the save directory. seed is the
+	-- world seed a new game starts from.
+	save = { file = "world.save", seed = 1 },
+
 	character = {
 		size = 16, -- placeholder square side, px
 		speed = 160, -- walk speed, px/s
+		-- px walked per walk-cycle frame (src/game/components/animator.lua);
+		-- the 4-frame cycle repeats every 4 * walkFrameDistance px.
+		walkFrameDistance = 10,
 	},
 
 	camera = {
@@ -96,6 +158,18 @@ return {
 		-- The brick palette (src/game/builder/bricks.lua), unturned
 		-- footprints in studs. A slope's `slope` row is the edge it falls
 		-- toward: one stud row of 45-degree slope, the rest full height.
+		--
+		-- Function, port and storage bricks (docs/CONTEXT.md) carry their
+		-- role, copied onto every brick placed: `ability` (what the building
+		-- can do), `port` ("input" | "output") or `storage` (items it
+		-- holds). Each adds its own `cost` (src/game/builder/cost.lua) and
+		-- draws its own model from `layers`: bottom layer first, each a list
+		-- of stud rows north to south, one character per stud west to east:
+		--   "." empty, "#" box in paint and material, "o" box in `accent`,
+		--   "N" "E" "S" "W" a slope in paint looking that way, "n" "e" "s"
+		--   "w" the same in accent. Accent studs have no material.
+		-- A shape without `layers` is one layer of boxes (and its `slope`).
+		-- `label` names the sidebar button (the name when absent).
 		bricks = {
 			{ name = "1x1", width = 1, depth = 1 },
 			{ name = "1x2", width = 2, depth = 1 },
@@ -103,6 +177,76 @@ return {
 			{ name = "2x2", width = 2, depth = 2 },
 			{ name = "2x4", width = 4, depth = 2 },
 			{ name = "slope", width = 2, depth = 2, slope = "S" },
+			{
+				name = "saw",
+				label = "Saw",
+				ability = "saw",
+				width = 3,
+				depth = 1,
+				cost = { stone = 4 },
+				accent = { 0.78, 0.8, 0.82 },
+				layers = { { "###" }, { "ooo" }, { "woe" } },
+			},
+			{
+				name = "pickaxe",
+				label = "Pickaxe",
+				ability = "pickaxe",
+				width = 3,
+				depth = 1,
+				cost = { stone = 4 },
+				accent = { 0.45, 0.47, 0.5 },
+				layers = { { ".#." }, { ".#." }, { "woe" } },
+			},
+			{
+				name = "planter",
+				label = "Planter",
+				ability = "planter",
+				width = 2,
+				depth = 2,
+				cost = { plank = 4 },
+				accent = { 0.3, 0.7, 0.25 },
+				layers = { { "##", "##" }, { "o.", ".o" } },
+			},
+			{
+				name = "sawbench",
+				label = "Saw bench",
+				ability = "sawbench",
+				width = 4,
+				depth = 2,
+				cost = { plank = 4, stone = 2 },
+				accent = { 0.78, 0.8, 0.82 },
+				layers = { { "#..#", "#..#" }, { "####", "####" }, { ".we.", "...." } },
+			},
+			{
+				name = "input",
+				label = "Input port",
+				port = "input",
+				width = 2,
+				depth = 1,
+				cost = { plank = 1 },
+				accent = { 0.25, 0.5, 0.95 },
+				layers = { { "oo" } },
+			},
+			{
+				name = "output",
+				label = "Output port",
+				port = "output",
+				width = 2,
+				depth = 1,
+				cost = { plank = 1 },
+				accent = { 0.95, 0.55, 0.15 },
+				layers = { { "oo" } },
+			},
+			{
+				name = "storage",
+				label = "Storage",
+				storage = 8,
+				width = 2,
+				depth = 2,
+				cost = { plank = 4 },
+				accent = { 0.3, 0.2, 0.12 },
+				layers = { { "##", "##" }, { "oo", "oo" } },
+			},
 		},
 		materials = { "plank", "stone" },
 		-- Paint colours, free and cosmetic; bricks store an index into it.
@@ -141,6 +285,8 @@ return {
 		-- release is a click (remove a brick), not an orbit drag.
 		clickSlop = 4,
 		sidebarWidth = 200,
+		-- The info panel right of the view: traits, cost, design problems.
+		infoWidth = 200,
 		colors = {
 			baseplate = { 0.3, 0.55, 0.3 },
 			baseplateStud = { 0.34, 0.6, 0.34 },

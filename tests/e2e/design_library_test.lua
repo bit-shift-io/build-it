@@ -70,9 +70,16 @@ test("a saved design survives a relaunch and bakes 4 facings per version", funct
 
 	local game, builder = launch(config)
 	clickButton(game, builder, "Width +")
+	-- A valid design (src/game/builder/validate.lua): a saw on the north
+	-- edge and an output port on the south edge, both clear of the hall.
+	clickButton(game, builder, "Saw")
+	Fake.click(game, 1, pixelOf(builder, 1.5, 0.5, 0))
+	clickButton(game, builder, "Output port")
+	Fake.click(game, 1, pixelOf(builder, 7, 3.5, 0))
 	clickButton(game, builder, "2x4")
 	clickButton(game, builder, "paint:8")
 	Fake.click(game, 1, pixelOf(builder, 4, 2, 0))
+	assertEqual(3, #builder.draft.bricks)
 	clickButton(game, builder, "Name")
 	Fake.typeText(game, "Blue hall")
 	Fake.tap(game, "return")
@@ -96,7 +103,7 @@ test("a saved design survives a relaunch and bakes 4 facings per version", funct
 	game:mousemoved(5, 5, 0, 0)
 	Capture.capture("builder_open_list")
 	clickButton(game, builder, design.id)
-	assertEqual(2, #builder.draft.bricks)
+	assertEqual(4, #builder.draft.bricks)
 	game:mousemoved(5, 5, 0, 0)
 	Capture.capture("builder_opened")
 

@@ -19,7 +19,7 @@ local BASEPLATE_THICKNESS = 0.5
 local AXES = { { "z", 3 }, { "x", 1 }, { "y", 2 } }
 
 local function brickBox(b)
-	return { x = b.x, y = b.y, z = b.z, maxX = b.x + b.width, maxY = b.y + b.depth, maxZ = b.z + 1, brick = b }
+	return { x = b.x, y = b.y, z = b.z, maxX = b.x + b.width, maxY = b.y + b.depth, maxZ = b.z + (b.height or 1), brick = b }
 end
 
 local function baseplateBox(draft, cfg)
@@ -66,7 +66,8 @@ local function placement(draft, box, axis, sign, point, cfg, bw, bd)
 	local place = {
 		x = math.floor(point[1] - bw / 2 + 0.5),
 		y = math.floor(point[2] - bd / 2 + 0.5),
-		z = math.max(0, box.z),
+		-- Beside a brick: the layer hit, within the brick's height.
+		z = math.max(0, clamp(math.floor(point[3]), box.z, box.maxZ - 1)),
 	}
 	if axis == "z" then
 		-- On top: keep the brick on the baseplate, even when the cursor is

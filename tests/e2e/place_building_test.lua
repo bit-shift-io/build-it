@@ -71,7 +71,7 @@ test("a design places in all 4 facings with its port tiles marked, and the ghost
 	local game = GameHarness.startSession(world, { real = true, config = config })
 	local c = game.ctx.pools.characters[1]
 	local screen = game.flow.world
-	c.inventory.counts.plank = 200 -- 5 placements' worth and more
+	c.inventory.counts.plank = 1000 -- 5 placements of 110 planks and more
 
 	Fake.tap(game, "1")
 	-- One building per facing in a row south of the character (the test

@@ -6,6 +6,7 @@
 local Model = require("src.game.blocks.model")
 local Mesher = require("src.game.blocks.mesher")
 local Draft = require("src.game.builder.draft")
+local Traits = require("src.game.builder.traits")
 local BuilderCamera = require("src.app.builder_camera")
 local Baker = require("src.app.bake.baker")
 local Screen = require("src.app.screen")
@@ -30,6 +31,9 @@ local WARNING_COLOR = { 1, 0.6, 0.4, 1 }
 local SELECTED_COLOR = { 1, 0.85, 0.3, 1 }
 local FIELD_COLOR = { 0.08, 0.09, 0.1, 1 }
 local PLACEHOLDER_COLOR = { 0.55, 0.55, 0.55, 1 }
+local HEADING_COLOR = { 0.7, 0.75, 0.85, 1 }
+local SHORT_COLOR = { 1, 0.3, 0.3, 1 }
+local OK_COLOR = { 0.5, 0.85, 0.5, 1 }
 
 local shader = nil
 -- Colour and depth targets the size of the window, remade when it resizes.
@@ -184,8 +188,8 @@ local HELP = table.concat({
 
 -- The sidebar: the baseplate size and its resize buttons, the last message
 -- (a refused resize or save, a save, unreadable design files), the design's
--- name and actions, and the held brick's shape, material and paint -- or,
--- while browsing, the library's designs.
+-- name and actions, and the held brick's shape (plain or function brick),
+-- material and paint -- or, while browsing, the library's designs.
 function BuilderView.drawSidebar(screen, buttons)
 	local _, h = Screen.dimensions()
 	local d, cfg = screen.draft, screen.cfg
@@ -227,8 +231,69 @@ function BuilderView.drawSidebar(screen, buttons)
 		love.graphics.setColor(WARNING_COLOR)
 		love.graphics.printf(screen.message, 16, lastResize.y + lastResize.height + 8, cfg.sidebarWidth - 32)
 	end
+	love.graphics.pop()
+end
+
+local function capitalised(s)
+	return s:sub(1, 1):upper() .. s:sub(2)
+end
+
+-- Prints `text` wrapped to the panel at y in `color`; returns the y below.
+local function paragraph(text, x, y, width, color, font)
+	love.graphics.setColor(color)
+	love.graphics.printf(text, x, y, width)
+	local _, lines = font:getWrap(text, width)
+	return y + #lines * font:getHeight()
+end
+
+-- The info panel at the window's right edge (`panel`, a rectangle):
+-- `info` (BuilderScreen.info) as the draft's trait totals, its cost against
+-- the inventory -- red where short -- and the design rules it breaks; the
+-- controls at the bottom.
+function BuilderView.drawInfo(screen, panel, info)
+	local font = love.graphics.getFont()
+	local line = font:getHeight()
+	local x, width = panel.x + 16, panel.width - 32
+	love.graphics.push("all")
+	love.graphics.setColor(SIDEBAR_BACKGROUND)
+	love.graphics.rectangle("fill", panel.x, panel.y, panel.width, panel.height)
+
+	local y = 16
+	y = paragraph("Traits", x, y, width, HEADING_COLOR, font) + 4
+	for _, name in ipairs(Traits.NAMES) do
+		love.graphics.setColor(TEXT_COLOR)
+		love.graphics.print(capitalised(name), x, y)
+		love.graphics.printf(tostring(info.traits[name]), x, y, width, "right")
+		y = y + line
+	end
+
+	y = paragraph("Auras", x, y + 12, width, HEADING_COLOR, font) + 4
+	for _, name in ipairs(Traits.AURA_NAMES) do
+		love.graphics.setColor(TEXT_COLOR)
+		love.graphics.print(name == "walkSpeed" and "Walk speed" or "Harvest rate", x, y)
+		love.graphics.printf(string.format("+%d%%", math.floor(info.auras[name] * 100 + 0.5)), x, y, width, "right")
+		y = y + line
+	end
+
+	y = paragraph("Cost (need / have)", x, y + 12, width, HEADING_COLOR, font) + 4
+	for _, row in ipairs(info.cost) do
+		love.graphics.setColor(row.short and SHORT_COLOR or TEXT_COLOR)
+		love.graphics.print(capitalised(row.item), x, y)
+		love.graphics.printf(string.format("%d / %d", row.need, row.have), x, y, width, "right")
+		y = y + line
+	end
+
+	y = paragraph("Problems", x, y + 12, width, HEADING_COLOR, font) + 4
+	if #info.problems == 0 then
+		paragraph("None: ready to save.", x, y, width, OK_COLOR, font)
+	end
+	for _, text in ipairs(info.problems) do
+		y = paragraph(text, x, y, width, WARNING_COLOR, font) + 4
+	end
+
+	local _, h = Screen.dimensions()
 	love.graphics.setColor(TEXT_COLOR)
-	love.graphics.printf(HELP, 16, h - 9 * font:getHeight() - 16, cfg.sidebarWidth - 32)
+	love.graphics.printf(HELP, x, h - 9 * line - 16, width)
 	love.graphics.pop()
 end
 

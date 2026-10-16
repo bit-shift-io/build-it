@@ -7,6 +7,7 @@
 -- or a right click leaves the mode. While placing, left clicks never
 -- harvest.
 local Session = require("src.game.session")
+local CharacterSystem = require("src.game.systems.character_system")
 local Placement = require("src.game.buildings.placement")
 local Model = require("src.game.blocks.model")
 local Cost = require("src.game.builder.cost")
@@ -16,6 +17,7 @@ local Screen = require("src.app.screen")
 local WorldRender = require("src.app.render.world")
 local CharacterRender = require("src.app.render.character")
 local GhostRender = require("src.app.render.ghost")
+local Aura = require("src.game.components.aura")
 local Hud = require("src.app.render.hud")
 local Projection = require("src.game.projection")
 
@@ -188,12 +190,12 @@ function WorldScreen.draw(screen)
 	local ghost = WorldScreen.ghost(screen)
 	Camera.attach(screen.camera, Screen.dimensions())
 	WorldRender.draw(screen.ctx, screen.camera.zoom)
-	CharacterRender.draw(screen.ctx)
+	CharacterRender.draw(screen.ctx, screen.camera.zoom)
 	if ghost then
 		GhostRender.draw(screen.ctx, ghost, screen.camera.zoom)
 	end
 	Camera.detach()
-	Hud.draw(screen.player.inventory)
+	Hud.draw(screen.player.inventory, CharacterSystem.outputPortUnder(screen.player, screen.ctx), Aura.at(screen.ctx, screen.player))
 	GhostRender.drawPanel(screen.library, screen.placing, WorldScreen.cost(screen), WorldScreen.status(screen))
 end
 

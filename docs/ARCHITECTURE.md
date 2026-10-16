@@ -81,7 +81,7 @@ end
 
 ## Rules
 
-- No `love.*` outside `src/app/`. Dev-only `tests/` may use it; it is never shipped.
+- No `love.*` outside `src/app/`. Dev-only `tests/` and `tools/` may use it; they are never shipped.
 - No classes or inheritance. Plain tables and function modules.
 - No component self-updates. Systems call components.
 - No removal outside the despawn sweep.

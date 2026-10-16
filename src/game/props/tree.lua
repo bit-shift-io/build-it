@@ -3,7 +3,8 @@
 -- deterministic -- no `love.*`, every random choice comes from `rng`.
 --
 -- params.stage: 1 full tree, 2 half-felled (trunk cut halfway, crown gone),
--- 3 stump. Every stage draws the same random choices, so a variant's stump
+-- 3 stump, 4 sapling, 5 young tree (the growth stages, smaller than a full
+-- tree, same palette and bark). Every stage draws the same random choices, so a variant's stump
 -- matches its tree.
 --
 -- Shape numbers live here, not in config: they are the generator's design,
@@ -13,8 +14,8 @@ local Model = require("src.game.blocks.model")
 local Tree = {}
 
 -- Bump on any change to the output: it invalidates baked tree sprites.
-Tree.VERSION = 1
-Tree.STAGES = 3
+Tree.VERSION = 2
+Tree.STAGES = 5
 
 local SIZE = 16 -- voxels per tile side
 local STUMP_HEIGHT = 2
@@ -104,6 +105,34 @@ local function coneCrown(grid, rng, palette, base, top)
 	end
 end
 
+-- A sapling (stage 4: a thin short trunk, a small leaf tuft) or a young tree
+-- (stage 5: a half-height trunk under a modest crown).
+function Tree.growing(rng, stage, trunk, bark, palette, trunkTop)
+	local grid = newGrid()
+	local sapling = stage == 4
+	local height = sapling and 3 or math.max(4, math.floor(trunkTop / 2))
+	local thickness = sapling and 1 or trunk.thickness
+	for z = 0, height - 1 do
+		for y = trunk.y, trunk.y + thickness - 1 do
+			for x = trunk.x, trunk.x + thickness - 1 do
+				grid.put(x, y, z, bark, "trunk")
+			end
+		end
+	end
+	local cx, cy = trunk.x + thickness / 2, trunk.y + thickness / 2
+	if sapling then
+		ellipsoid(grid, rng, palette, cx, cy, height + 0.5, 2.5, 2)
+	else
+		ellipsoid(grid, rng, palette, cx, cy, height + 1, 4, 3)
+	end
+	local model = Model.new(SIZE, 1, 1)
+	for _, k in ipairs(grid.order) do
+		local c = grid.cells[k]
+		Model.addCell(model, { x = c.x, y = c.y, z = c.z, color = c.color })
+	end
+	return model
+end
+
 function Tree.generate(rng, params)
 	local stage = params.stage or 1
 	local grid = newGrid()
@@ -123,6 +152,10 @@ function Tree.generate(rng, params)
 	else
 		trunkTop = rng:int(9, 14)
 		roundCrown(grid, rng, palette, trunkTop)
+	end
+
+	if stage >= 4 then
+		return Tree.growing(rng, stage, { x = tx0, y = ty0, thickness = thickness }, bark, palette, trunkTop)
 	end
 
 	-- Stages cut the trunk and drop the crown.

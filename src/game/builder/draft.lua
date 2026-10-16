@@ -7,10 +7,13 @@
 -- (x east, y south, z up) in studs, with z counting brick layers one stud
 -- tall; the baseplate's north-west top corner is the origin.
 --   brick = { x, y, z, width, depth, -- studs; occupies x .. x+width-1
---             shape, rotation, material, paint }
+--             height, -- layers; occupies z .. z+height-1 (1 when absent)
+--             shape, rotation, material, paint,
+--             ability, port, storage } -- the shape's role, if any
 -- shape names one of cfg.bricks, rotation counts quarter turns clockwise
 -- (src/game/builder/bricks.lua), width/depth are the turned footprint, and
--- paint indexes cfg.palette. A held brick is the same minus the position:
+-- paint indexes cfg.palette. The role fields are copied from the shape
+-- (Bricks.ROLES), so saved versions carry them for placement and play. A held brick is the same minus the position:
 --   held = { shape, rotation, material, paint } -- defaults to cfg.held
 -- cfg is config.builder.
 local Model = require("src.game.blocks.model")
@@ -22,8 +25,14 @@ function Draft.new()
 	return { width = 1, depth = 1, bricks = {} }
 end
 
+-- How many layers `brick` stands in; bricks saved before tall bricks have
+-- no height and stand in one.
+local function height(brick)
+	return brick.height or 1
+end
+
 local function occupies(brick, x, y, z)
-	return z == brick.z and x >= brick.x and x < brick.x + brick.width and y >= brick.y and y < brick.y + brick.depth
+	return z >= brick.z and z < brick.z + height(brick) and x >= brick.x and x < brick.x + brick.width and y >= brick.y and y < brick.y + brick.depth
 end
 
 -- The brick occupying stud cell (x, y, z), or nil.
@@ -37,7 +46,8 @@ function Draft.brickAt(draft, x, y, z)
 end
 
 local function overlaps(a, b)
-	return a.z == b.z
+	return a.z < b.z + height(b)
+		and b.z < a.z + height(a)
 		and a.x < b.x + b.width
 		and b.x < a.x + a.width
 		and a.y < b.y + b.depth
@@ -57,24 +67,30 @@ end
 local function newBrick(x, y, z, cfg, held)
 	held = held or cfg.held
 	local width, depth = Bricks.footprint(held.shape, held.rotation, cfg)
-	return {
+	local brick = {
 		x = x,
 		y = y,
 		z = z,
 		width = width,
 		depth = depth,
+		height = Bricks.height(held.shape, cfg),
 		shape = held.shape,
 		rotation = held.rotation,
 		material = held.material,
 		paint = held.paint,
 	}
+	local shape = Bricks.shape(held.shape, cfg)
+	for _, role in ipairs(Bricks.ROLES) do
+		brick[role] = shape[role]
+	end
+	return brick
 end
 
 local function check(draft, brick, cfg)
 	if not onBaseplate(brick, draft.width, draft.depth, cfg) then
 		return false, "outside"
 	end
-	if brick.z >= cfg.maxLayers then
+	if brick.z + height(brick) > cfg.maxLayers then
 		return false, "too high"
 	end
 	for _, other in ipairs(draft.bricks) do
@@ -128,8 +144,14 @@ function Draft.toModel(draft, cfg)
 	local m = Model.new(cfg.studsPerTile, draft.width, draft.depth)
 	for _, b in ipairs(draft.bricks) do
 		local color = cfg.palette[b.paint]
+		local accent = Bricks.shape(b.shape, cfg).accent
 		for _, c in ipairs(Bricks.cells(b, cfg)) do
-			c.color, c.material = color, b.material
+			if c.accent then
+				c.color = accent
+			else
+				c.color, c.material = color, b.material
+			end
+			c.accent = nil
 			Model.addCell(m, c)
 		end
 	end

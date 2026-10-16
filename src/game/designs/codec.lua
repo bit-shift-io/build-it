@@ -44,6 +44,7 @@ local function encodeValue(key, v)
 end
 
 -- One record: `tag` and every field of `t` except `skip`, sorted by key.
+-- Shared with the world save (src/game/save/codec.lua).
 local function record(tag, t, skip)
 	local keys = {}
 	for k in pairs(t) do
@@ -85,7 +86,8 @@ local function decodeValue(text)
 	return nil
 end
 
--- The tag and fields of one line, or nil and why.
+-- The tag and fields of line number `n`, or nil and why. Shared with the
+-- world save.
 local function parseRecord(line, n)
 	local tag, rest = line:match("^(%a+)(.*)$")
 	if not tag then
@@ -170,5 +172,8 @@ function Codec.decode(text)
 	end
 	return design
 end
+
+Codec.record = record
+Codec.parseRecord = parseRecord
 
 return Codec

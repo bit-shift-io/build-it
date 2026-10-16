@@ -160,10 +160,16 @@ test("every brick shape draws, turned", function()
 	for _, label in ipairs({ "Width +", "Width +", "Width +", "Depth +", "Depth +", "Depth +" }) do
 		clickButton(game, builder, label)
 	end
-	-- Each shape twice, in its own paint: as authored, and turned a quarter
-	-- 4 studs south of it.
-	for i, shape in ipairs(CFG.bricks) do
-		clickButton(game, builder, shape.name)
+	-- Each plain shape twice, in its own paint: as authored, and turned a
+	-- quarter 4 studs south of it.
+	local plain = {}
+	for _, shape in ipairs(CFG.bricks) do
+		if not (shape.ability or shape.port or shape.storage) then
+			table.insert(plain, shape)
+		end
+	end
+	for i, shape in ipairs(plain) do
+		clickButton(game, builder, shape.label or shape.name)
 		clickButton(game, builder, i % 2 == 1 and "Plank" or "Stone")
 		clickButton(game, builder, "paint:" .. i)
 		local x = 1 + ((i - 1) % 3) * 5
@@ -176,8 +182,84 @@ test("every brick shape draws, turned", function()
 		Fake.tap(game, "r")
 		Fake.tap(game, "r")
 	end
-	assertEqual(2 * #CFG.bricks, #builder.draft.bricks)
+	assertEqual(2 * #plain, #builder.draft.bricks)
 	game:mousemoved(5, 5, 0, 0)
 	renderFrame(game)
 	Capture.capture("shapes")
+end)
+
+-- The shapes with a role: function, port and storage bricks.
+local function roleShapes()
+	local out = {}
+	for _, shape in ipairs(CFG.bricks) do
+		if shape.ability or shape.port or shape.storage then
+			table.insert(out, shape)
+		end
+	end
+	return out
+end
+
+test("every function, port and storage brick draws its own model, turned", function()
+	local game = GameHarness.startSession({ width = 20, height = 20 }, { real = true })
+	Fake.tap(game, "b")
+	local builder = game.flow.builder
+	for _, label in ipairs({ "Width +", "Width +", "Width +", "Depth +", "Depth +", "Depth +" }) do
+		clickButton(game, builder, label)
+	end
+	-- Zoomed out so the whole 4x4 tile baseplate fits between the panels.
+	game:wheelmoved(0, -6)
+	-- Placed back (north) to front so no brick hides the next one's studs:
+	-- each as authored, and turned a quarter 5 studs east of it.
+	local shapes = roleShapes()
+	for i, shape in ipairs(shapes) do
+		clickButton(game, builder, shape.label)
+		clickButton(game, builder, "paint:" .. (i % 2 == 1 and 4 or 10))
+		local x, y = 1 + ((i - 1) % 2) * 9, math.floor((i - 1) / 2) * 4
+		local w, d = Bricks.footprint(shape.name, 0, CFG)
+		Fake.click(game, 1, pixelOf(builder, x + w / 2, y + d / 2, 0))
+		Fake.tap(game, "r")
+		Fake.click(game, 1, pixelOf(builder, x + 5 + d / 2, y + w / 2, 0))
+		Fake.tap(game, "r")
+		Fake.tap(game, "r")
+		Fake.tap(game, "r")
+		assertEqual(2 * i, #builder.draft.bricks, "expected both " .. shape.name .. " bricks placed")
+	end
+	game:mousemoved(5, 5, 0, 0)
+	renderFrame(game)
+	Capture.capture("function_bricks")
+end)
+
+test("the info panel shows traits, cost red where short, and every broken rule, clear of the sidebar", function()
+	local game = GameHarness.startSession({ width = 20, height = 20 }, { real = true })
+	Fake.tap(game, "b")
+	local builder = game.flow.builder
+	clickButton(game, builder, "Width +")
+	clickButton(game, builder, "Saw bench")
+	Fake.click(game, 1, pixelOf(builder, 4, 1, 0))
+	clickButton(game, builder, "Input port")
+	Fake.click(game, 1, pixelOf(builder, 4, 2.5, 0)) -- off the edge
+	clickButton(game, builder, "Stone")
+	clickButton(game, builder, "1x2")
+	Fake.click(game, 1, pixelOf(builder, 1, 3.5, 0))
+	assertEqual(3, #builder.draft.bricks)
+	game.ctx.pools.characters[1].inventory.counts.stone = 3
+	local info = BuilderScreen.info(builder)
+	assertEqual(2, #info.problems, "no output port, port off edge")
+	local designs = #builder.library.designs
+	clickButton(game, builder, "Save")
+	assertEqual(designs, #builder.library.designs, "expected the save refused")
+
+	game:mousemoved(5, 5, 0, 0)
+	local pixels = renderFrame(game)
+	Capture.capture("info_panel")
+
+	-- Nothing in the sidebar runs into the window's bottom edge.
+	local _, h = love.graphics.getDimensions()
+	local last = BuilderScreen.buttons(builder)
+	last = last[#last]
+	assertTrue(last.y + last.height < h, "expected the sidebar's last button inside the window")
+	-- The panel is drawn: its background, not the 3D view, at its left edge.
+	local panel = BuilderScreen.infoPanel(builder)
+	local r, g, b = colorAt(pixels, panel.x + 4, h / 2)
+	assertTrue(math.abs(r - 0.13) < 0.03 and math.abs(b - 0.16) < 0.03, "expected the info panel background")
 end)

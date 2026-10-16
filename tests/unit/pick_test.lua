@@ -106,3 +106,17 @@ test("the held brick's turned footprint centres on the hit and stays on the base
 	assertEqual(7, hit.place.x)
 	assertEqual(4, hit.place.y)
 end)
+
+test("a tall brick picks as its full height: stack on its top, beside it at the layer hit", function()
+	local d = draft2x2()
+	local saw = Draft.place(d, 2, 2, 0, CFG, { shape = "saw", rotation = 0, material = "plank", paint = 1 })
+	local hit = Pick.cast(d, { 3.5, 2.5, 20 }, DOWN, CFG)
+	assertEqual(saw, hit.brick)
+	assertEqual(3, hit.place.z)
+
+	-- From the east, at the blade's middle layer.
+	hit = Pick.cast(d, { 20, 2.5, 1.5 }, { -1, 0, 0 }, CFG)
+	assertEqual(saw, hit.brick)
+	assertEqual(5, hit.place.x)
+	assertEqual(1, hit.place.z)
+end)

@@ -1,16 +1,28 @@
 -- What a design version costs to place (docs/CONTEXT.md "Baseplate",
--- "Building"). Pure -- no `love.*`.
+-- "Material", "Function brick"). Pure -- no `love.*`.
 --
--- For now only the baseplate costs anything (config.costs.baseplatePerTile
--- per footprint tile). Brick costs extend Cost.of when bricks get them.
+-- The baseplate costs config.costs.baseplatePerTile per footprint tile.
+-- Each brick costs config.costs.perStud[material] per stud of its
+-- footprint, plus its shape's own `cost` (config.builder.bricks) when it
+-- has one -- function, port and storage bricks do.
+local Bricks = require("src.game.builder.bricks")
+
 local Cost = {}
 
--- The items placing `version` takes: { [item] = n }.
+local function add(cost, items, times)
+	for item, n in pairs(items or {}) do
+		cost[item] = (cost[item] or 0) + n * times
+	end
+end
+
+-- The items placing `version` (a draft or a saved version) takes:
+-- { [item] = n }.
 function Cost.of(version, config)
-	local tiles = version.width * version.depth
 	local cost = {}
-	for item, n in pairs(config.costs.baseplatePerTile) do
-		cost[item] = n * tiles
+	add(cost, config.costs.baseplatePerTile, version.width * version.depth)
+	for _, b in ipairs(version.bricks) do
+		add(cost, config.costs.perStud[b.material], b.width * b.depth)
+		add(cost, Bricks.shape(b.shape, config.builder).cost, 1)
 	end
 	return cost
 end

@@ -7,6 +7,7 @@ local CharacterSystem = require("src.game.systems.character_system")
 local NodeSystem = require("src.game.systems.node_system")
 local BuildingSystem = require("src.game.systems.building_system")
 local Inventory = require("src.game.components.inventory")
+local Animator = require("src.game.components.animator")
 
 local Session = {}
 
@@ -20,6 +21,7 @@ local function newCharacter(id, player, x, y, config)
 		mover = { speed = config.character.speed },
 		inventory = Inventory.new(config.stockpile),
 		harvester = { progress = 0 },
+		animator = Animator.new(),
 	}
 end
 
@@ -45,12 +47,21 @@ end
 -- The whole frame order, in one place. ctx.dt must already be set.
 --   1. Intents: `app` (or a test) fills ctx.intents[player] before the step.
 --   2. Characters: walk, then hand-harvest.
---   3. Buildings: place the ones players asked for (intent.place).
---   4. Despawn sweep (last): depleted nodes leave the pool. Nothing is ever
+--   2b. Growth: saplings age, so a tree turns harvestable before any brick
+--      looks for one.
+--   3. Reservations: dead nodes release their function bricks, before any
+--      brick picks a new target.
+--   4. Buildings: place the ones players asked for (intent.place), then run
+--      their function bricks and fill their outputs.
+--   5. Despawn sweeps (last): removed buildings release their nodes and
+--      leave the pool, then depleted nodes leave theirs. Nothing is ever
 --      removed mid-iteration.
 function Session.step(ctx)
 	CharacterSystem.update(ctx)
+	NodeSystem.grow(ctx)
+	NodeSystem.releaseDead(ctx)
 	BuildingSystem.update(ctx)
+	BuildingSystem.despawn(ctx)
 	NodeSystem.despawn(ctx)
 end
 

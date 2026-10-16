@@ -13,6 +13,8 @@ local defaultTestFiles = {
 	"tests/unit/projection_test.lua",
 	"tests/unit/test_house_test.lua",
 	"tests/unit/tree_prop_test.lua",
+	"tests/unit/planter_test.lua",
+	"tests/unit/growth_test.lua",
 	"tests/unit/rock_prop_test.lua",
 	"tests/unit/world_gen_test.lua",
 	"tests/unit/draft_test.lua",
@@ -25,6 +27,18 @@ local defaultTestFiles = {
 	"tests/unit/design_codec_test.lua",
 	"tests/unit/design_library_test.lua",
 	"tests/unit/placement_test.lua",
+	"tests/unit/animator_test.lua",
+	"tests/unit/character_prop_test.lua",
+	"tests/unit/traits_test.lua",
+	"tests/unit/cost_test.lua",
+	"tests/unit/validate_test.lua",
+	"tests/unit/function_brick_test.lua",
+	"tests/unit/converter_test.lua",
+	"tests/unit/aura_test.lua",
+	"tests/unit/reservation_test.lua",
+	"tests/unit/storage_test.lua",
+	"tests/unit/ports_test.lua",
+	"tests/unit/save_codec_test.lua",
 }
 
 local tests = {}
