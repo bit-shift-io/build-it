@@ -34,7 +34,7 @@ test("the HUD shows logs, stone and planks after harvesting one tree to its last
 	harvest(5)
 	assertEqual(2, half.stage)
 	assertEqual(Config.nodes.tree.amount - 3 + 5, Inventory.count(c.inventory, "log"))
-	assertEqual(Config.stockpile.plank, Inventory.count(c.inventory, "plank"))
+	assertEqual(0, Inventory.count(c.inventory, "plank"), "the stockpile is in storage, not the inventory")
 	Capture.capture("hud_last_stage_and_half_felled")
 	assertEqual(1, rock.stage)
 end)

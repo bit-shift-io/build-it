@@ -18,8 +18,9 @@ local PropCache = {}
 local PADDING = 2 -- clear pixels around each sprite, so filtering never bleeds
 
 -- kinds: { [name] = <Registry kind> } (normally Registry.KINDS, or
--- { character = Registry.CHARACTER } for the character's frames, which share
--- the cache directory). A kind's variant count is Registry.variants.
+-- { character = Registry.CHARACTER, villager = Registry.villager(config) }
+-- for the character's and villagers' frames, which share the cache
+-- directory; the villager's shirt colour is hashed into its version). A kind's variant count is Registry.variants.
 -- cache.baked lists every "<kind>@<scale>" atlas this cache had to bake.
 function PropCache.new(kinds, config)
 	return { kinds = kinds, config = config, dir = config.props.cacheDir, atlases = {}, baked = {} }

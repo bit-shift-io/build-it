@@ -1,11 +1,14 @@
--- Draw module for ctx.pools.buildings: each building as its design
--- version's baked sprite for its facing (src/app/bake/design_cache.lua),
--- handed to the world's depth sort, and a marker on every port tile, drawn
--- flat on the ground.
+-- Draw module for ctx.pools.buildings and ctx.pools.sites: each building
+-- as its design version's baked sprite for its facing
+-- (src/app/bake/design_cache.lua), handed to the world's depth sort, and a
+-- marker on every port tile, drawn flat on the ground; each construction
+-- site as the same sprite, translucent, with how much of its cost has
+-- arrived and how far its build has got.
 local Projection = require("src.game.projection")
 local DesignCache = require("src.app.bake.design_cache")
 local Storage = require("src.game.components.storage")
 local FunctionBrick = require("src.game.components.function_brick")
+local Site = require("src.game.buildings.site")
 
 local BuildingsRender = {}
 
@@ -19,13 +22,24 @@ function BuildingsRender.sprite(config, design, n, facing, scale)
 	return DesignCache.sprite(caches[config], design, n, facing, scale)
 end
 
--- Appends { sprite, tileX, tileY } per building to `draws`.
+local SITE_ALPHA = 0.45
+
+-- Appends { sprite, tileX, tileY } per building, and per site with
+-- `alpha`, to `draws`.
 function BuildingsRender.addDraws(draws, ctx, scale)
 	for _, b in ipairs(ctx.pools.buildings) do
 		table.insert(draws, {
 			sprite = BuildingsRender.sprite(ctx.config, b.design, b.version, b.facing, scale),
 			tileX = b.tileX,
 			tileY = b.tileY,
+		})
+	end
+	for _, site in ipairs(ctx.pools.sites) do
+		table.insert(draws, {
+			sprite = BuildingsRender.sprite(ctx.config, site.design, site.version, site.facing, scale),
+			tileX = site.tileX,
+			tileY = site.tileY,
+			alpha = SITE_ALPHA,
 		})
 	end
 end
@@ -101,10 +115,44 @@ function BuildingsRender.drawPorts(ctx, p)
 end
 
 local WORK_BAR = { 1, 0.85, 0.3 }
+local DELIVERED_BAR = { 0.55, 0.8, 1 }
+local SITE_LINE = { 1, 1, 1 }
+
+-- A bar `w` wide at (x, y), filled to `fraction`, in `color`.
+local function bar(x, y, w, h, fraction, color)
+	love.graphics.setColor(0, 0, 0, 0.6)
+	love.graphics.rectangle("fill", x, y, w, h)
+	love.graphics.setColor(color[1], color[2], color[3], 1)
+	love.graphics.rectangle("fill", x, y, w * math.max(0, math.min(1, fraction)), h)
+end
+
+-- Over a construction site: an outline round its footprint, the
+-- delivered materials as a bar and "delivered/cost", and the build
+-- progress as a second bar.
+local function drawSite(ctx, p, site)
+	local t = p.pixelsPerTile
+	local x, y = Projection.worldToScreen(p, site.tileX, site.tileY, 0)
+	local w, h = site.width * t, site.depth * t
+	love.graphics.setColor(SITE_LINE[1], SITE_LINE[2], SITE_LINE[3], 0.7)
+	love.graphics.rectangle("line", x, y, w, h)
+	local need, have = 0, 0
+	for item, n in pairs(site.cost) do
+		need = need + n
+		have = have + math.min(n, site.delivered.counts[item] or 0)
+	end
+	local bh = math.max(3, t * 0.12)
+	local bx, bw = x + w * 0.1, w * 0.8
+	local by = y + h / 2 - bh - 1
+	bar(bx, by, bw, bh, need > 0 and have / need or 1, DELIVERED_BAR)
+	bar(bx, by + bh + 2, bw, bh, site.progress / Site.buildTime(site, ctx.config), WORK_BAR)
+	love.graphics.setColor(1, 1, 1, 1)
+	love.graphics.print(have .. "/" .. need, bx, by - love.graphics.getFont():getHeight() - 2)
+end
 
 -- Over the sprites: for each function brick at work, a progress bar over
--- its node and a line to it from the building; for a full building, a red
--- outline round its footprint and "FULL".
+-- its node and a line to it from the building (a converter: over its
+-- brick's tile, while its operator works there); for a full building, a red
+-- outline round its footprint and "FULL"; for each site, drawSite.
 function BuildingsRender.drawStatus(ctx, p)
 	local t = p.pixelsPerTile
 	love.graphics.push("all")
@@ -122,6 +170,15 @@ function BuildingsRender.drawStatus(ctx, p)
 				love.graphics.rectangle("fill", nx + t * 0.1, ny + t * 0.4, t * 0.8, t * 0.12)
 				love.graphics.setColor(WORK_BAR[1], WORK_BAR[2], WORK_BAR[3], 1)
 				love.graphics.rectangle("fill", nx + t * 0.1, ny + t * 0.4, t * 0.8 * math.min(1, fb.progress / cycle), t * 0.12)
+			elseif fb.recipe and fb.operator and fb.state == "working" then
+				-- A converter at work: a progress bar over its brick's tile,
+				-- only while its operator waits out the cycle there.
+				local fx, fy = Projection.worldToScreen(p, fb.tileX, fb.tileY, 0)
+				local cycle = FunctionBrick.cycle(b.traits, ctx.config, fb.recipe.cycle)
+				love.graphics.setColor(0, 0, 0, 0.6)
+				love.graphics.rectangle("fill", fx + t * 0.1, fy + t * 0.4, t * 0.8, t * 0.12)
+				love.graphics.setColor(WORK_BAR[1], WORK_BAR[2], WORK_BAR[3], 1)
+				love.graphics.rectangle("fill", fx + t * 0.1, fy + t * 0.4, t * 0.8 * math.min(1, fb.progress / cycle), t * 0.12)
 			end
 		end
 		if b.full then
@@ -136,6 +193,9 @@ function BuildingsRender.drawStatus(ctx, p)
 			love.graphics.setColor(1, 1, 1, 1)
 			love.graphics.print(label, lx + 4, ly + 2)
 		end
+	end
+	for _, site in ipairs(ctx.pools.sites) do
+		drawSite(ctx, p, site)
 	end
 	love.graphics.pop()
 end

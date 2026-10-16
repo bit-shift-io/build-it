@@ -167,7 +167,7 @@ test("a seeded world draws water, trees and rocks, and leaves its prop cache beh
 	local r, g, b = look(wx, wy)
 	assertTrue(b > r and b > g, string.format("expected water blue at %d,%d, got %.2f %.2f %.2f", wx, wy, r, g, b))
 
-	-- South-east of the centre: clear of the character and the test house row.
+	-- South-east of the centre: clear of the character.
 	local gx, gy = grassNear(world, world.width / 2 + 4, world.height / 2 + 4)
 	local gr, gg, gb = look(gx, gy)
 	assertTrue(gg > gr and gg > gb, "expected grass green")

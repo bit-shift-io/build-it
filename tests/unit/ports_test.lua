@@ -40,6 +40,12 @@ test("products go to storage first, then output buffers, never inputs", function
 	assertFalse(Ports.hasRoom(b))
 end)
 
+test("room reserved by a job on its way still counts as room until the items land", function()
+	local b = building(0, "output")
+	Storage.reserveRoom(b.ports[1].buffer, Config.production.bufferSize)
+	assertTrue(Ports.hasRoom(b), "nothing stored yet")
+end)
+
 test("flushing moves stored items into output buffers with room", function()
 	local b = building(10, "output")
 	for _ = 1, 6 do

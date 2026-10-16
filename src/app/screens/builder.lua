@@ -6,7 +6,7 @@
 -- every draft change. Sidebar buttons resize the baseplate and pick the
 -- held brick's shape (plain, function, port or storage brick), material
 -- and paint. The info panel on the right shows the draft's traits, its cost
--- against the player's inventory (red where short) and every design rule
+-- against what storage holds (red where short) and every design rule
 -- it breaks (src/game/builder/validate.lua); save is refused while it
 -- breaks one.
 --
@@ -25,7 +25,6 @@ local Library = require("src.game.designs.library")
 local Cost = require("src.game.builder.cost")
 local Traits = require("src.game.builder.traits")
 local Validate = require("src.game.builder.validate")
-local Inventory = require("src.game.components.inventory")
 local DesignStore = require("src.app.design_store")
 local BuilderCamera = require("src.app.builder_camera")
 local BuilderView = require("src.app.render.builder_view")
@@ -79,16 +78,17 @@ end
 
 -- library: the design library (read once per launch by src/app/flow.lua);
 -- problems lists its files that could not be read ({ name, reason });
--- inventory is the player's (src/game/components/inventory.lua), read live
--- to show what the draft's cost is short of. The builder never spends it.
-function BuilderScreen.new(config, library, problems, inventory)
+-- stock() returns what the storage facilities hold ({ [item] = n },
+-- src/game/components/storage_facility.lua), read live to show what the
+-- draft's cost is short of. The builder never spends it.
+function BuilderScreen.new(config, library, problems, stock)
 	local cfg = config.builder
 	return {
 		config = config,
 		cfg = cfg,
 		library = library,
 		problems = problems,
-		inventory = inventory,
+		stock = stock,
 		draft = Draft.new(),
 		-- The design the draft was opened from or last saved as (nil for a
 		-- new one), and its name as typed.
@@ -133,12 +133,13 @@ end
 -- What the info panel shows for the draft, live:
 --   traits   = { productivity, capacity, reach, health } (Traits.of)
 --   cost     = { { item, need, have, short }, ... } by item name; short
---              when the inventory holds less than the draft needs
+--              when storage holds less than the draft needs
 --   problems = the text of each design rule it breaks, in rule order
 function BuilderScreen.info(screen)
 	local cost = {}
+	local stock = screen.stock()
 	for item, need in pairs(Cost.of(screen.draft, screen.config)) do
-		local have = Inventory.count(screen.inventory, item)
+		local have = stock[item] or 0
 		table.insert(cost, { item = item, need = need, have = have, short = have < need })
 	end
 	table.sort(cost, function(a, b)

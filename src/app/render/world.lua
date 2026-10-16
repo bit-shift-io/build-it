@@ -1,35 +1,21 @@
 -- Draws the flat tile world: terrain and grid (render/terrain.lua), then
 -- building port tile markers on the ground (render/buildings.lua), then
 -- every baked sprite on its tile -- resource nodes (render/nodes.lua),
--- buildings and the test house row -- sorted by depth. Everything goes through the one
+-- buildings and villagers (render/character.lua) -- sorted by depth. Everything goes through the one
 -- 3/4 projection (src/game/projection.lua), the same one the baker uses.
 -- Reads ctx, never mutates it.
 local Projection = require("src.game.projection")
-local TestHouse = require("src.game.blocks.test_house")
-local Baker = require("src.app.bake.baker")
 local Terrain = require("src.app.render.terrain")
 local NodesRender = require("src.app.render.nodes")
 local BuildingsRender = require("src.app.render.buildings")
+local CharacterRender = require("src.app.render.character")
 
 local WorldRender = {}
 
--- The test house model and its baked sprites, keyed "<facing>:<scale>".
--- Baked lazily: only the facings and bake scales actually drawn.
-local houseModel = nil
-local houseSprites = {}
-
-local function houseSprite(facing, scale, config)
-	houseModel = houseModel or TestHouse.model()
-	local key = facing .. ":" .. scale
-	if not houseSprites[key] then
-		houseSprites[key] = Baker.bake(houseModel, facing, config, scale)
-	end
-	return houseSprites[key]
-end
-
 -- Draws each { sprite, tileX, tileY } back to front: by the depth of its
 -- footprint's south edge, then west to east. A sprite with a quad draws
--- that region of its image (an atlas).
+-- that region of its image (an atlas). A draw with `alpha` (0..1) is
+-- translucent: a construction site.
 local function drawSprites(draws, p)
 	for _, d in ipairs(draws) do
 		d.order = Projection.depth(p, d.tileX, d.tileY + d.sprite.depth, 0)
@@ -42,12 +28,13 @@ local function drawSprites(draws, p)
 	end)
 
 	love.graphics.push("all")
-	love.graphics.setColor(1, 1, 1, 1)
 	-- Baked pixels are opaque or fully clear, so the canvas is effectively
 	-- premultiplied; this keeps filtered sprite edges from darkening.
 	love.graphics.setBlendMode("alpha", "premultiplied")
 	for _, d in ipairs(draws) do
 		local left, top, s = Projection.placeSprite(p, d.sprite.frame, d.tileX, d.tileY)
+		local a = d.alpha or 1 -- premultiplied: the tint carries the alpha
+		love.graphics.setColor(a, a, a, a)
 		if d.sprite.quad then
 			love.graphics.draw(d.sprite.image, d.sprite.quad, left, top, 0, s, s)
 		else
@@ -64,15 +51,9 @@ function WorldRender.draw(ctx, zoom)
 
 	local scale = Projection.bakeScale(zoom or 1)
 	local draws = {}
-	for _, place in ipairs(TestHouse.placements(ctx.world, ctx.config)) do
-		table.insert(draws, {
-			sprite = houseSprite(place.facing, scale, ctx.config),
-			tileX = place.tileX,
-			tileY = place.tileY,
-		})
-	end
 	NodesRender.addDraws(draws, ctx, scale)
 	BuildingsRender.addDraws(draws, ctx, scale)
+	CharacterRender.addVillagerDraws(draws, ctx, scale)
 	BuildingsRender.drawPorts(ctx, p)
 	drawSprites(draws, p)
 	BuildingsRender.drawStatus(ctx, p)

@@ -18,6 +18,7 @@ local WorldRender = require("src.app.render.world")
 local CharacterRender = require("src.app.render.character")
 local GhostRender = require("src.app.render.ghost")
 local Aura = require("src.game.components.aura")
+local StorageFacility = require("src.game.components.storage_facility")
 local Hud = require("src.app.render.hud")
 local Projection = require("src.game.projection")
 
@@ -81,7 +82,7 @@ function WorldScreen.ghost(screen)
 		tileX = math.floor(wx - width / 2 + 0.5),
 		tileY = math.floor(wy - depth / 2 + 0.5),
 	}
-	local ok, reason = Placement.check(screen.ctx, request, screen.player.inventory)
+	local ok, reason = Placement.check(screen.ctx, request)
 	return { request = request, ok = ok, reason = reason }
 end
 
@@ -195,7 +196,7 @@ function WorldScreen.draw(screen)
 		GhostRender.draw(screen.ctx, ghost, screen.camera.zoom)
 	end
 	Camera.detach()
-	Hud.draw(screen.player.inventory, CharacterSystem.outputPortUnder(screen.player, screen.ctx), Aura.at(screen.ctx, screen.player))
+	Hud.draw(screen.player.inventory, StorageFacility.totals(screen.ctx), CharacterSystem.outputPortUnder(screen.player, screen.ctx), Aura.at(screen.ctx, screen.player), StorageFacility.claimed(screen.ctx))
 	GhostRender.drawPanel(screen.library, screen.placing, WorldScreen.cost(screen), WorldScreen.status(screen))
 end
 

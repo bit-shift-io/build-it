@@ -15,13 +15,19 @@ function Ports.setup(ports, traits, config)
 	end
 end
 
--- Whether `building` can take one more product (storage or an output).
+-- Whether `building` holds fewer products than it can (storage or an
+-- output). Counts what is stored, not room reserved by jobs on their way
+-- (Storage.reserveRoom), so a building is not shown FULL while an
+-- operator is still walking a load to its output.
 function Ports.hasRoom(building)
-	if Storage.room(building.storage) > 0 then
+	local function free(store)
+		return store.capacity - Storage.total(store) > 0
+	end
+	if free(building.storage) then
 		return true
 	end
 	for _, port in ipairs(building.ports) do
-		if port.kind == "output" and Storage.room(port.buffer) > 0 then
+		if port.kind == "output" and free(port.buffer) then
 			return true
 		end
 	end
@@ -45,13 +51,13 @@ function Ports.push(building, item)
 end
 
 -- Moves stored items into output buffers with room, in port order, items
--- in name order.
+-- in name order. Items a haul job reserved in storage stay for it.
 function Ports.flush(building)
 	local storage = building.storage
 	for _, port in ipairs(building.ports) do
 		if port.kind == "output" then
 			for _, item in ipairs(Storage.items(storage)) do
-				while storage.counts[item] and Storage.room(port.buffer) > 0 do
+				while Storage.available(storage, item) > 0 and Storage.room(port.buffer) > 0 do
 					Storage.remove(storage, item)
 					Storage.add(port.buffer, item)
 				end
@@ -60,10 +66,11 @@ function Ports.flush(building)
 	end
 end
 
--- Whether some converting function brick of `building` consumes `item`.
+-- Whether `building` takes `item` at its input ports: a depot takes every
+-- item, otherwise some converting function brick must consume it.
 function Ports.accepts(building, item)
 	for _, fb in ipairs(building.functionBricks) do
-		if fb.recipe and fb.recipe.input[item] then
+		if fb.depot or (fb.recipe and fb.recipe.input[item]) then
 			return true
 		end
 	end
@@ -91,55 +98,17 @@ function Ports.deliver(port, building, inventory)
 	end
 end
 
-local function available(building, item)
-	local n = building.storage.counts[item] or 0
-	for _, port in ipairs(building.ports) do
-		if port.kind == "input" then
-			n = n + (port.buffer.counts[item] or 0)
-		end
-	end
-	return n
-end
-
--- Whether input buffers and storage together hold every item of `cost`.
-function Ports.canPull(building, cost)
-	for item, n in pairs(cost) do
-		if available(building, item) < n then
-			return false
-		end
-	end
-	return true
-end
-
--- Takes `cost` from input buffers (port order), then storage. Check
--- Ports.canPull first.
-function Ports.pull(building, cost)
-	for item, n in pairs(cost) do
-		for _, store in ipairs(Ports.sources(building)) do
-			while n > 0 and (store.counts[item] or 0) > 0 do
-				Storage.remove(store, item)
-				n = n - 1
-			end
-		end
-	end
-end
-
-function Ports.sources(building)
-	local list = {}
-	for _, port in ipairs(building.ports) do
-		if port.kind == "input" then
-			table.insert(list, port.buffer)
-		end
-	end
-	table.insert(list, building.storage)
-	return list
-end
-
--- Empties `port`'s buffer into `inventory`.
+-- Empties `port`'s buffer into `inventory`, all but what a construction
+-- site claimed.
 function Ports.collect(port, inventory)
-	for _, item in ipairs(Storage.items(port.buffer)) do
-		Inventory.add(inventory, item, port.buffer.counts[item])
-		port.buffer.counts[item] = nil
+	local buffer = port.buffer
+	for _, item in ipairs(Storage.items(buffer)) do
+		local n = Storage.unclaimed(buffer, item)
+		if n > 0 then
+			Inventory.add(inventory, item, n)
+			local left = buffer.counts[item] - n
+			buffer.counts[item] = left > 0 and left or nil
+		end
 	end
 end
 

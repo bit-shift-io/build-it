@@ -32,3 +32,24 @@ test("Mover.apply stops the record at the world edge, keeping it fully inside", 
 	assertNear(3192, r.x)
 	assertNear(8, r.y)
 end)
+
+local World = require("src.game.world")
+
+local function footprintCtx()
+	local world = World.new(10, 10)
+	World.addBuilding(world, { tileX = 3, tileY = 0, width = 1, depth = 10, ports = {} })
+	return { dt = 0.1, world = world, config = { tileSize = 32 } }
+end
+
+test("Mover.apply stops a record at a building footprint", function()
+	local r = record(80, 48, 120)
+	Mover.apply(r, { x = 1, y = 0 }, footprintCtx())
+	assertNear(96 - 8, r.x)
+end)
+
+test("Mover.apply walks a record with mover.throughBuildings through a footprint", function()
+	local r = record(80, 48, 120)
+	r.mover.throughBuildings = true
+	Mover.apply(r, { x = 1, y = 0 }, footprintCtx())
+	assertNear(92, r.x)
+end)

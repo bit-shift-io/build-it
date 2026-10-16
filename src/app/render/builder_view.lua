@@ -248,7 +248,7 @@ end
 
 -- The info panel at the window's right edge (`panel`, a rectangle):
 -- `info` (BuilderScreen.info) as the draft's trait totals, its cost against
--- the inventory -- red where short -- and the design rules it breaks; the
+-- storage -- red where short -- and the design rules it breaks; the
 -- controls at the bottom.
 function BuilderView.drawInfo(screen, panel, info)
 	local font = love.graphics.getFont()

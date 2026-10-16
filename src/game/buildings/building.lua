@@ -6,7 +6,8 @@
 --     width, depth,           -- the footprint in tiles, turned by facing
 --     traits,                 -- Traits.of(the version)
 --     aura,                   -- Traits.auras(the version): { walkSpeed, harvestRate }
---     functionBricks = { <function brick>, ... }, -- function_brick.lua
+--     functionBricks = { <function brick>, ... }, -- function_brick.lua;
+--                             -- each with tileX, tileY: its brick's tile
 --     storage,                -- a Storage (src/game/components/storage.lua)
 --     full,                   -- true while it has no room for a product
 --     ports = { <port>, ... } }
@@ -23,8 +24,9 @@ local Ports = require("src.game.components.ports")
 local Building = {}
 
 -- ports: Placement.ports's list; each gets an empty buffer sized by the
--- version's capacity trait.
-function Building.new(id, request, width, depth, ports, config)
+-- version's capacity trait. brickTile(brick) -> x, y: the world tile under
+-- a brick (Placement.brickTile), set on each function brick record.
+function Building.new(id, request, width, depth, ports, config, brickTile)
 	local version = request.design.versions[request.version]
 	local traits = Traits.of(version, config)
 	Ports.setup(ports, traits, config)
@@ -39,7 +41,7 @@ function Building.new(id, request, width, depth, ports, config)
 		depth = depth,
 		traits = traits,
 		aura = Traits.auras(version, config),
-		functionBricks = FunctionBrick.fromVersion(version, config),
+		functionBricks = FunctionBrick.fromVersion(version, config, brickTile),
 		storage = Storage.ofVersion(version, traits, config),
 		full = false,
 		ports = ports,

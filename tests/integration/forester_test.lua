@@ -1,12 +1,13 @@
 -- A forester and a woodcutter side by side, through the real input path:
--- the forester plants saplings, they grow (growth time overridden to a few
--- seconds), and the woodcutter's saw harvests the grown trees.
+-- a villager runs the forester and plants saplings, they grow (growth time overridden to a few
+-- seconds), and a villager runs the woodcutter's saw on the grown trees.
 local GameHarness = require("tests.support.game_harness")
 local LoveMock = require("tests.support.love_mock")
 local Fake = require("tests.support.fake_input")
 local Config = require("src.game.config")
 local World = require("src.game.world")
 local DesignStore = require("src.app.design_store")
+local Session = require("src.game.session")
 
 local TILE = Config.tileSize
 
@@ -48,20 +49,27 @@ test("a forester replants and a woodcutter harvests the grown trees", function()
 	assert(DesignStore.write(Config.designs.dir, FORESTER))
 	assert(DesignStore.write(Config.designs.dir, WOODCUTTER))
 	local world = World.new(20, 20)
-	local game = GameHarness.startSession(world, { config = fastConfig() })
+	local config = fastConfig()
+	local game = GameHarness.startSession(world, { config = config, storage = config.stockpile })
 	local c = game.ctx.pools.characters[1]
+	local facility = game.ctx.pools.buildings[1]
+	-- One villager operates the forester, one the woodcutter, one hauls.
+	for i = 1, 3 do
+		table.insert(game.ctx.pools.villagers, Session.newVillager(i, (4 + i) * TILE, 12.5 * TILE, Config))
+	end
 
 	Fake.tap(game, "1")
 	Fake.click(game, 1, 640 + (13 * TILE - c.x), 360 + (7.5 * TILE - c.y))
 	Fake.tap(game, "2")
 	Fake.click(game, 1, 640 + (13 * TILE - c.x), 360 + (10.5 * TILE - c.y))
-	local forester, cutter = game.ctx.pools.buildings[1], game.ctx.pools.buildings[2]
+	GameHarness.completeSites(game)
+	local forester, cutter = game.ctx.pools.buildings[2], game.ctx.pools.buildings[3] -- after the storage facility
 	assert(forester and cutter, "both buildings were placed")
 
 	Fake.runUntil(game, function()
-		return (cutter.ports[1].buffer.counts.log or 0) > 0
+		return (facility.storage.counts.log or 0) > 0
 	end, 60 * 120)
-	assertTrue(cutter.ports[1].buffer.counts.log > 0, "the woodcutter harvested a grown tree")
+	assertTrue(facility.storage.counts.log > 0, "a villager harvested a grown tree and storage holds the log")
 
 	for _, n in ipairs(game.ctx.pools.nodes) do
 		assertEqual("grass", World.terrainAt(world, n.tileX, n.tileY))

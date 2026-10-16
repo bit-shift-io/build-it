@@ -8,6 +8,9 @@ local Session = require("src.game.session")
 local Config = require("src.game.config")
 local Flow = require("src.app.flow")
 local Screen = require("src.app.screen")
+local Placement = require("src.game.buildings.placement")
+local Storage = require("src.game.components.storage")
+local Site = require("src.game.buildings.site")
 
 local GameHarness = {}
 
@@ -16,6 +19,8 @@ local DEFAULT_SEED = 1
 -- opts.config overrides the tuning table (defaults to src/game/config.lua).
 -- opts.seed fixes the session seed (defaults to DEFAULT_SEED, so runs are
 -- reproducible).
+-- opts.storage = { [item] = n } adds a storage facility holding those
+-- items (GameHarness.addStorage), so placement can pay.
 -- opts.real = true announces the game to the e2e runner via
 -- _G.E2E_ON_GAME_STARTED, so love.draw and Capture have something to render.
 function GameHarness.startSession(world, opts)
@@ -23,7 +28,79 @@ function GameHarness.startSession(world, opts)
 
 	local config = opts.config or Config
 	local ctx = Session.new(world, config, opts.seed or DEFAULT_SEED)
+	if opts.storage then
+		GameHarness.addStorage(ctx, opts.storage)
+	end
 	return GameHarness.wrap(Flow.new(ctx, config), opts)
+end
+
+-- A 1x1-tile storage facility with no ports: a depot and a storage brick.
+local STORE = {
+	id = "test-storage",
+	name = "Test storage",
+	versions = {
+		{
+			width = 1,
+			depth = 1,
+			bricks = {
+				{ x = 0, y = 0, z = 0, width = 2, depth = 2, height = 3, shape = "depot", rotation = 0, material = "plank", paint = 1, ability = "depot" },
+				{ x = 2, y = 0, z = 0, width = 2, depth = 2, height = 2, shape = "storage", rotation = 0, material = "plank", paint = 1, storage = 8 },
+			},
+		},
+	},
+}
+
+-- Builds STORE free on the world's south-east corner tile (or tile x, y),
+-- holding `items` ({ [item] = n }) however many its bricks would fit.
+-- Returns the building, the first in ctx.pools.buildings when added first.
+function GameHarness.addStorage(ctx, items, x, y)
+	local b = Placement.build(ctx, {
+		design = STORE,
+		version = 1,
+		facing = "N",
+		tileX = x or ctx.world.width - 1,
+		tileY = y or ctx.world.height - 1,
+	})
+	local total = 0
+	for _, n in pairs(items) do
+		total = total + n
+	end
+	b.storage.capacity = math.max(b.storage.capacity, total)
+	for item, n in pairs(items) do
+		for _ = 1, n do
+			Storage.add(b.storage, item)
+		end
+	end
+	return b
+end
+
+-- A shortcut for tests about what a building does, not how it is built:
+-- every construction site gets its claimed cost moved out of storage and
+-- delivered, and its build finished, then the game steps until each one is
+-- a building. Villager hauling and building is tested on its own
+-- (tests/unit/site_test.lua, tests/integration/place_building_test.lua).
+function GameHarness.completeSites(game)
+	local ctx = game.ctx
+	for _, site in ipairs(ctx.pools.sites) do
+		for _, claim in ipairs(site.claims) do
+			for _ = 1, claim.count do
+				Storage.remove(claim.store, claim.item)
+				-- past Storage.add: a haul on its way holds room
+				site.delivered.counts[claim.item] = (site.delivered.counts[claim.item] or 0) + 1
+			end
+			Storage.unclaim(claim.store, claim.item, claim.count)
+			claim.count = 0
+		end
+		site.claims = {}
+		site.progress = Site.buildTime(site, ctx.config)
+	end
+	for _ = 1, 10 do
+		if #ctx.pools.sites == 0 then
+			return
+		end
+		game:update(1 / 60)
+	end
+	error("the sites did not turn into buildings")
 end
 
 -- Boots the app as src/app/main.lua does: on the title screen (Continue /

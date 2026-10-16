@@ -108,7 +108,8 @@ local ZERO = { 0, 0, 0 }
 
 -- Puts the part's box into `grid`: offset along the base's right hand (u)
 -- and up (z), then stepped `v` times along the true direction.
-local function rasterise(grid, order, p, d, offset)
+-- `shirt` replaces SHIRT, the body's and arms' colour.
+local function rasterise(grid, order, p, d, offset, shirt)
 	local base = BASES[d.base]
 	local u0, u1, v0, v1, z0, z1 = unpack(p.box)
 	local du = offset[1]
@@ -133,7 +134,7 @@ local function rasterise(grid, order, p, d, offset)
 					if not grid[k] then
 						order[#order + 1] = k
 					end
-					local color = (z == z0 + offset[3] and p.bottom) or p.color
+					local color = (z == z0 + offset[3] and p.bottom) or (p.color == SHIRT and shirt) or p.color
 					grid[k] = { x = x, y = y, z = z, color = color, part = p.name }
 				end
 			end
@@ -143,13 +144,14 @@ end
 
 -- The block model of the figure facing Character.DIRECTIONS[direction] in
 -- frame `frame` (Character.IDLE or one of Character.WALK). Each cell carries
--- `part`, the name of the part it belongs to.
-function Character.model(direction, frame)
+-- `part`, the name of the part it belongs to. `shirt` ({ r, g, b },
+-- optional) recolours the shirt: villagers wear their own.
+function Character.model(direction, frame, shirt)
 	local d = assert(Character.DIRECTIONS[direction], "unknown direction " .. tostring(direction))
 	local pose = assert(POSES[frame], "unknown frame " .. tostring(frame))
 	local grid, order = {}, {}
 	for _, p in ipairs(PARTS) do
-		rasterise(grid, order, p, d, pose[p.bone or p.name] or ZERO)
+		rasterise(grid, order, p, d, pose[p.bone or p.name] or ZERO, shirt or SHIRT)
 	end
 	local model = Model.new(SIZE, 1, 1)
 	for _, k in ipairs(order) do

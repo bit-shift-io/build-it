@@ -6,7 +6,9 @@ local Capture = require("tests.support.capture")
 local Config = require("src.game.config")
 local Model = require("src.game.blocks.model")
 local Baker = require("src.app.bake.baker")
-local TestHouse = require("src.game.blocks.test_house")
+local Starter = require("src.game.designs.starter")
+local Draft = require("src.game.builder.draft")
+local Placement = require("src.game.buildings.placement")
 local Projection = require("src.game.projection")
 
 local GREY = { 0.8, 0.8, 0.8 }
@@ -63,8 +65,14 @@ test("bakes at whole scales: scale 2 doubles the sprite and its anchor", functio
 	assertEqual(2 * one.frame.anchorY, two.frame.anchorY)
 end)
 
-test("the test house bakes in all 4 facings, footprint turning with the facing", function()
-	local house = TestHouse.model()
+-- The starting storage facility (src/game/designs/starter.lua) as a block
+-- model on the stud grid, as DesignCache bakes it.
+local function houseModel()
+	return Draft.toModel(Starter.design(Config).versions[1], Config.builder)
+end
+
+test("the starter house bakes in all 4 facings, footprint turning with the facing", function()
+	local house = houseModel()
 	local wantWidth = { N = house.width, E = house.depth, S = house.width, W = house.depth }
 	for _, facing in ipairs(Model.FACINGS) do
 		local sprite = Baker.bake(house, facing, Config, 2)
@@ -87,10 +95,11 @@ local function renderFrame(game)
 	return love.graphics.readbackTexture(canvas)
 end
 
--- Ground and grid are green-dominant; the house's cream wall is red-dominant.
+-- Ground and grid are green-dominant; the house's tan wall, brown door
+-- and red roof are not.
 local function isHouse(pixels, x, y)
 	local r, g, _, a = pixels:getPixel(math.floor(x), math.floor(y))
-	return a == 1 and r > g + 0.05
+	return a == 1 and r > g
 end
 
 local function isGround(pixels, x, y)
@@ -98,12 +107,12 @@ local function isGround(pixels, x, y)
 	return g > r + 0.05
 end
 
-test("the test house draws with its footprint exactly on its tiles at every zoom", function()
+test("the starter house draws with its footprint exactly on its tiles at every zoom", function()
 	local world = { width = 40, height = 30 }
 	local game = GameHarness.startSession(world, { real = true })
-	local place = TestHouse.placements(world, Config)[1]
-	assertEqual("N", place.facing)
-	local house = TestHouse.model()
+	local place = { design = Starter.design(Config), version = 1, facing = "N", tileX = 10, tileY = 6 }
+	Placement.build(game.ctx, place)
+	local house = houseModel()
 	local p = Projection.new(Config)
 	local w, h = love.graphics.getDimensions()
 

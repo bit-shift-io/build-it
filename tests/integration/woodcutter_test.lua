@@ -1,7 +1,6 @@
 -- A woodcutter beside a forest, through the real input path: the design is
 -- a real file in love_mock's save directory, placed with a number key and
--- a click; its saw fills the output port; the player walks onto the port
--- tile and holds E to collect the logs.
+-- a click; a villager operates its saw and hauls take the logs on to storage.
 local GameHarness = require("tests.support.game_harness")
 local LoveMock = require("tests.support.love_mock")
 local Fake = require("tests.support.fake_input")
@@ -9,6 +8,8 @@ local Config = require("src.game.config")
 local World = require("src.game.world")
 local Inventory = require("src.game.components.inventory")
 local DesignStore = require("src.app.design_store")
+local Session = require("src.game.session")
+local Load = require("src.game.components.load")
 
 local TILE = Config.tileSize
 
@@ -42,35 +43,48 @@ local function launch()
 			World.addNode(world, { id = id, kind = "tree", tileX = x, tileY = y, variant = 1, stage = 1, amount = Config.nodes.tree.amount })
 		end
 	end
-	local game = GameHarness.startSession(world)
+	local game = GameHarness.startSession(world, { storage = Config.stockpile })
 	return game, Fake.FakeInput.new(), game.ctx.pools.characters[1], world
 end
 
-test("a woodcutter beside a forest fills its output, and the player collects the logs", function()
-	local game, input, c, world = launch()
+test("a woodcutter beside a forest is run by a villager and logs reach storage with no player action", function()
+	local game, input, c = launch()
+	local facility = game.ctx.pools.buildings[1]
+	local v = Session.newVillager(1, 5.5 * TILE, 12.5 * TILE, Config)
+	table.insert(game.ctx.pools.villagers, v)
 
 	-- Footprint (12..13, 7); the ghost centres on the pointer.
 	Fake.tap(game, "1")
 	Fake.click(game, 1, 640 + (13 * TILE - c.x), 360 + (7.5 * TILE - c.y))
-	local b = game.ctx.pools.buildings[1]
+	GameHarness.completeSites(game)
+	local b = game.ctx.pools.buildings[2] -- after the storage facility
 	assert(b, "the woodcutter was placed")
 	local port = b.ports[1]
 	assertEqual(13, port.x)
 	assertEqual(8, port.y)
 
+	local logs = facility.storage.counts.log or 0
 	Fake.runUntil(game, function()
-		return b.full
-	end, 60 * 60)
-	local logs = port.buffer.counts.log
-	assertEqual(port.buffer.capacity, logs, "the output port is full of logs")
+		return (facility.storage.counts.log or 0) >= logs + 8
+	end, 60 * 120)
 
-	local before = Inventory.count(c.inventory, "log")
-	Fake.holdFor(game, input, "w", 0.3) -- up onto row 8
-	Fake.holdFor(game, input, "d", 0.7) -- east onto the port tile
-	assertEqual(port, World.portAt(world, math.floor(c.x / TILE), math.floor(c.y / TILE)), "standing on the port")
-	Fake.holdFor(game, input, "e", 1 / 60)
+	assertTrue(v.job ~= nil or Load.empty(v.load) or v.load.item == "log", "the villager works the saw")
+	assertEqual(0, Inventory.count(c.inventory, "log"), "the player did nothing")
+end)
 
-	assertEqual(before + logs, Inventory.count(c.inventory, "log"))
-	assertEqual(nil, port.buffer.counts.log, "the output is empty")
-	assertFalse(b.full, "the woodcutter resumes")
+test("a woodcutter with no villager harvests nothing", function()
+	local game, _, c = launch()
+	Fake.tap(game, "1")
+	Fake.click(game, 1, 640 + (13 * TILE - c.x), 360 + (7.5 * TILE - c.y))
+	GameHarness.completeSites(game)
+	local b = game.ctx.pools.buildings[2]
+	assert(b, "the woodcutter was placed")
+
+	local frames = 0
+	Fake.runUntil(game, function()
+		frames = frames + 1
+		return frames >= 600
+	end, 700)
+
+	assertEqual(nil, b.ports[1].buffer.counts.log)
 end)

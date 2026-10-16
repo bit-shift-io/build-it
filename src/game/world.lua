@@ -120,9 +120,12 @@ end
 
 -- True when nothing may stand on tile (x, y): water, a node or a building.
 -- Port tiles stay open. Tiles off the world are not blocked here; Mover
--- clamps to the world edge.
-function World.isBlocked(world, x, y)
-	return World.terrainAt(world, x, y) == "water" or World.nodeAt(world, x, y) ~= nil or World.buildingAt(world, x, y) ~= nil
+-- clamps to the world edge. throughBuildings leaves building footprints
+-- open: villagers walk through them, the player can't.
+function World.isBlocked(world, x, y, throughBuildings)
+	return World.terrainAt(world, x, y) == "water"
+		or World.nodeAt(world, x, y) ~= nil
+		or (not throughBuildings and World.buildingAt(world, x, y) ~= nil)
 end
 
 -- The world's size in pixels.

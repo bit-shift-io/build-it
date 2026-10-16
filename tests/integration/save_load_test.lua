@@ -11,6 +11,7 @@ local World = require("src.game.world")
 local DesignStore = require("src.app.design_store")
 local TitleScreen = require("src.app.screens.title")
 local SaveCodec = require("src.game.save.codec")
+local Session = require("src.game.session")
 
 local TILE = Config.tileSize
 
@@ -46,12 +47,14 @@ local function play()
 			World.addNode(world, { id = id, kind = "tree", tileX = x, tileY = y, variant = id, stage = 1, amount = Config.nodes.tree.amount })
 		end
 	end
-	local game = GameHarness.startSession(world)
+	local game = GameHarness.startSession(world, { storage = Config.stockpile })
+	table.insert(game.ctx.pools.villagers, Session.newVillager(1, 5.5 * TILE, 12.5 * TILE, Config))
 	local input = Fake.FakeInput.new()
 	local c = game.ctx.pools.characters[1]
 	Fake.tap(game, "1")
 	Fake.click(game, 1, 640 + (13 * TILE - c.x), 360 + (7.5 * TILE - c.y))
-	assert(game.ctx.pools.buildings[1], "fixture: the woodcutter was placed")
+	GameHarness.completeSites(game)
+	assert(game.ctx.pools.buildings[2], "fixture: the woodcutter was placed")
 	Fake.holdFor(game, input, "d", 0.4)
 	Fake.holdFor(game, input, "w", 2.2) -- up beside the trees in column 11
 	Fake.holdFor(game, input, "e", 1.3)
@@ -77,7 +80,7 @@ test("F5 saves; relaunch offers Continue, which restores the session exactly", f
 	local game = play()
 	game:keypressed("f5")
 	local saved = SaveCodec.encode(game.ctx)
-	local b = game.ctx.pools.buildings[1]
+	local b = game.ctx.pools.buildings[2]
 	assertTrue(b.functionBricks[1].node ~= nil, "fixture: the saw holds a reservation")
 
 	local again = relaunch()
@@ -88,8 +91,8 @@ test("F5 saves; relaunch offers Continue, which restores the session exactly", f
 	local ctx = again.flow.ctx
 	assertTrue(ctx ~= nil, "expected a session")
 	assertEqual(saved, SaveCodec.encode(ctx), "expected the loaded session to equal the saved one")
-	assertEqual(1, #ctx.pools.buildings)
-	assertEqual("d1", ctx.pools.buildings[1].design.id)
+	assertEqual(2, #ctx.pools.buildings, "the storage facility and the woodcutter")
+	assertEqual("d1", ctx.pools.buildings[2].design.id)
 	assertTrue(again.flow.world.player == ctx.pools.characters[1], "expected the world screen on the loaded character")
 	assertTrue(again.camera == again.flow.world.camera, "expected the harness camera to follow the new world screen")
 	Fake.runUntil(again, function()
@@ -120,7 +123,7 @@ test("a building whose design is gone from the library loads from the save's sna
 	assertEqual(0, #again.flow.library.designs, "expected the library to have lost the design")
 	again:keypressed("return")
 	assertEqual("world", again.flow.screen)
-	local b = again.ctx.pools.buildings[1]
+	local b = again.ctx.pools.buildings[2]
 	assertEqual("Woodcutter", b.design.name)
 	assertEqual(#WOODCUTTER.versions[1].bricks, #b.design.versions[b.version].bricks)
 	Fake.runUntil(again, function()
@@ -138,11 +141,12 @@ test("with no save the title offers only New game, which starts the seeded world
 	assertEqual(Config.world.width, game.ctx.world.width)
 	assertEqual(Config.save.seed, game.ctx.seed)
 	assertTrue(#game.ctx.pools.nodes > 0, "expected a generated world with nodes")
+	assertEqual(1, #game.ctx.pools.buildings, "expected the starting storage facility")
 end)
 
 test("an unreadable save keeps the title up with the reason; New game still works", function()
 	_G.love = LoveMock.new()
-	assert(love.filesystem.write(Config.save.file, "build-it-save 1\nmystery a=n:1\n"))
+	assert(love.filesystem.write(Config.save.file, "build-it-save 2\nmystery a=n:1\n"))
 	local game = GameHarness.launch()
 	assertEqual("continue,new", optionIds(game.flow.title))
 	Fake.tap(game, "return")

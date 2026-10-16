@@ -16,6 +16,7 @@ local BuilderScreen = require("src.app.screens.builder")
 local TitleScreen = require("src.app.screens.title")
 local DesignStore = require("src.app.design_store")
 local SaveStore = require("src.app.save_store")
+local StorageFacility = require("src.game.components.storage_facility")
 
 local Flow = {}
 
@@ -32,7 +33,9 @@ end
 local function begin(flow, ctx)
 	flow.ctx = ctx
 	flow.world = WorldScreen.new(ctx, flow.library)
-	flow.builder = BuilderScreen.new(flow.config, flow.library, flow.problems, ctx.pools.characters[1].inventory)
+	flow.builder = BuilderScreen.new(flow.config, flow.library, flow.problems, function()
+		return StorageFacility.totals(ctx)
+	end)
 	flow.screen = "world"
 end
 
@@ -54,7 +57,8 @@ function Flow.launch(config)
 end
 
 -- Starts the session the title screen's choice asks for: the saved one, or
--- a new world from config.save.seed. An unreadable save stays on the title
+-- a new game (Session.newGame: the starting storage facility and its
+-- stockpile) on a new world from config.save.seed. An unreadable save stays on the title
 -- with the reason.
 local function choose(flow)
 	local choice = flow.title.choice
@@ -68,7 +72,7 @@ local function choose(flow)
 		begin(flow, ctx)
 	elseif choice == "new" then
 		local seed = flow.config.save.seed
-		begin(flow, Session.new(WorldGen.generate(flow.config, seed), flow.config, seed))
+		begin(flow, Session.newGame(WorldGen.generate(flow.config, seed), flow.config, seed))
 	end
 end
 

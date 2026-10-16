@@ -1,6 +1,7 @@
 -- Placing buildings under real LÖVE 12: an asymmetric fixture design with
--- an input and an output port placed in all 4 facings, each with its port
--- tile markers, and the placement ghost valid and invalid. Captures land in
+-- an input and an output port placed in all 4 facings as construction
+-- sites, built by villagers into buildings with their port tile markers,
+-- and the placement ghost valid and invalid. Captures land in
 -- tests/screenshots/place_building_test/.
 local GameHarness = require("tests.support.game_harness")
 local Capture = require("tests.support.capture")
@@ -11,6 +12,7 @@ local Screen = require("src.app.screen")
 local WorldScreen = require("src.app.screens.world")
 local DesignStore = require("src.app.design_store")
 local Placement = require("src.game.buildings.placement")
+local Session = require("src.game.session")
 
 local TILE = Config.tileSize
 
@@ -68,14 +70,14 @@ test("a design places in all 4 facings with its port tiles marked, and the ghost
 		World.setTerrain(world, x, 17, "water")
 		World.setTerrain(world, x, 18, "water")
 	end
-	local game = GameHarness.startSession(world, { real = true, config = config })
+	-- Storage for 5 placements of 110 planks and more.
+	local game = GameHarness.startSession(world, { real = true, config = config, storage = { plank = 1000, stone = 1000 } })
 	local c = game.ctx.pools.characters[1]
 	local screen = game.flow.world
-	c.inventory.counts.plank = 1000 -- 5 placements of 110 planks and more
 
 	Fake.tap(game, "1")
-	-- One building per facing in a row south of the character (the test
-	-- house row stands north of it), footprints 3x2 or 2x3.
+	-- One building per facing in a row south of the character,
+	-- footprints 3x2 or 2x3.
 	local spots = { N = { 3, 12 }, E = { 9, 12 }, S = { 15, 12 }, W = { 21, 12 } }
 	for _, facing in ipairs({ "N", "E", "S", "W" }) do
 		assertEqual(facing, screen.placing.facing)
@@ -85,11 +87,36 @@ test("a design places in all 4 facings with its port tiles marked, and the ghost
 		Fake.tap(game, "r")
 	end
 
+	-- Sites first: translucent, their cost reserved, nothing delivered.
+	assertEqual(4, #game.ctx.pools.sites, "one site per facing")
+	assertEqual(1, #game.ctx.pools.buildings, "only the storage facility")
+	Fake.tap(game, "escape")
+	game:mousemoved(5, 5, 0, 0)
+	Capture.capture("sites_all_facings")
+
+	-- Villagers by the storage facility haul the cost and build them.
+	for i = 1, 20 do
+		local x, y = 18 + (i - 1) % 10, 15 + math.floor((i - 1) / 10)
+		table.insert(game.ctx.pools.villagers, Session.newVillager(i, (x + 0.5) * TILE, (y + 0.5) * TILE, config))
+	end
+	Fake.runUntil(game, function()
+		local site = game.ctx.pools.sites[1]
+		return site and (site.delivered.counts.plank or 0) > 0
+	end, 60 * 60)
+	Capture.capture("sites_part_delivered")
+	Fake.runUntil(game, function()
+		return #game.ctx.pools.sites == 0
+	end, 60 * 600)
+
 	local buildings = game.ctx.pools.buildings
-	assertEqual(4, #buildings)
-	for i, facing in ipairs({ "N", "E", "S", "W" }) do
-		local b = buildings[i]
-		assertEqual(facing, b.facing)
+	assertEqual(5, #buildings, "the storage facility and one per facing")
+	-- Sites finish in any order, so find each building by its facing.
+	local byFacing = {}
+	for i = 2, #buildings do
+		byFacing[buildings[i].facing] = buildings[i]
+	end
+	for _, facing in ipairs({ "N", "E", "S", "W" }) do
+		local b = assert(byFacing[facing], "a building facing " .. facing)
 		assertEqual(spots[facing][1], b.tileX)
 		assertEqual(spots[facing][2], b.tileY)
 		assertEqual(2, #b.ports)
@@ -97,8 +124,6 @@ test("a design places in all 4 facings with its port tiles marked, and the ghost
 			assertEqual(port, World.portAt(world, port.x, port.y))
 		end
 	end
-	Fake.tap(game, "escape")
-	game:mousemoved(5, 5, 0, 0)
 	Capture.capture("placed_all_facings")
 
 	Fake.tap(game, "1")

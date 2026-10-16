@@ -11,7 +11,7 @@ local Config = require("src.game.config")
 
 local function openBuilder()
 	_G.love = LoveMock.new()
-	local game = GameHarness.startSession({ width = 20, height = 20 })
+	local game = GameHarness.startSession({ width = 20, height = 20 }, { storage = Config.stockpile })
 	Fake.tap(game, "b")
 	return game, game.flow.builder
 end
@@ -59,7 +59,7 @@ test("placing a stone brick raises health and lowers productivity in the sidebar
 	assertTrue(after.productivity < before.productivity, "productivity falls")
 end)
 
-test("the cost counts bricks and baseplate against the inventory, short where it falls short", function()
+test("the cost counts bricks and baseplate against storage, short where it falls short", function()
 	local game, builder = openBuilder()
 	placeAt(game, builder, "2x2", 1, 1)
 	local row = costRow(BuilderScreen.info(builder), "plank")
@@ -67,7 +67,8 @@ test("the cost counts bricks and baseplate against the inventory, short where it
 	assertEqual(Config.stockpile.plank, row.have)
 	assertFalse(row.short)
 
-	game.ctx.pools.characters[1].inventory.counts.plank = 1
+	game.ctx.pools.characters[1].inventory.counts.plank = 1000 -- the inventory doesn't count
+	game.ctx.pools.buildings[1].storage.counts.plank = 1
 	row = costRow(BuilderScreen.info(builder), "plank")
 	assertEqual(1, row.have)
 	assertTrue(row.short, "expected the plank cost marked short")

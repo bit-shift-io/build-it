@@ -23,16 +23,13 @@ return {
 		ambient = 0.45,
 	},
 
-	-- The hard-coded test house row (src/game/blocks/test_house.lua), in
-	-- tiles from the world's centre tile, one house per facing.
-	testHouses = { offsetX = -7, offsetY = -6, spacing = 4 },
-
 	-- The world the app opens with, in tiles.
 	world = { width = 128, height = 128 },
 
 	-- Seeded world generation (src/game/world_gen.lua). Distances in tiles;
 	-- {min, max} pairs are random ranges. spawnClearRadius keeps the world's
-	-- centre (the character spawn and the test house row) free grass.
+	-- centre free grass: the starting storage facility (3x2 tiles and its
+	-- port tiles), the player beside it, and room for the villagers.
 	-- Cluster density is the chance a tile at the centre gets a node; it
 	-- falls by `falloff` of itself toward the cluster's edge.
 	worldGen = {
@@ -55,7 +52,9 @@ return {
 	-- the character may stand, in px from its centre to the node's tile.
 	harvest = { handCycle = 0.5, reach = 12 },
 
-	-- The planks and stone a new game's inventory starts with.
+	-- The stockpile: the planks and stone a new game's starting storage
+	-- facility (src/game/designs/starter.lua) holds. The player's inventory
+	-- starts empty.
 	stockpile = { plank = 50, stone = 50 },
 
 	-- What placing a building costs (src/game/builder/cost.lua): items per
@@ -140,6 +139,26 @@ return {
 		walkFrameDistance = 10,
 	},
 
+	-- Villagers (docs/CONTEXT.md "Villager"): a new game spawns `count` on
+	-- free tiles within spawnRadius tiles of the starting storage facility's
+	-- footprint. size and speed as for the character. shirt is their shirt
+	-- colour, apart from the player's. A path search (src/game/pathfind.lua)
+	-- gives up after pathMaxExpansions tiles, so a target walled off by water
+	-- never scans the whole world. carryLimit is the most items one load
+	-- (src/game/components/load.lua) holds, so one haul trip moves.
+	-- buildTime is the seconds a build job (src/game/jobs/build.lua) takes
+	-- per footprint tile of the construction site.
+	villagers = {
+		carryLimit = 4,
+		buildTime = 1,
+		count = 20,
+		spawnRadius = 6,
+		size = 16,
+		speed = 120,
+		shirt = { 0.72, 0.36, 0.2 },
+		pathMaxExpansions = 4000,
+	},
+
 	camera = {
 		minZoom = 0.25,
 		maxZoom = 4,
@@ -216,6 +235,19 @@ return {
 				cost = { plank = 4, stone = 2 },
 				accent = { 0.78, 0.8, 0.82 },
 				layers = { { "#..#", "#..#" }, { "####", "####" }, { ".we.", "...." } },
+			},
+			-- The depot (docs/CONTEXT.md "Depot") makes its building a
+			-- storage facility: it needs no operator and its input port
+			-- accepts every item.
+			{
+				name = "depot",
+				label = "Depot",
+				ability = "depot",
+				width = 2,
+				depth = 2,
+				cost = { plank = 4 },
+				accent = { 0.55, 0.36, 0.18 },
+				layers = { { "##", "##" }, { "oo", "oo" }, { "#.", ".#" } },
 			},
 			{
 				name = "input",

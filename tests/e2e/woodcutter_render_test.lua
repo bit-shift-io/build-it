@@ -9,6 +9,7 @@ local Config = require("src.game.config")
 local World = require("src.game.world")
 local Inventory = require("src.game.components.inventory")
 local Placement = require("src.game.buildings.placement")
+local Session = require("src.game.session")
 
 local function brick(shape, x, y, width, fields)
 	local b = { shape = shape, rotation = 0, x = x, y = y, z = 0, width = width, depth = 1, height = 3, material = "plank", paint = 4 }
@@ -50,7 +51,11 @@ test("a working building shows its work and fill, and FULL once nothing has room
 	local game = GameHarness.startSession(world, { real = true })
 	local ctx, c = game.ctx, game.ctx.pools.characters[1]
 	c.inventory = Inventory.new({ plank = 1000, stone = 1000 })
-	local b = assert(Placement.place(ctx, c, { design = CUTTER, version = 1, facing = "N", tileX = 15, tileY = 18 }))
+	local b = assert(Placement.build(ctx, { design = CUTTER, version = 1, facing = "N", tileX = 15, tileY = 18 }))
+	-- One operator per function brick (docs/adr/0003-function-bricks-need-operators.md).
+	for i = 1, 2 do
+		table.insert(ctx.pools.villagers, Session.newVillager(i, (14 + i) * Config.tileSize, 22.5 * Config.tileSize, Config))
+	end
 
 	Fake.runUntil(game, function()
 		return b.functionBricks[1].progress > 1 and b.functionBricks[2].progress > 1
@@ -63,7 +68,9 @@ test("a working building shows its work and fill, and FULL once nothing has room
 	Fake.runUntil(game, function()
 		return b.full
 	end, 60 * 60)
-	assertTrue(b.ports[1].buffer.counts.log > 0, "logs in the output")
-	assertTrue(b.ports[1].buffer.counts.stone > 0, "stone in the output")
+	-- One operator's load can fill the output on its own, so only some
+	-- harvest is guaranteed to be there, not both kinds.
+	local counts = b.ports[1].buffer.counts
+	assertTrue((counts.log or 0) + (counts.stone or 0) > 0, "harvest in the output")
 	Capture.capture("full")
 end)

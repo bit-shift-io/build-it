@@ -1,6 +1,7 @@
 -- Node reservations (src/game/systems/node_system.lua): a function brick
 -- holds one node at a time and no other brick may take it; the hold ends
--- when the node is depleted or the building is removed.
+-- when the node is depleted or the building is removed. A saw reserves only
+-- once a villager operates it.
 local Session = require("src.game.session")
 local World = require("src.game.world")
 local Config = require("src.game.config")
@@ -40,11 +41,18 @@ local function newSession()
 end
 
 local function build(ctx, c, x, y)
-	return assert(Placement.place(ctx, c, { design = CUTTER, version = 1, facing = "N", tileX = x, tileY = y }))
+	return assert(Placement.build(ctx, { design = CUTTER, version = 1, facing = "N", tileX = x, tileY = y }))
 end
 
 local function tree(ctx, x, y, amount)
 	return World.addNode(ctx.world, { id = x * 100 + y, kind = "tree", tileX = x, tileY = y, variant = 1, stage = 1, amount = amount or Config.nodes.tree.amount })
+end
+
+local function villager(ctx, tileX, tileY)
+	local tile = Config.tileSize
+	local v = Session.newVillager(#ctx.pools.villagers + 1, (tileX + 0.5) * tile, (tileY + 0.5) * tile, Config)
+	table.insert(ctx.pools.villagers, v)
+	return v
 end
 
 local function run(ctx, seconds)
@@ -57,8 +65,10 @@ test("a reserved node is skipped by another building's saw", function()
 	local ctx, c = newSession()
 	local a = build(ctx, c, 10, 10)
 	local t = tree(ctx, 11, 10)
+	villager(ctx, 10, 12)
 	run(ctx, STEP)
 	local b = build(ctx, c, 12, 10)
+	villager(ctx, 12, 12)
 	run(ctx, STEP)
 
 	assertEqual(t, a.functionBricks[1].node)
@@ -71,14 +81,15 @@ test("a depleted node releases its saw, which reserves the next node", function(
 	local ctx, c = newSession()
 	local a = build(ctx, c, 10, 10)
 	local first = tree(ctx, 11, 10, 1)
+	villager(ctx, 10, 12)
 	local cycle = FunctionBrick.cycle(a.traits, Config)
-	run(ctx, cycle + STEP)
+	run(ctx, cycle + 2)
 
 	assertTrue(first.dead)
 	assertEqual(nil, first.reservedBy)
 	assertEqual(nil, World.nodeAt(ctx.world, 11, 10), "swept")
 	local second = tree(ctx, 9, 10)
-	run(ctx, STEP)
+	run(ctx, 4)
 	assertEqual(second, a.functionBricks[1].node)
 end)
 
@@ -86,6 +97,7 @@ test("a node felled by hand releases its saw before any saw picks a target", fun
 	local ctx, c = newSession()
 	local a = build(ctx, c, 10, 10)
 	local t = tree(ctx, 11, 10)
+	villager(ctx, 10, 12)
 	run(ctx, STEP)
 	assertEqual(t, a.functionBricks[1].node)
 
@@ -95,7 +107,7 @@ test("a node felled by hand releases its saw before any saw picks a target", fun
 	assertEqual(nil, t.reservedBy)
 
 	local other = tree(ctx, 9, 10)
-	run(ctx, STEP)
+	run(ctx, 4)
 	assertEqual(other, a.functionBricks[1].node, "the saw never re-takes a depleted node")
 end)
 
@@ -103,6 +115,7 @@ test("removing a building releases its reservations and frees its tiles", functi
 	local ctx, c = newSession()
 	local a = build(ctx, c, 10, 10)
 	local t = tree(ctx, 11, 10)
+	villager(ctx, 10, 12)
 	run(ctx, STEP)
 	assertEqual(a.functionBricks[1], t.reservedBy)
 

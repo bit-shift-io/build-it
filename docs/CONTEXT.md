@@ -17,11 +17,11 @@ Domain terms for Build-it. Code, docs and conversation use these words with thes
 - **Boundary:** Items sit in an inventory, a buffer or storage. Logs are never a brick material.
 
 ## Inventory
-- **Definition:** The items the character carries.
-- **Boundary:** Unlimited in the prototype. Placement pays from it.
+- **Definition:** The items the player's character carries.
+- **Boundary:** Unlimited. Placement doesn't pay from it. The player delivers it to a depot to make it spendable.
 
 ## Stockpile
-- **Definition:** The planks and stone in the character's inventory at the start of a new game.
+- **Definition:** The planks and stone in the starting storage facility at the start of a new game.
 - **Boundary:** It's a starting amount, not a building or place.
 
 ## Prop
@@ -74,7 +74,7 @@ Domain terms for Build-it. Code, docs and conversation use these words with thes
 
 ## Function brick
 - **Definition:** A brick that gives a building an ability: saw (harvest trees), pickaxe (harvest rocks), planter (plant saplings), saw bench (logs → planks).
-- **Boundary:** Each one works independently and in parallel with the others. Each costs resources. A design needs at least one to save.
+- **Boundary:** Each one works independently and in parallel with the others, and only while an operator holds its operator job. The depot is the exception and needs no operator. Each costs resources. A design needs at least one to save.
 
 ## Port
 - **Definition:** An input or output brick on the footprint edge at ground level. It faces one world tile, where the player delivers or collects items.
@@ -86,6 +86,7 @@ Domain terms for Build-it. Code, docs and conversation use these words with thes
 
 ## Storage brick
 - **Definition:** A brick that adds internal item capacity to a building.
+- **Note:** A storage brick doesn't make a building a storage facility. A depot does.
 - **Boundary:** Function bricks pull from input buffers and storage, and push to storage and output buffers.
 
 ## Baseplate
@@ -101,7 +102,7 @@ Domain terms for Build-it. Code, docs and conversation use these words with thes
 - **Boundary:** Productivity shortens cycles. Capacity grows buffers and storage. Reach sets the harvest radius and aura radius. Health has no effect yet.
 
 ## Aura
-- **Definition:** A building effect on the character while the character is within the building's reach: walk speed, hand-harvest rate.
+- **Definition:** A building effect on the character or a villager while within the building's reach: walk speed, hand-harvest rate.
 - **Boundary:** Auras from several buildings stack additively. They never affect other buildings.
 
 ## Design
@@ -118,8 +119,46 @@ Domain terms for Build-it. Code, docs and conversation use these words with thes
 
 ## Building
 - **Definition:** A placed instance of a design version in the world, with a facing, buffers and storage contents.
-- **Boundary:** Its cost was paid at placement. It can't be edited in place.
+- **Boundary:** It starts as a construction site and works once villagers build it. It can't be edited in place.
 
 ## Builder
 - **Definition:** The 3D screen where the player designs and saves designs.
 - **Boundary:** Designing is free. The builder never touches the world.
+
+# Colony
+
+## Villager
+- **Definition:** A helper character that assigns itself to jobs. A new game starts with 20 around the starting storage facility.
+- **Boundary:** Never controlled by the player. Holds one job at a time. Walks through building footprints, which the player can't.
+
+## Job
+- **Definition:** A unit of work one villager holds: an operator job, a haul job or a build job.
+- **Boundary:** One villager per job. Free villagers take new jobs, nearest first. A busy villager is never pulled off a job.
+
+## Operator job
+- **Definition:** The job of running one function brick: harvesting, planting or converting, including carrying items in and out.
+- **Boundary:** Sticky: the operator keeps it while the brick has work. Every function brick except the depot has one.
+
+## Haul job
+- **Definition:** One trip carrying a load from an output port or storage facility to an input port, a storage facility or a construction site.
+- **Boundary:** Moves existing items only, never harvests. Ends after one trip.
+
+## Build job
+- **Definition:** The job of turning a construction site into a working building once all its materials are delivered.
+- **Boundary:** Ends when the building is finished.
+
+## Load
+- **Definition:** The items a villager carries.
+- **Boundary:** Capped by the carry limit in config. It's not an inventory.
+
+## Depot
+- **Definition:** A function brick that makes its building a storage facility.
+- **Boundary:** Needs no operator. Its input port accepts every item.
+
+## Storage facility
+- **Definition:** A building with a depot. It holds the colony's items in its storage, and placement pays from it.
+- **Boundary:** Capacity comes from its storage bricks and capacity trait. A new game starts with one, built from a built-in design. Items no building input accepts are hauled here.
+
+## Construction site
+- **Definition:** A placed design not yet built. Its cost is reserved in storage at placement.
+- **Boundary:** Becomes a building once haulers deliver its cost and a build job finishes. Blocks its footprint like a building.

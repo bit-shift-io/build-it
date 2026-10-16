@@ -28,6 +28,22 @@ Registry.CHARACTER = {
 	generate = Character.generate,
 }
 
+-- The villager (docs/CONTEXT.md "Villager"): the character's figure in
+-- config.villagers.shirt, baked as a kind of its own. The shirt colour is
+-- hashed into its version, so a new colour is a new bake key and rebakes.
+function Registry.villager(config)
+	local shirt = config.villagers.shirt
+	return {
+		kind = "villager",
+		version = Rng.hash(Character.VERSION, shirt[1], shirt[2], shirt[3]),
+		variants = #Character.DIRECTIONS,
+		stages = Character.FRAMES,
+		generate = function(_rng, params)
+			return Character.model(params.variant, params.stage, shirt)
+		end,
+	}
+end
+
 -- The seed of one (kind, variant). Each gets its own rng from it, never a
 -- shared stream, so adding a kind or variant leaves every other unchanged.
 function Registry.seed(def, variant, config)

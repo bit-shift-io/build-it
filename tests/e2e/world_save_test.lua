@@ -60,7 +60,7 @@ test("the title, and a building drawn from the save's snapshot after its design 
 	local c = game.ctx.pools.characters[1]
 	c.inventory.counts.plank = 1000
 	local library = game.flow.library
-	assert(Placement.place(game.ctx, c, { design = library.designs[1], version = 1, facing = "N", tileX = 14, tileY = 12 }))
+	assert(Placement.build(game.ctx, { design = library.designs[1], version = 1, facing = "N", tileX = 14, tileY = 12 }))
 	FrameStepper.step(game, 2)
 	Capture.capture("before_save")
 	game:keypressed("f5")

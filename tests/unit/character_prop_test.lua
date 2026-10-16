@@ -179,3 +179,23 @@ test("the registry's character kind bakes 8 directions as variants and 5 frames 
 	local _, eyesS = part(model("S"), "eyes")
 	assertEqual(eyesS.minX - 1, eyes.minX, "variant picks the direction")
 end)
+
+test("the villager kind bakes the same figure in config.villagers.shirt, keyed by that colour", function()
+	local Registry = require("src.game.props.registry")
+	local Config = require("src.game.config")
+	local def = Registry.villager(Config)
+	assertEqual("villager", def.kind)
+	assertEqual(#Character.DIRECTIONS, def.variants)
+	assertEqual(Character.FRAMES, def.stages)
+	local m = Registry.model(def, directionIndex("E"), Character.WALK[1], Config)
+	local plain = model("E", Character.WALK[1])
+	assertEqual(#plain.cells, #m.cells)
+	local body = part(m, "body")
+	assertEqual(Config.villagers.shirt, body[1].color)
+	local plainBody = part(plain, "body")
+	assertTrue(plainBody[1].color ~= Config.villagers.shirt, "the player's shirt is unchanged")
+
+	local other = { villagers = { shirt = { 0.1, 0.2, 0.3 } }, props = Config.props }
+	assertTrue(Registry.villager(other).version ~= def.version, "another shirt colour is another bake key")
+	assertEqual(def.version, Registry.villager(Config).version)
+end)

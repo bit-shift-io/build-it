@@ -14,6 +14,8 @@ local defaultTestFiles = {
 	"tests/integration/sawmill_test.lua",
 	"tests/integration/forester_test.lua",
 	"tests/integration/save_load_test.lua",
+	"tests/integration/starting_storage_test.lua",
+	"tests/integration/hauling_test.lua",
 }
 
 local tests = {}

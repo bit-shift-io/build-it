@@ -16,7 +16,7 @@ local function setup(material)
 	local ctx = Session.new(World.new(30, 30), Config, 1)
 	local c = ctx.pools.characters[1]
 	c.inventory = Inventory.new({ plank = 10000, stone = 10000 })
-	assert(Placement.place(ctx, c, { design = design(material), version = 1, facing = "N", tileX = 10, tileY = 10 }))
+	assert(Placement.build(ctx, { design = design(material), version = 1, facing = "N", tileX = 10, tileY = 10 }))
 	return ctx, c
 end
 
@@ -33,7 +33,7 @@ end)
 
 test("auras stack additively", function()
 	local ctx, c = setup("plank")
-	assert(Placement.place(ctx, c, { design = design("plank"), version = 1, facing = "N", tileX = 13, tileY = 10 }))
+	assert(Placement.build(ctx, { design = design("plank"), version = 1, facing = "N", tileX = 13, tileY = 10 }))
 	assertNear(2 * Config.auras.plank.walkSpeed, at(ctx, c, 12, 10).walkSpeed)
 end)
 

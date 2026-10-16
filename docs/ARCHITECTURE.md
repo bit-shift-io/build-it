@@ -49,10 +49,16 @@ function CharacterSystem.update(ctx)
 end
 ```
 
-- The whole frame order lives in one function, `Session.step(ctx)`:
+- The whole frame order lives in one function, `Session.step(ctx)` (its comment lists every step):
   1. Read player intents (from `ctx.intents`). `app` fills them before the step.
-  2. Characters: walk.
-  3. **Despawn sweep**, the only place records are removed (added once anything can be removed).
+  2. Characters (`pools.characters`, the player): walk, then hand-harvest.
+  3. Villagers (`pools.villagers`): walk their paths. They never read intents.
+  4. Nodes grow, dead nodes release their bricks, then construction sites are placed (`pools.sites`), built sites become buildings, and buildings run.
+  5. Jobs (`pools.jobs`): free villagers take new jobs (operator, build, haul), then every job steps. This runs after the buildings, so haulers read output buffers after `Ports.flush`.
+  6. **Despawn sweeps**, the only place records are removed: ended jobs, then buildings and built sites, then nodes.
+- Pools: `characters`, `villagers`, `nodes`, `buildings`, `sites`, `jobs`. Villagers have their own pool so systems that loop characters for player intents never see them.
+- Jobs: `src/game/systems/job_system.lua` creates haul jobs (`src/game/jobs/haul.lua`) from world state and gives each one to the nearest free villager the moment it is created, so no job waits unassigned. A job reserves its source items (`Storage.reserve`) and destination room (`Storage.reserveRoom`) and releases them when it ends or fails. Jobs and reservations are not saved; a villager's `load` is.
+- Paths: `src/game/pathfind.lua` is A* over tiles (8-way, no corner cutting, deterministic, capped by `config.villagers.pathMaxExpansions`). The `walker` component finds a path once per target and steers through `Mover`. `mover.throughBuildings` lets a record cross building footprints (villagers); the player's mover never sets it.
 - Nothing is removed mid-iteration. Systems mark records `dead = true`; the sweep removes them.
 
 ## `ctx`

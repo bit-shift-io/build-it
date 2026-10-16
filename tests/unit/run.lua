@@ -11,7 +11,6 @@ local defaultTestFiles = {
 	"tests/unit/block_model_test.lua",
 	"tests/unit/mesher_test.lua",
 	"tests/unit/projection_test.lua",
-	"tests/unit/test_house_test.lua",
 	"tests/unit/tree_prop_test.lua",
 	"tests/unit/planter_test.lua",
 	"tests/unit/growth_test.lua",
@@ -39,6 +38,15 @@ local defaultTestFiles = {
 	"tests/unit/storage_test.lua",
 	"tests/unit/ports_test.lua",
 	"tests/unit/save_codec_test.lua",
+	"tests/unit/starter_design_test.lua",
+	"tests/unit/storage_facility_test.lua",
+	"tests/unit/pathfind_test.lua",
+	"tests/unit/walker_test.lua",
+	"tests/unit/load_test.lua",
+	"tests/unit/haul_test.lua",
+	"tests/unit/job_system_test.lua",
+	"tests/unit/operate_test.lua",
+	"tests/unit/site_test.lua",
 }
 
 local tests = {}

@@ -29,10 +29,10 @@ local function cycles(n)
 	return n * Config.harvest.handCycle + 0.05
 end
 
-test("a new game starts with the configured stockpile", function()
+test("the player starts with an empty inventory (the stockpile is in storage)", function()
 	local _, _, c = startWith("tree")
-	assertEqual(Config.stockpile.plank, Inventory.count(c.inventory, "plank"))
-	assertEqual(Config.stockpile.stone, Inventory.count(c.inventory, "stone"))
+	assertEqual(0, Inventory.count(c.inventory, "plank"))
+	assertEqual(0, Inventory.count(c.inventory, "stone"))
 	assertEqual(0, Inventory.count(c.inventory, "log"))
 end)
 
@@ -74,7 +74,7 @@ test("harvesting a rock adds stone and the rock disappears when empty", function
 
 	Fake.holdFor(game, input, "e", cycles(Config.nodes.rock.amount))
 
-	assertEqual(Config.stockpile.stone + Config.nodes.rock.amount, Inventory.count(c.inventory, "stone"))
+	assertEqual(Config.nodes.rock.amount, Inventory.count(c.inventory, "stone"))
 	assertTrue(World.nodeAt(world, 7, 5) == nil, "tile cleared")
 	assertEqual(0, #world.nodes)
 	assertEqual(0, #game.ctx.pools.nodes)

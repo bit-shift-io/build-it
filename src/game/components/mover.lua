@@ -12,11 +12,12 @@ local function clamp(v, lo, hi)
 end
 
 -- True when the square of side 2 * half centred on (x, y) overlaps a blocked
--- tile (World.isBlocked). Touching a tile's edge is not overlapping.
-local function overlapsBlocked(world, tile, x, y, half)
+-- tile (World.isBlocked, footprints open when `through`). Touching a tile's
+-- edge is not overlapping.
+local function overlapsBlocked(world, tile, x, y, half, through)
 	for ty = math.floor((y - half) / tile), math.ceil((y + half) / tile) - 1 do
 		for tx = math.floor((x - half) / tile), math.ceil((x + half) / tile) - 1 do
-			if World.isBlocked(world, tx, ty) then
+			if World.isBlocked(world, tx, ty, through) then
 				return true
 			end
 		end
@@ -42,7 +43,8 @@ end
 -- diagonally is no faster than walking straight. The world edge stops the
 -- record with its whole square still inside the world; water and resource
 -- nodes stop it flush against their tile, each axis on its own so it slides
--- along a shore.
+-- along a shore. Building footprints stop it too, unless
+-- record.mover.throughBuildings is set (villagers).
 function Mover.apply(record, intent, ctx)
 	local dir = Vec2.normalize(intent)
 	local step = record.mover.speed * ctx.dt
@@ -50,14 +52,15 @@ function Mover.apply(record, intent, ctx)
 	local tile = ctx.config.tileSize
 	local world = ctx.world
 	local w, h = World.pixelSize(world, ctx.config)
+	local through = record.mover.throughBuildings
 
 	local toX = clamp(record.x + dir.x * step, half, w - half)
 	record.x = moveAxis(record.x, toX, half, tile, function(x)
-		return overlapsBlocked(world, tile, x, record.y, half)
+		return overlapsBlocked(world, tile, x, record.y, half, through)
 	end)
 	local toY = clamp(record.y + dir.y * step, half, h - half)
 	record.y = moveAxis(record.y, toY, half, tile, function(y)
-		return overlapsBlocked(world, tile, record.x, y, half)
+		return overlapsBlocked(world, tile, record.x, y, half, through)
 	end)
 end
 

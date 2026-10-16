@@ -230,7 +230,8 @@ test("every function, port and storage brick draws its own model, turned", funct
 end)
 
 test("the info panel shows traits, cost red where short, and every broken rule, clear of the sidebar", function()
-	local game = GameHarness.startSession({ width = 20, height = 20 }, { real = true })
+	-- Storage covers the planks but holds only 3 stone, so stone shows short.
+	local game = GameHarness.startSession({ width = 20, height = 20 }, { real = true, storage = { plank = 50, stone = 3 } })
 	Fake.tap(game, "b")
 	local builder = game.flow.builder
 	clickButton(game, builder, "Width +")
@@ -242,7 +243,6 @@ test("the info panel shows traits, cost red where short, and every broken rule, 
 	clickButton(game, builder, "1x2")
 	Fake.click(game, 1, pixelOf(builder, 1, 3.5, 0))
 	assertEqual(3, #builder.draft.bricks)
-	game.ctx.pools.characters[1].inventory.counts.stone = 3
 	local info = BuilderScreen.info(builder)
 	assertEqual(2, #info.problems, "no output port, port off edge")
 	local designs = #builder.library.designs

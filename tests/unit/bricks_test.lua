@@ -15,6 +15,7 @@ test("each brick shape has its footprint, swapped by a quarter turn", function()
 		pickaxe = { 3, 1 },
 		planter = { 2, 2 },
 		sawbench = { 4, 2 },
+		depot = { 2, 2 },
 		input = { 2, 1 },
 		output = { 2, 1 },
 		storage = { 2, 2 },

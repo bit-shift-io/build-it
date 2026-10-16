@@ -99,13 +99,53 @@ end)
 
 local Session = require("src.game.session")
 local World = require("src.game.world")
-local Inventory = require("src.game.components.inventory")
+local Storage = require("src.game.components.storage")
+local StorageFacility = require("src.game.components.storage_facility")
 
 local DESIGN = { id = "d1", name = "Hall", versions = { asymmetric() } }
 
+-- A 1x1-tile storage facility: a depot and storage bricks, no ports.
+local function store(id)
+	local function b(shape, x, y, extra)
+		local t = { x = x, y = y, z = 0, width = 2, depth = 2, shape = shape, rotation = 0, material = "plank", paint = 1 }
+		for k, v in pairs(extra) do
+			t[k] = v
+		end
+		return t
+	end
+	return {
+		id = id,
+		name = "Store",
+		versions = {
+			{
+				width = 1,
+				depth = 1,
+				bricks = { b("depot", 0, 0, { ability = "depot" }), b("storage", 2, 0, { storage = 8 }), b("storage", 0, 2, { storage = 8 }) },
+			},
+		},
+	}
+end
+
+local STORE = store("d9")
+
+-- A facility on tile (x, y) holding `items` ({ [item] = n }).
+local function facility(ctx, x, y, items)
+	local f = assert(Placement.build(ctx, { design = STORE, version = 1, facing = "N", tileX = x, tileY = y }))
+	f.storage.capacity = 1000
+	for item, n in pairs(items) do
+		for _ = 1, n do
+			Storage.add(f.storage, item)
+		end
+	end
+	return f
+end
+
+-- A 20x20 session with one facility in the south-east corner holding the
+-- stockpile.
 local function newSession()
 	local ctx = Session.new(World.new(20, 20), Config, 1)
-	return ctx, ctx.pools.characters[1]
+	local f = facility(ctx, 19, 19, Config.stockpile)
+	return ctx, f
 end
 
 -- One step with player 1 asking to place DESIGN v1.
@@ -115,12 +155,25 @@ local function place(ctx, facing, x, y)
 	ctx.intents[1] = nil
 end
 
-test("placing creates a building with the version, facing and an empty buffer per port", function()
+test("placing creates a construction site with the version, facing and turned footprint", function()
 	local ctx = newSession()
 	place(ctx, "E", 2, 3)
 
-	assertEqual(1, #ctx.pools.buildings)
-	local b = ctx.pools.buildings[1]
+	assertEqual(1, #ctx.pools.buildings, "only the facility: no building yet")
+	local site = ctx.pools.sites[1]
+	assertEqual(DESIGN, site.design)
+	assertEqual(1, site.version)
+	assertEqual("E", site.facing)
+	assertEqual(2, site.tileX)
+	assertEqual(3, site.tileY)
+	assertEqual(2, site.width)
+	assertEqual(3, site.depth)
+end)
+
+test("a building has the version, facing and an empty buffer per port", function()
+	local ctx = newSession()
+	local b = Placement.build(ctx, { design = DESIGN, version = 1, facing = "E", tileX = 2, tileY = 3 })
+
 	assertEqual(DESIGN, b.design)
 	assertEqual(1, b.version)
 	assertEqual("E", b.facing)
@@ -138,8 +191,7 @@ end)
 
 test("a building occupies its footprint, blocks it and marks its port tiles", function()
 	local ctx = newSession()
-	place(ctx, "E", 2, 3)
-	local b = ctx.pools.buildings[1]
+	local b = Placement.build(ctx, { design = DESIGN, version = 1, facing = "E", tileX = 2, tileY = 3 })
 
 	for y = 3, 5 do
 		for x = 2, 3 do
@@ -155,17 +207,38 @@ test("a building occupies its footprint, blocks it and marks its port tiles", fu
 	assertFalse(World.isBlocked(ctx.world, 2, 2), "port tiles stay walkable")
 end)
 
-test("placing pays the cost from the character's inventory, once", function()
-	local ctx, c = newSession()
-	local before = Inventory.count(c.inventory, "plank")
+local function stored(ctx, item)
+	return StorageFacility.totals(ctx)[item] or 0
+end
+
+test("placing takes the cost off the storage totals, once, never from the inventory", function()
+	local ctx = newSession()
+	local c = ctx.pools.characters[1]
+	c.inventory.counts.plank = 500
+	local before = stored(ctx, "plank")
 	local cost = Cost.of(asymmetric(), Config).plank
 
 	place(ctx, "N", 2, 3)
 	Session.advance(ctx, 1 / 60)
 	Session.advance(ctx, 1 / 60)
 
-	assertEqual(before - cost, Inventory.count(c.inventory, "plank"))
-	assertEqual(Config.stockpile.stone, Inventory.count(c.inventory, "stone"))
+	assertEqual(before - cost, stored(ctx, "plank"))
+	assertEqual(Config.stockpile.stone, stored(ctx, "stone"))
+	assertEqual(500, c.inventory.counts.plank)
+end)
+
+test("placing claims from the facility nearest the footprint first, then the next", function()
+	local ctx = Session.new(World.new(20, 20), Config, 1)
+	local cost = Cost.of(asymmetric(), Config).plank
+	local far = facility(ctx, 19, 19, { plank = cost })
+	local near = facility(ctx, 0, 0, { plank = cost - 1 })
+
+	place(ctx, "N", 2, 3)
+
+	assertEqual(1, #ctx.pools.sites, "placed")
+	assertEqual(cost - 1, near.storage.claimed.plank, "all the nearest holds")
+	assertEqual(1, far.storage.claimed.plank, "one plank from the far one")
+	assertEqual(cost - 1, near.storage.counts.plank, "claimed stock stays until hauled")
 end)
 
 local function request(facing, x, y)
@@ -174,13 +247,13 @@ end
 
 -- Placement.check's answer for DESIGN v1 facing N at (5, 5): footprint
 -- (5..7, 5..6), input port tile (4, 6), output port tile (7, 4).
-local function check(ctx, c, x, y)
-	return Placement.check(ctx, request("N", x or 5, y or 5), c.inventory)
+local function check(ctx, x, y)
+	return Placement.check(ctx, request("N", x or 5, y or 5))
 end
 
-test("a placement on clear grass with the cost in hand is valid", function()
-	local ctx, c = newSession()
-	local ok, reason = check(ctx, c)
+test("a placement on clear grass with the cost in storage is valid", function()
+	local ctx = newSession()
+	local ok, reason = check(ctx)
 	assertTrue(ok)
 	assertEqual(nil, reason)
 end)
@@ -227,23 +300,37 @@ test("a placement is refused with why, and nothing is placed or paid", function(
 		},
 		{
 			reason = "unaffordable",
-			setup = function(_, c)
-				c.inventory.counts.plank = Cost.of(asymmetric(), Config).plank - 1
+			setup = function(_, f)
+				f.storage.counts.plank = Cost.of(asymmetric(), Config).plank - 1
 			end,
 		},
 	}
 	for _, case in ipairs(cases) do
-		local ctx, c = newSession()
-		case.setup(ctx, c)
-		local built = #ctx.pools.buildings
-		local planks = Inventory.count(c.inventory, "plank")
+		local ctx, f = newSession()
+		case.setup(ctx, f)
+		local built, sites = #ctx.pools.buildings, #ctx.pools.sites
+		local planks = stored(ctx, "plank")
 
-		local ok, reason = check(ctx, c, case.x, case.y)
+		local ok, reason = check(ctx, case.x, case.y)
 		assertFalse(ok, case.reason .. ": expected refusal")
 		assertEqual(case.reason, reason)
 
 		place(ctx, "N", case.x or 5, case.y or 5)
 		assertEqual(built, #ctx.pools.buildings, case.reason .. ": nothing placed")
-		assertEqual(planks, Inventory.count(c.inventory, "plank"), case.reason .. ": nothing paid")
+		assertEqual(sites, #ctx.pools.sites, case.reason .. ": no site")
+		assertEqual(planks, stored(ctx, "plank"), case.reason .. ": nothing paid")
+	end
+end)
+
+test("each function brick knows its tile inside the footprint, turned by facing", function()
+	local bench = { x = 8, y = 4, z = 0, width = 4, depth = 4, height = 1, shape = "sawbench", rotation = 0, material = "plank", paint = 1, ability = "sawbench" }
+	local mill = { id = "d7", name = "Mill", versions = { { width = 3, depth = 2, bricks = { bench } } } }
+	-- The bench's centre stands on tile (2, 1) of the 3x2 footprint facing N.
+	for facing, at in pairs({ N = { 2, 1 }, E = { 0, 2 }, S = { 0, 0 }, W = { 1, 0 } }) do
+		local ctx = Session.new(World.new(20, 20), Config, 1)
+		local b = Placement.build(ctx, { design = mill, version = 1, facing = facing, tileX = 5, tileY = 6 })
+		local fb = b.functionBricks[1]
+		assertEqual(5 + at[1], fb.tileX, facing .. " x")
+		assertEqual(6 + at[2], fb.tileY, facing .. " y")
 	end
 end)
