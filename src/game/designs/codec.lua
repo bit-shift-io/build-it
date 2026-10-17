@@ -8,9 +8,12 @@
 --   version depth=n:1 width=n:1
 --   brick depth=n:2 material=s:plank paint=n:1 ... x=n:0 y=n:0 z=n:0
 --   version ...
+--   retired n=n:3
 --
 -- A record is a tag and its fields as key=value. Brick lines belong to the
--- version line above them. Values carry their type: n: a number, b: a
+-- version line above them. A retired line stands in for a retired version
+-- (src/game/designs/library.lua `Library.deleteVersion`): it keeps the
+-- version's number taken but not its bricks. Values carry their type: n: a number, b: a
 -- boolean (true/false), s: a string with every byte outside [%w-_.~]
 -- written as %XX. Fields are written generically, whatever a design,
 -- version or brick carries, so new brick fields save without codec changes.
@@ -61,14 +64,26 @@ local function record(tag, t, skip)
 	return table.concat(parts, " ")
 end
 
--- The file text of `design` = { id, name, versions = { <version>, ... } },
--- version = { width, depth, bricks = { <brick>, ... } }.
+-- The file text of `design` = { id, name, versions = { <version>, ... },
+-- retired = { [n] = true } or nil }, version = { width, depth, bricks =
+-- { <brick>, ... } }. A retired version is written as its number only.
 function Codec.encode(design)
-	local lines = { HEADER, record("design", design, "versions") }
-	for _, version in ipairs(design.versions) do
-		lines[#lines + 1] = record("version", version, "bricks")
-		for _, brick in ipairs(version.bricks) do
-			lines[#lines + 1] = record("brick", brick)
+	local fields = {}
+	for k, v in pairs(design) do
+		if k ~= "versions" and k ~= "retired" then
+			fields[k] = v
+		end
+	end
+	local retired = design.retired or {}
+	local lines = { HEADER, record("design", fields) }
+	for n, version in ipairs(design.versions) do
+		if retired[n] then
+			lines[#lines + 1] = record("retired", { n = n })
+		else
+			lines[#lines + 1] = record("version", version, "bricks")
+			for _, brick in ipairs(version.bricks) do
+				lines[#lines + 1] = record("brick", brick)
+			end
 		end
 	end
 	return table.concat(lines, "\n") .. "\n"
@@ -108,6 +123,7 @@ end
 local REQUIRED = {
 	design = { id = "string", name = "string" },
 	version = { width = "number", depth = "number" },
+	retired = { n = "number" },
 	brick = { x = "number", y = "number", z = "number", width = "number", depth = "number" },
 }
 
@@ -157,6 +173,15 @@ function Codec.decode(text)
 				version = fields
 				version.bricks = {}
 				table.insert(design.versions, version)
+			elseif tag == "retired" then
+				if fields.n ~= #design.versions + 1 then
+					return nil, "line " .. n .. " retires version " .. fields.n .. " out of order"
+				end
+				-- A placeholder: keeps the number taken; never draft from it.
+				version = nil
+				design.versions[fields.n] = { bricks = {} }
+				design.retired = design.retired or {}
+				design.retired[fields.n] = true
 			elseif not version then
 				return nil, "line " .. n .. " is a brick outside any version"
 			else
@@ -167,6 +192,8 @@ function Codec.decode(text)
 	if not design then
 		return nil, "no design record"
 	end
+	-- Retired placeholders count: a design with every version retired still
+	-- holds its id. Only a file with no version or retired line at all is bad.
 	if #design.versions == 0 then
 		return nil, "no versions"
 	end

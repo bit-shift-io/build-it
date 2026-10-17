@@ -81,3 +81,56 @@ test("corrupt text is reported, not thrown", function()
 		assertEqual("string", type(reason), label .. ": expected a reason")
 	end
 end)
+
+test("retired versions round-trip as placeholders with the same numbers", function()
+	local design = {
+		id = "d2",
+		name = "Hut",
+		versions = {
+			{ width = 1, depth = 1, bricks = { brick(0) } },
+			{ width = 2, depth = 2, bricks = { brick(0), brick(2) } },
+			{ width = 1, depth = 2, bricks = { brick(0) } },
+		},
+		retired = { [2] = true },
+	}
+	local text = Codec.encode(design)
+	assertFalse(text:find("x=n:2") ~= nil, "a retired version's bricks are not written")
+	local decoded = assert(Codec.decode(text))
+	assertEqual(3, #decoded.versions)
+	assertTrue(decoded.retired[2])
+	assertEqual(nil, decoded.retired[1])
+	assertEqual(nil, decoded.retired[3])
+	assertEqual(0, #decoded.versions[2].bricks)
+	assertSameVersion(design.versions[1], decoded.versions[1], "v1")
+	assertSameVersion(design.versions[3], decoded.versions[3], "v3")
+end)
+
+test("a design whose every version is retired still encodes and decodes", function()
+	local design = {
+		id = "d4",
+		name = "Gone",
+		versions = { { width = 1, depth = 1, bricks = { brick(0) } } },
+		retired = { [1] = true },
+	}
+	local decoded, reason = Codec.decode(Codec.encode(design))
+	assert(decoded, reason)
+	assertEqual("d4", decoded.id)
+	assertEqual(1, #decoded.versions)
+	assertTrue(decoded.retired[1])
+end)
+
+test("a retired record out of order is reported", function()
+	local text = "build-it-design 1\ndesign id=s:d1 name=s:A\nretired n=n:2\n"
+	local design, reason = Codec.decode(text)
+	assertEqual(nil, design)
+	assertEqual("string", type(reason))
+end)
+
+test("a file without retired records decodes with nothing retired", function()
+	local text = "build-it-design 1\ndesign id=s:d1 name=s:A\nversion depth=n:1 width=n:1\n"
+		.. "brick depth=n:2 width=n:2 x=n:0 y=n:0 z=n:0\n"
+	local design = assert(Codec.decode(text))
+	assertEqual(1, #design.versions)
+	assertEqual(1, #design.versions[1].bricks)
+	assertEqual(nil, design.retired)
+end)

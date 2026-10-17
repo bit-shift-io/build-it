@@ -28,7 +28,8 @@ local HALL = {
 }
 local COST = Cost.of(HALL.versions[1], Config)
 
--- A 1x1-tile storage facility: a depot and storage bricks, no ports.
+-- A 1x1-tile storage facility: a depot, storage bricks, and input and
+-- output ports on its south edge.
 local STORE = {
 	id = "d9",
 	name = "Store",
@@ -39,6 +40,8 @@ local STORE = {
 			bricks = {
 				{ x = 0, y = 0, z = 0, width = 2, depth = 2, shape = "depot", rotation = 0, material = "plank", paint = 1, ability = "depot" },
 				{ x = 2, y = 0, z = 0, width = 2, depth = 2, shape = "storage", rotation = 0, material = "plank", paint = 1, storage = 8 },
+				{ x = 0, y = 3, z = 0, width = 2, depth = 1, shape = "input", rotation = 0, material = "plank", paint = 1, port = "input" },
+				{ x = 2, y = 3, z = 0, width = 2, depth = 1, shape = "output", rotation = 0, material = "plank", paint = 1, port = "output" },
 			},
 		},
 	},
@@ -138,9 +141,8 @@ test("villagers haul the claimed cost from storage to the site", function()
 	assertTrue(stepUntil(ctx, function()
 		return (site.delivered.counts.plank or 0) == COST.plank
 	end, 60 * 120), "everything delivered")
-	assertEqual(3, f.storage.counts.plank, "only the cost left storage")
 	assertEqual(nil, f.storage.claimed and f.storage.claimed.plank, "no claim left")
-	assertEqual(3, StorageFacility.totals(ctx).plank)
+	assertEqual(3, StorageFacility.totals(ctx).plank, "only the cost left the facility")
 end)
 
 test("a build job starts only once everything is delivered, then the site becomes a building", function()

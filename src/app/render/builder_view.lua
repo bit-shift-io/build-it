@@ -148,14 +148,17 @@ function BuilderView.draw(screen, view, ghost)
 end
 
 -- Whether sidebar button `b` is on: the held brick's current choice, the
--- name field while typing, Open while browsing, or the design being edited.
+-- name field while typing, Open while browsing, the design being edited,
+-- or an armed Delete.
 local function selected(screen, b)
 	if b.kind == "name" then
 		return screen.typingName
 	elseif b.kind == "open" then
 		return screen.browsing
-	elseif b.kind == "design" then
+	elseif b.kind == "expand" then
 		return b.value == screen.designId
+	elseif b.kind == "deleteVersion" then
+		return b.armed
 	end
 	return screen.held[b.kind] ~= nil and screen.held[b.kind] == b.value
 end
@@ -189,7 +192,8 @@ local HELP = table.concat({
 -- The sidebar: the baseplate size and its resize buttons, the last message
 -- (a refused resize or save, a save, unreadable design files), the design's
 -- name and actions, and the held brick's shape (plain or function brick),
--- material and paint -- or, while browsing, the library's designs.
+-- material and paint -- or, while browsing, the library's designs, one
+-- expanded into its version rows (Open and Delete).
 function BuilderView.drawSidebar(screen, buttons)
 	local _, h = Screen.dimensions()
 	local d, cfg = screen.draft, screen.cfg
@@ -215,7 +219,7 @@ function BuilderView.drawSidebar(screen, buttons)
 		else
 			love.graphics.setColor(BUTTON_COLOR)
 			love.graphics.rectangle("fill", b.x, b.y, b.width, b.height, 4, 4)
-			love.graphics.setColor(TEXT_COLOR)
+			love.graphics.setColor(b.armed and WARNING_COLOR or TEXT_COLOR)
 			love.graphics.printf(b.label, b.x, b.y + (b.height - font:getHeight()) / 2, b.width, "center")
 		end
 		if selected(screen, b) then

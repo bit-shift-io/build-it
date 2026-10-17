@@ -8,8 +8,8 @@
 -- kind within the building's reach and harvests it into their load
 -- (src/game/jobs/operate.lua). `node` is saved; `operator` is never saved.
 --
--- A converter ({ ability, recipe, progress, state = "idle"|"working"|
--- "full", operator = <operator job> | nil }) does nothing by itself: an
+-- A converter ({ ability, recipe, progress, state = "idle"|"working",
+-- operator = <operator job> | nil }) does nothing by itself: an
 -- operator villager runs it (src/game/jobs/operate.lua) while
 -- FunctionBrick.hasWork. `operator` is never saved.
 --

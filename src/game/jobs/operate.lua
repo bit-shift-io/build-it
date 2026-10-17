@@ -92,8 +92,9 @@ end
 
 -- Converter work (a saw bench): take the recipe input from an input
 -- buffer, carry it to the brick's tile, wait one cycle, carry the product
--- to an output buffer. The input is taken on pick-up, not reserved on the
--- way, and the output room is reserved from when the operator heads there.
+-- to an output buffer. One output room (job.out) is reserved before the
+-- operator heads for the input, so it never holds an item with nowhere to
+-- put it; the input is taken on pick-up, not reserved on the way.
 local Convert = {}
 
 -- The port of `kind` nearest the brick's tile that ok(port) accepts; ties
@@ -116,10 +117,14 @@ function Convert.begin(job, ctx)
 	local port = nearestPort(job, "input", function(p)
 		return Storage.available(p.buffer, item) >= n
 	end)
-	if not port then
+	local out = nearestPort(job, "output", function(p)
+		return Storage.room(p.buffer) > 0
+	end)
+	if not port or not out then
 		return Operate.finish(job)
 	end
-	job.port = port
+	job.port, job.out = port, out
+	Storage.reserveRoom(out.buffer, 1)
 	Operate.walkTo(job, ctx, "toInput", port.x, port.y)
 end
 
@@ -143,22 +148,6 @@ function Convert.toBrick(job, ctx)
 	Convert.working(job, ctx)
 end
 
--- Heads for the nearest output with room, or waits ("full") for one.
-function Convert.toOutputPort(job, ctx)
-	local port = nearestPort(job, "output", function(p)
-		return Storage.room(p.buffer) > 0
-	end)
-	if not port then
-		job.stage = "toOutputPort"
-		job.brick.state = "full"
-		return
-	end
-	job.brick.state = "idle"
-	job.port = port
-	Storage.reserveRoom(port.buffer, 1)
-	Operate.walkTo(job, ctx, "toOutput", port.x, port.y)
-end
-
 function Convert.working(job, ctx)
 	local fb, building = job.brick, job.building
 	local cycle = FunctionBrick.cycle(building.traits, ctx.config, fb.recipe.cycle)
@@ -171,30 +160,34 @@ function Convert.working(job, ctx)
 	Load.remove(load, load.count)
 	Load.add(load, fb.recipe.output, 1)
 	fb.progress = 0
-	Convert.toOutputPort(job, ctx)
+	fb.state = "idle"
+	Operate.walkTo(job, ctx, "toOutput", job.out.x, job.out.y)
 end
 
 function Convert.toOutput(job, ctx)
-	local store, load = job.port.buffer, job.villager.load
+	local store, load = job.out.buffer, job.villager.load
 	Storage.releaseRoom(store, 1)
-	job.port = nil
+	job.out = nil
 	Storage.add(store, load.item)
 	Load.remove(load, 1)
 	Operate.done(job, ctx)
 end
 
 function Convert.release(job)
-	if job.stage == "toOutput" and job.port then
-		Storage.releaseRoom(job.port.buffer, 1)
+	if job.out then
+		Storage.releaseRoom(job.out.buffer, 1)
 	end
-	job.port = nil
+	job.port, job.out = nil, nil
 	job.brick.state = "idle"
 end
 
 -- Harvester work (a saw or pickaxe): reserve a free node in reach, stand
 -- beside it (nodes block their tile), harvest one item per cycle into the
--- load, and carry the load to an output port when it is full or no node is
--- left. The brick's node is held while the job runs and freed when it ends.
+-- load, and carry the load to an output port when it is full, the port has
+-- no more room, or no node is left. Each item's room at that port
+-- (job.port, job.reserved in all) is reserved just before it is harvested,
+-- so saws sharing a port work side by side and no item is held without
+-- room to put it. The brick's node is held while the job runs.
 local Harvest = {}
 
 -- The tile beside node `n` the villager walks to: the free neighbour nearest
@@ -220,20 +213,27 @@ local function standTile(job, ctx, n)
 	end
 end
 
--- Heads for the nearest output with room for the load, reserving it.
-function Harvest.deliver(job, ctx)
-	local load = job.villager.load
-	local port = nearestPort(job, "output", function(p)
+-- Whether room for one more item can be reserved: at the port the load is
+-- already bound for, else at the output with room nearest the brick (which
+-- becomes job.port).
+local function hasSlot(job)
+	if job.port and (Storage.room(job.port.buffer) > 0 or job.reserved > 0) then
+		return Storage.room(job.port.buffer) > 0
+	end
+	job.port = nearestPort(job, "output", function(p)
 		return Storage.room(p.buffer) > 0
 	end)
-	if not port then
+	job.reserved = 0
+	return job.port ~= nil
+end
+
+-- Carries the load to job.port, where its room is reserved.
+function Harvest.deliver(job, ctx)
+	if not job.port or Load.empty(job.villager.load) then
 		return Operate.finish(job)
 	end
-	job.port = port
-	job.reserved = math.min(load.count, Storage.room(port.buffer))
-	Storage.reserveRoom(port.buffer, job.reserved)
 	job.brick.state = "idle"
-	Operate.walkTo(job, ctx, "toOutput", port.x, port.y)
+	Operate.walkTo(job, ctx, "toOutput", job.port.x, job.port.y)
 end
 
 function Harvest.begin(job, ctx)
@@ -242,7 +242,7 @@ function Harvest.begin(job, ctx)
 	if fb.node and not Harvestable.canHarvest(fb.node) then
 		NodeSystem.release(fb.node)
 	end
-	if Load.room(load) == 0 or (load.item and load.item ~= item) then
+	if Load.room(load) == 0 or (load.item and load.item ~= item) or not hasSlot(job) then
 		return Harvest.deliver(job, ctx)
 	end
 	if not fb.node then
@@ -283,6 +283,12 @@ function Harvest.harvesting(job, ctx)
 	fb.progress = fb.progress + ctx.dt
 	while fb.progress >= cycle do
 		fb.progress = fb.progress - cycle
+		if not hasSlot(job) then
+			fb.progress = 0
+			return Harvest.begin(job, ctx)
+		end
+		Storage.reserveRoom(job.port.buffer, 1)
+		job.reserved = job.reserved + 1
 		Load.add(load, Harvestable.take(fb.node, ctx.config), 1)
 		if not Harvestable.canHarvest(fb.node) then
 			NodeSystem.release(fb.node)
@@ -298,7 +304,9 @@ end
 
 function Harvest.toOutput(job, ctx)
 	local store, load = job.port.buffer, job.villager.load
-	Storage.releaseRoom(store, job.reserved)
+	if job.reserved > 0 then
+		Storage.releaseRoom(store, job.reserved)
+	end
 	job.port, job.reserved = nil, nil
 	local n = math.min(load.count, Storage.room(store))
 	for _ = 1, n do
@@ -309,10 +317,10 @@ function Harvest.toOutput(job, ctx)
 end
 
 function Harvest.release(job)
-	if job.port then
+	if job.port and job.reserved > 0 then
 		Storage.releaseRoom(job.port.buffer, job.reserved)
-		job.port, job.reserved = nil, nil
 	end
+	job.port, job.reserved = nil, nil
 	if job.brick.node then
 		NodeSystem.release(job.brick.node)
 	end

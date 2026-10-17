@@ -13,8 +13,12 @@
 -- The Design section names the draft (click Name, type, Enter), saves it to
 -- the design library (src/app/design_store.lua) as a new version of the
 -- design it was opened from, or as a new design; New starts an empty draft;
--- Open lists the library's designs in place of the brick pickers, and a
--- click opens a design's latest version for editing.
+-- Open lists the library's designs with a live version in place of the
+-- brick pickers. A click expands a design into its live versions, newest
+-- first, each with Open (edit that version) and Delete. Delete arms on the
+-- first click and deletes on a second click on the same row; any other
+-- click disarms it. A delete writes the design file and never touches the
+-- draft on screen.
 --
 -- Picking runs through src/game/builder/pick.lua with the ray from the same
 -- camera view the screen draws with.
@@ -98,6 +102,10 @@ function BuilderScreen.new(config, library, problems, stock)
 		typingName = false,
 		-- Whether the sidebar lists the library instead of the brick pickers.
 		browsing = false,
+		-- The design id the Open list shows version rows for, or nil.
+		expanded = nil,
+		-- The Delete awaiting its confirming click: { id, n }, or nil.
+		armed = nil,
 		-- Undo/redo for every draft change (src/game/builder/history.lua).
 		history = History.new(),
 		-- The brick in hand: { shape, rotation, material, paint }.
@@ -171,6 +179,8 @@ local function grid(out, screen, kind, items, columns, height, top)
 			kind = item.kind or kind,
 			label = item.label,
 			value = item.value,
+			version = item.version,
+			armed = item.armed,
 			x = PAD + col * (width + GAP),
 			y = top + row * (height + GAP),
 			width = width,
@@ -186,8 +196,10 @@ end
 --   kind "shape" | "material" | "paint": value, what it sets on the held
 --     brick (a cfg.bricks name, a cfg.materials name, a cfg.palette index;
 --     swatches are labelled "paint:<index>")
---   kind "design": value, a library design's id, while browsing replaces
---     the pickers
+--   kind "expand": value, a live library design's id, while browsing
+--     replaces the pickers; "openVersion" | "deleteVersion": value, the
+--     expanded design's id, version, its number, armed, whether this
+--     Delete awaits its confirming click
 -- The first button of each section after the resize rows has `heading`,
 -- its section title.
 function BuilderScreen.buttons(screen)
@@ -217,9 +229,26 @@ function BuilderScreen.buttons(screen)
 
 	local sections
 	if screen.browsing then
-		sections = { { kind = "design", heading = "Open a design", columns = 1, height = DESIGN_LIST_HEIGHT, items = {} } }
-		for _, design in ipairs(screen.library.designs) do
-			table.insert(sections[1].items, { label = design.name .. "  v" .. #design.versions, value = design.id })
+		sections = {}
+		for i, design in ipairs(Library.liveDesigns(screen.library)) do
+			table.insert(sections, {
+				kind = "expand",
+				heading = i == 1 and "Open a design" or nil,
+				columns = 1,
+				height = DESIGN_LIST_HEIGHT,
+				items = { { label = design.name .. "  v" .. Library.newestLive(design), value = design.id } },
+			})
+			if screen.expanded == design.id then
+				local rows = { columns = 2, height = DESIGN_LIST_HEIGHT, items = {} }
+				local live = Library.liveVersions(design)
+				for j = #live, 1, -1 do
+					local n = live[j]
+					local armed = screen.armed and screen.armed.id == design.id and screen.armed.n == n
+					table.insert(rows.items, { kind = "openVersion", label = "Open v" .. n, value = design.id, version = n })
+					table.insert(rows.items, { kind = "deleteVersion", label = armed and "Confirm" or "Delete", value = design.id, version = n, armed = armed })
+				end
+				table.insert(sections, rows)
+			end
 		end
 	else
 		local plain = { kind = "shape", heading = "Brick (R turns)", columns = SHAPE_COLUMNS, height = SHAPE_HEIGHT, items = {} }
@@ -243,8 +272,9 @@ function BuilderScreen.buttons(screen)
 	end
 	for _, section in ipairs(sections) do
 		local first = #out + 1
-		y = grid(out, screen, section.kind, section.items, section.columns, section.height, y + HEADING_HEIGHT)
-		if out[first] then
+		local top = y + (section.heading and HEADING_HEIGHT or 0)
+		y = grid(out, screen, section.kind, section.items, section.columns, section.height, top)
+		if out[first] and section.heading then
 			out[first].heading = section.heading
 		end
 	end
@@ -347,15 +377,45 @@ local function save(screen)
 	screen.message = string.format("Saved %s (version %d).", design.name, n)
 end
 
--- Opens the latest version of library design `id` into the builder.
-local function open(screen, id)
+-- Opens version `n` of library design `id` into the builder.
+local function open(screen, id, n)
 	local design = Library.design(screen.library, id)
-	local n = #design.versions
 	startEditing(screen, Library.toDraft(design.versions[n]), design.id, design.name)
 	screen.message = string.format("Opened %s (version %d).", design.name, n)
 end
 
-local function press(screen, b)
+-- Deletes version `n` of library design `id` and writes its file. When the
+-- write fails the version stays live, so memory matches disk. The draft on
+-- screen stays; when its design has no live version left, Save makes a new
+-- design.
+local function deleteVersion(screen, id, n)
+	local design = Library.design(screen.library, id)
+	Library.deleteVersion(screen.library, id, n)
+	local written, err = DesignStore.write(screen.config.designs.dir, design)
+	if not written then
+		design.retired[n] = nil
+		screen.message = "Could not delete: " .. tostring(err)
+		return
+	end
+	if screen.designId == id and not Library.newestLive(design) then
+		screen.designId = nil
+	end
+	screen.message = string.format("Deleted %s v%d.", design.name, n)
+end
+
+-- A Delete click: the first arms it, a second on the same row deletes.
+-- `wasArmed` is what was armed before this click.
+local function pressDelete(screen, b, wasArmed)
+	if wasArmed and wasArmed.id == b.value and wasArmed.n == b.version then
+		deleteVersion(screen, b.value, b.version)
+		return
+	end
+	local design = Library.design(screen.library, b.value)
+	screen.armed = { id = b.value, n = b.version }
+	screen.message = string.format("Click again to delete %s v%d.", design.name, b.version)
+end
+
+local function press(screen, b, wasArmed)
 	if b.kind == "resize" then
 		resize(screen, b)
 	elseif b.kind == "name" then
@@ -367,8 +427,12 @@ local function press(screen, b)
 		screen.message = nil
 	elseif b.kind == "open" then
 		screen.browsing = not screen.browsing
-	elseif b.kind == "design" then
-		open(screen, b.value)
+	elseif b.kind == "expand" then
+		screen.expanded = screen.expanded ~= b.value and b.value or nil
+	elseif b.kind == "openVersion" then
+		open(screen, b.value, b.version)
+	elseif b.kind == "deleteVersion" then
+		pressDelete(screen, b, wasArmed)
 	else
 		screen.held[b.kind] = b.value
 	end
@@ -420,11 +484,14 @@ function BuilderScreen.keypressed(screen, key)
 end
 
 function BuilderScreen.mousepressed(screen, x, y, button)
+	-- Any click disarms a Delete; only a second click on its row deletes.
+	local wasArmed = screen.armed
+	screen.armed = nil
 	if button == 1 then
 		local b = buttonAt(screen, x, y)
 		setTyping(screen, b ~= nil and b.kind == "name")
 		if b then
-			press(screen, b)
+			press(screen, b, wasArmed)
 		elseif modifier("shift") then
 			paint(screen, x, y)
 		else

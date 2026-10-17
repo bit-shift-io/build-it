@@ -9,6 +9,8 @@ local Placement = require("src.game.buildings.placement")
 local Inventory = require("src.game.components.inventory")
 local FunctionBrick = require("src.game.components.function_brick")
 local NodeSystem = require("src.game.systems.node_system")
+local Storage = require("src.game.components.storage")
+local Load = require("src.game.components.load")
 
 local STEP = 1 / 60
 
@@ -129,4 +131,44 @@ test("removing a building releases its reservations and frees its tiles", functi
 	local b = build(ctx, c, 12, 10)
 	run(ctx, STEP)
 	assertEqual(t, b.functionBricks[1].node, "another saw may take the node")
+end)
+
+-- A 1x1 tile storage facility with ports on its south edge.
+local DEPOT = {
+	id = "d2",
+	name = "Depot",
+	versions = {
+		{ width = 1, depth = 1, bricks = {
+			brick(0, 0, { width = 2, depth = 2, shape = "depot", ability = "depot" }),
+			brick(2, 0, { width = 2, depth = 2, shape = "storage", storage = 8 }),
+			brick(0, 3, { width = 2, shape = "input", port = "input" }),
+			brick(2, 3, { width = 2, shape = "output", port = "output" }),
+		} },
+	},
+}
+
+test("with every output and storage facility full, no free villager is left holding a load", function()
+	local ctx, c = newSession()
+	local a = build(ctx, c, 10, 10)
+	tree(ctx, 11, 10)
+	local out = a.ports[1].buffer
+	for _ = 1, out.capacity - 1 do
+		Storage.add(out, "log")
+	end
+	local depot = assert(Placement.build(ctx, { design = DEPOT, version = 1, facing = "N", tileX = 20, tileY = 10 }))
+	for _, store in ipairs({ depot.storage, depot.ports[1].buffer, depot.ports[2].buffer }) do
+		while Storage.room(store) > 0 do
+			Storage.add(store, "stone")
+		end
+	end
+	villager(ctx, 10, 12)
+	villager(ctx, 14, 12)
+
+	for _ = 1, 60 * 60 do
+		Session.advance(ctx, STEP)
+		for _, v in ipairs(ctx.pools.villagers) do
+			assertTrue(v.job or Load.empty(v.load), "villager " .. v.id .. " free with " .. v.load.count .. " " .. tostring(v.load.item))
+		end
+	end
+	assertEqual(out.capacity, out.counts.log, "the one free slot was filled")
 end)

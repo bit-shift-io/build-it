@@ -34,7 +34,9 @@ function GameHarness.startSession(world, opts)
 	return GameHarness.wrap(Flow.new(ctx, config), opts)
 end
 
--- A 1x1-tile storage facility with no ports: a depot and a storage brick.
+-- A 1x1-tile storage facility: a depot, a storage brick, and input and
+-- output ports on its north edge, so they face into the world from the
+-- south-east corner tile.
 local STORE = {
 	id = "test-storage",
 	name = "Test storage",
@@ -43,8 +45,10 @@ local STORE = {
 			width = 1,
 			depth = 1,
 			bricks = {
-				{ x = 0, y = 0, z = 0, width = 2, depth = 2, height = 3, shape = "depot", rotation = 0, material = "plank", paint = 1, ability = "depot" },
-				{ x = 2, y = 0, z = 0, width = 2, depth = 2, height = 2, shape = "storage", rotation = 0, material = "plank", paint = 1, storage = 8 },
+				{ x = 0, y = 0, z = 0, width = 2, depth = 1, height = 1, shape = "input", rotation = 0, material = "plank", paint = 1, port = "input" },
+				{ x = 2, y = 0, z = 0, width = 2, depth = 1, height = 1, shape = "output", rotation = 0, material = "plank", paint = 1, port = "output" },
+				{ x = 0, y = 1, z = 0, width = 2, depth = 2, height = 3, shape = "depot", rotation = 0, material = "plank", paint = 1, ability = "depot" },
+				{ x = 2, y = 1, z = 0, width = 2, depth = 2, height = 2, shape = "storage", rotation = 0, material = "plank", paint = 1, storage = 8 },
 			},
 		},
 	},

@@ -21,6 +21,10 @@
 --      buffer or storage facility (its storage or output buffers).
 --   5. What is left in output port buffers of buildings that are not
 --      storage facilities goes to the nearest storage facility with room.
+-- Haulers use a storage facility's port tiles, never its footprint: they
+-- drop off into its storage at the nearest input port tile and pick up
+-- from it at the nearest output port tile, so a facility with no such port
+-- is skipped.
 -- Pools are walked in order and items in name order (Storage.items), so the
 -- same world makes the same jobs. Pure -- no `love.*`.
 local Storage = require("src.game.components.storage")
@@ -44,11 +48,20 @@ local function nearestTile(b, x, y)
 	return math.max(b.tileX, math.min(x, b.tileX + b.width - 1)), math.max(b.tileY, math.min(y, b.tileY + b.depth - 1))
 end
 
--- An endpoint at the footprint of `b` (its storage), on the tile nearest
--- (x, y).
-local function atFootprint(b, x, y)
-	local tx, ty = nearestTile(b, x, y)
-	return { building = b, store = b.storage, x = tx, y = ty }
+-- An endpoint at storage facility `b`'s storage, on the tile of its `kind`
+-- port nearest (x, y): "input" to drop off, "output" to pick up. Ties go
+-- to the first in port order. Nil when `b` has no such port.
+local function atStorage(b, kind, x, y)
+	local best, bestD
+	for _, port in ipairs(b.ports) do
+		if port.kind == kind then
+			local d = tiles(port.x, port.y, x, y)
+			if not bestD or d < bestD then
+				best, bestD = port, d
+			end
+		end
+	end
+	return best and { building = b, store = b.storage, x = best.x, y = best.y }
 end
 
 local function atPort(b, port)
@@ -91,9 +104,9 @@ local function nearestStorage(ctx, x, y)
 	local best, bestD
 	for _, b in ipairs(StorageFacility.all(ctx)) do
 		if not b.dead and Storage.room(b.storage) > 0 then
-			local e = atFootprint(b, x, y)
-			local d = tiles(e.x, e.y, x, y)
-			if not bestD or d < bestD then
+			local e = atStorage(b, "input", x, y)
+			local d = e and tiles(e.x, e.y, x, y)
+			if d and (not bestD or d < bestD) then
 				best, bestD = e, d
 			end
 		end
@@ -109,7 +122,7 @@ local function sources(ctx, dest)
 		if b ~= dest and not b.dead then
 			if StorageFacility.is(b) then
 				list[#list + 1] = function(x, y)
-					return atFootprint(b, x, y)
+					return atStorage(b, "output", x, y)
 				end
 			end
 			for _, port in ipairs(b.ports) do
@@ -129,7 +142,7 @@ local function nearestSource(ctx, item, dest, x, y)
 	local best, bestD
 	for _, at in ipairs(sources(ctx, dest)) do
 		local e = at(x, y)
-		if Storage.available(e.store, item) > 0 then
+		if e and Storage.available(e.store, item) > 0 then
 			local d = tiles(e.x, e.y, x, y)
 			if not bestD or d < bestD then
 				best, bestD = e, d
@@ -188,13 +201,14 @@ local function staff(ctx, free)
 	end
 end
 
--- The source endpoint of a site's `claim`: the facility's footprint for
--- its storage, else the port whose buffer it is; toward tile (x, y).
+-- The source endpoint of a site's `claim`: the facility's output port
+-- tile for its storage, else the port whose buffer it is; toward tile
+-- (x, y). Nil for a claim on storage when there is no output port.
 local function atClaim(claim, x, y)
 	local b = claim.building
 	local e
 	if claim.store == b.storage then
-		e = atFootprint(b, x, y)
+		e = atStorage(b, "output", x, y)
 	else
 		for _, port in ipairs(b.ports) do
 			if port.buffer == claim.store then
@@ -202,7 +216,9 @@ local function atClaim(claim, x, y)
 			end
 		end
 	end
-	e.claim = claim
+	if e then
+		e.claim = claim
+	end
 	return e
 end
 
@@ -234,6 +250,9 @@ local function supplySites(ctx, free)
 					break
 				end
 				local source = atClaim(claim, site.tileX, site.tileY)
+				if not source then
+					break
+				end
 				local tx, ty = nearestTile(site, source.x, source.y)
 				local dest = { building = site, store = site.delivered, x = tx, y = ty }
 				open(ctx, Haul.new(claim.item, n, source, dest), takeNearest(free, source.x, source.y, ctx.config.tileSize))

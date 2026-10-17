@@ -1,8 +1,8 @@
 -- The design library under real LÖVE 12: a design saved through the
 -- builder survives a relaunch, and each of its versions bakes 4 facings.
 -- Captures land in tests/screenshots/design_library_test/: the builder
--- sidebar's Design section, the Open list, and every facing of both
--- versions.
+-- sidebar's Design section, the Open list, the design expanded into its
+-- version rows, and every facing of both versions.
 local GameHarness = require("tests.support.game_harness")
 local Capture = require("tests.support.capture")
 local Fake = require("tests.support.fake_input")
@@ -35,7 +35,7 @@ end
 
 local function clickButton(game, builder, match)
 	for _, b in ipairs(BuilderScreen.buttons(builder)) do
-		if b.label == match or (b.kind == "design" and b.value == match) then
+		if b.label == match or (b.kind == "expand" and b.value == match) then
 			Fake.click(game, 1, b.x + b.width / 2, b.y + b.height / 2)
 			return
 		end
@@ -103,6 +103,9 @@ test("a saved design survives a relaunch and bakes 4 facings per version", funct
 	game:mousemoved(5, 5, 0, 0)
 	Capture.capture("builder_open_list")
 	clickButton(game, builder, design.id)
+	game:mousemoved(5, 5, 0, 0)
+	Capture.capture("builder_open_versions")
+	clickButton(game, builder, "Open v2")
 	assertEqual(4, #builder.draft.bricks)
 	game:mousemoved(5, 5, 0, 0)
 	Capture.capture("builder_opened")

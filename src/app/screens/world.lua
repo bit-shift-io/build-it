@@ -16,6 +16,7 @@ local Camera = require("src.app.camera")
 local Screen = require("src.app.screen")
 local WorldRender = require("src.app.render.world")
 local CharacterRender = require("src.app.render.character")
+local Library = require("src.game.designs.library")
 local GhostRender = require("src.app.render.ghost")
 local Aura = require("src.game.components.aura")
 local StorageFacility = require("src.game.components.storage_facility")
@@ -93,12 +94,12 @@ end
 
 -- Starts placing library design number `n` (its latest version).
 local function pick(screen, n)
-	local design = screen.library.designs[n]
+	local design = Library.liveDesigns(screen.library)[n]
 	if not design then
 		screen.message = "No design " .. n .. " in the library."
 		return
 	end
-	screen.placing = { design = design, version = #design.versions, facing = "N" }
+	screen.placing = { design = design, version = Library.newestLive(design), facing = "N" }
 	screen.message = nil
 end
 

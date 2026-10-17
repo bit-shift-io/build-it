@@ -9,6 +9,7 @@ local Config = require("src.game.config")
 local World = require("src.game.world")
 local Session = require("src.game.session")
 local Placement = require("src.game.buildings.placement")
+local StorageFacility = require("src.game.components.storage_facility")
 
 local TILE = Config.tileSize
 
@@ -65,4 +66,36 @@ test("a woodcutter's logs reach a sawmill input with no player input", function(
 	end, 60 * 60)
 	assertTrue(reached, "logs reached the sawmill input")
 	assertTrue((output.buffer.counts.plank or 0) > 0, "the sawmill made planks from them")
+end)
+
+test("haulers deliver to the starting storage facility standing on its input port tile", function()
+	_G.love = LoveMock.new()
+	local game = GameHarness.launch()
+	Fake.tap(game, "return") -- New game
+	local ctx = game.ctx
+	local facility = ctx.pools.buildings[1]
+	local input = port(facility, "input")
+	local loaded = {}
+	for i = 1, 3 do
+		local v = ctx.pools.villagers[i]
+		v.load.item, v.load.count = "log", 2
+		loaded[i] = v
+	end
+
+	-- The tile each hauler stands on when its load empties.
+	local droppedAt, dropped = {}, 0
+	Fake.runUntil(game, function()
+		for i, v in ipairs(loaded) do
+			if not droppedAt[i] and v.load.count == 0 then
+				droppedAt[i] = { x = math.floor(v.x / TILE), y = math.floor(v.y / TILE) }
+				dropped = dropped + 1
+			end
+		end
+		return dropped == #loaded
+	end, 60 * 60)
+	assertEqual(6, StorageFacility.totals(ctx).log)
+	for i, t in ipairs(droppedAt) do
+		assertEqual(input.x, t.x, "hauler " .. i)
+		assertEqual(input.y, t.y, "hauler " .. i)
+	end
 end)

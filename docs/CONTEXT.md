@@ -111,11 +111,11 @@ Domain terms for Build-it. Code, docs and conversation use these words with thes
 
 ## Design version
 - **Definition:** One immutable saved state of a design.
-- **Boundary:** Editing a design creates a new version. A placed building keeps the version it was built from.
+- **Boundary:** Editing a design creates a new version. A placed building keeps the version it was built from. Deleting a version retires its number for good.
 
 ## Design library
 - **Definition:** All of the player's designs, stored one file per design.
-- **Boundary:** Shared across every world.
+- **Boundary:** Shared across every world. A design with no versions left is deleted, and its id is never reused.
 
 ## Building
 - **Definition:** A placed instance of a design version in the world, with a facing, buffers and storage contents.
@@ -141,7 +141,7 @@ Domain terms for Build-it. Code, docs and conversation use these words with thes
 
 ## Haul job
 - **Definition:** One trip carrying a load from an output port or storage facility to an input port, a storage facility or a construction site.
-- **Boundary:** Moves existing items only, never harvests. Ends after one trip.
+- **Boundary:** Moves existing items only, never harvests. Ends after one trip. At a storage facility the hauler stands on a port tile: the input port to drop off, the output port to pick up.
 
 ## Build job
 - **Definition:** The job of turning a construction site into a working building once all its materials are delivered.
@@ -151,13 +151,17 @@ Domain terms for Build-it. Code, docs and conversation use these words with thes
 - **Definition:** The items a villager carries.
 - **Boundary:** Capped by the carry limit in config. It's not an inventory.
 
+## Reservation
+- **Definition:** Room or items held for one job so it can finish its trip.
+- **Boundary:** A villager reserves drop-off room before it takes any item. Released on drop-off or when the job ends.
+
 ## Depot
 - **Definition:** A function brick that makes its building a storage facility.
 - **Boundary:** Needs no operator. Its input port accepts every item.
 
 ## Storage facility
 - **Definition:** A building with a depot. It holds the colony's items in its storage, and placement pays from it.
-- **Boundary:** Capacity comes from its storage bricks and capacity trait. A new game starts with one, built from a built-in design. Items no building input accepts are hauled here.
+- **Boundary:** Capacity comes from its storage bricks and capacity trait. A new game starts with one, built from a built-in design. Items no building input accepts are hauled here. Haulers use its port tiles, never its footprint, so one with no ports is skipped.
 
 ## Construction site
 - **Definition:** A placed design not yet built. Its cost is reserved in storage at placement.

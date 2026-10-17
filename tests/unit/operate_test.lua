@@ -10,6 +10,7 @@ local Storage = require("src.game.components.storage")
 local Walker = require("src.game.components.walker")
 local FunctionBrick = require("src.game.components.function_brick")
 local Operate = require("src.game.jobs.operate")
+local Load = require("src.game.components.load")
 
 local TILE = Config.tileSize
 local STEP = 1 / 60
@@ -132,4 +133,79 @@ test("a harvester job whose node has no free neighbour ends at once and frees th
 	assertEqual(nil, fb.node)
 	assertEqual(nil, tree.reservedBy)
 	assertEqual(nil, v.job)
+end)
+
+local function fill(store, item, n)
+	for _ = 1, n do
+		Storage.add(store, item)
+	end
+end
+
+test("a saw bench operator with no output room takes no logs; the job ends at once", function()
+	local ctx, mill, v = setup()
+	local out = mill.ports[2].buffer
+	fill(out, "plank", out.capacity)
+	local job = Operate.new(mill, mill.functionBricks[1])
+
+	assertFalse(Operate.start(job, v, ctx))
+	assertEqual(2, mill.ports[1].buffer.counts.log, "nothing taken")
+	assertTrue(Load.empty(v.load))
+end)
+
+test("a saw bench operator holds its output room from before it takes the logs until the job ends", function()
+	local ctx, mill, v = setup()
+	local out = mill.ports[2].buffer
+	fill(out, "plank", out.capacity - 1)
+	local job = Operate.new(mill, mill.functionBricks[1])
+	Operate.start(job, v, ctx)
+	run(ctx, job, v, 60 * 30, function()
+		return job.stage == "toBrick"
+	end)
+	assertEqual(2, v.load.count, "carrying the logs")
+	assertEqual(0, Storage.room(out), "its one free slot is held for the plank")
+
+	Operate.finish(job)
+	assertEqual(1, Storage.room(out))
+end)
+
+local function cutterWithTree()
+	local ctx = Session.new(World.new(20, 20), Config, 1)
+	ctx.dt = STEP
+	local b = Placement.build(ctx, { design = CUTTER, version = 1, facing = "N", tileX = 8, tileY = 8 })
+	local tree = World.addNode(ctx.world, { id = 1, kind = "tree", tileX = 8, tileY = 6, variant = 1, stage = 1, amount = 5 })
+	local v = Session.newVillager(1, 12.5 * TILE, 12.5 * TILE, Config)
+	return ctx, b, tree, v
+end
+
+test("a woodcutter operator with one free output slot harvests one log, delivers it and holds nothing", function()
+	local ctx, b, tree, v = cutterWithTree()
+	local out = b.ports[1].buffer
+	fill(out, "log", out.capacity - 1)
+	local job = Operate.new(b, b.functionBricks[1])
+	assertTrue(Operate.start(job, v, ctx))
+
+	local most = 0
+	run(ctx, job, v, 60 * 60, function()
+		most = math.max(most, v.load.count)
+		return false
+	end)
+	assertTrue(job.dead, "the job ended once the output was full")
+	assertEqual(1, most, "never carried more than the room it held")
+	assertEqual(out.capacity, out.counts.log)
+	assertEqual(4, tree.amount)
+	assertTrue(Load.empty(v.load))
+end)
+
+test("a woodcutter operator ended mid-harvest gives back the room it held", function()
+	local ctx, b, _, v = cutterWithTree()
+	local out = b.ports[1].buffer
+	local job = Operate.new(b, b.functionBricks[1])
+	Operate.start(job, v, ctx)
+	run(ctx, job, v, 60 * 60, function()
+		return v.load.count == 2
+	end)
+	assertEqual(out.capacity - 2, Storage.room(out), "room held for the two logs carried")
+
+	Operate.finish(job)
+	assertEqual(out.capacity, Storage.room(out))
 end)

@@ -4,6 +4,7 @@
 -- placement panel, in screen space.
 local Projection = require("src.game.projection")
 local Placement = require("src.game.buildings.placement")
+local Library = require("src.game.designs.library")
 local BuildingsRender = require("src.app.render.buildings")
 
 local GhostRender = {}
@@ -62,9 +63,9 @@ function GhostRender.drawPanel(library, placing, cost, status)
 		table.sort(parts)
 		table.insert(lines, string.format("Placing %s v%d, facing %s. Cost: %s", placing.design.name, placing.version, placing.facing, table.concat(parts, ", ")))
 		table.insert(lines, "R turn, click place, Esc or right-click cancel")
-	elseif #library.designs > 0 then
+	elseif #Library.liveDesigns(library) > 0 then
 		local parts = {}
-		for i, design in ipairs(library.designs) do
+		for i, design in ipairs(Library.liveDesigns(library)) do
 			if i > 9 then
 				break
 			end

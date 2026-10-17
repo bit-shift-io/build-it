@@ -57,8 +57,6 @@ end
 test("picking a design and clicking places a construction site, its cost reserved in storage", function()
 	local game, _, c, world = launch()
 	local planks = stored(game, "plank")
-	local facility = game.ctx.pools.buildings[1]
-	local held = facility.storage.counts.plank
 
 	Fake.tap(game, "1")
 	local sx, sy = pointAt(game, c, 12, 9)
@@ -75,7 +73,6 @@ test("picking a design and clicking places a construction site, its cost reserve
 	local cost = Cost.of(HALL.versions[1], Config).plank
 	assertEqual(planks - cost, stored(game, "plank"), "the totals drop: the cost is reserved")
 	assertEqual(cost, StorageFacility.claimed(game.ctx).plank)
-	assertEqual(held, facility.storage.counts.plank, "it stays in storage until hauled")
 	assertEqual(0, Inventory.count(c.inventory, "plank"), "the inventory pays nothing")
 	for y = 9, 10 do
 		for x = 12, 13 do
@@ -112,7 +109,7 @@ test("villagers haul a placed woodcutter's cost from storage and build it, then 
 	local game = GameHarness.startSession(world, { storage = Config.stockpile })
 	local c = game.ctx.pools.characters[1]
 	local facility = game.ctx.pools.buildings[1]
-	local held = facility.storage.counts.plank
+	local held = stored(game, "plank")
 	for i = 1, 2 do
 		table.insert(game.ctx.pools.villagers, Session.newVillager(i, (14 + i + 0.5) * TILE, 16.5 * TILE, Config))
 	end
@@ -136,7 +133,7 @@ test("villagers haul a placed woodcutter's cost from storage and build it, then 
 	assertEqual(b, World.buildingAt(world, 12, 7))
 	assertEqual(b.ports[1], World.portAt(world, 13, 8))
 	local cost = Cost.of(WOODCUTTER.versions[1], Config).plank
-	assertEqual(held - cost, facility.storage.counts.plank, "the cost left storage")
+	assertEqual(held - cost, stored(game, "plank"), "the cost left the facility")
 	assertEqual(nil, StorageFacility.claimed(game.ctx).plank, "nothing reserved any more")
 
 	Fake.runUntil(game, function()
@@ -240,4 +237,55 @@ test("a click while placing never harvests", function()
 	end
 	game:mousereleased(tx, ty, 1)
 	assertEqual(0, Inventory.count(c.inventory, "log"))
+end)
+
+local Library = require("src.game.designs.library")
+local SaveCodec = require("src.game.save.codec")
+
+local function design(id, name, versions)
+	local vs = {}
+	for i = 1, versions do
+		vs[i] = { width = i, depth = 1, bricks = { brick(2, 2), brick(6, 7, "output") } }
+	end
+	return { id = id, name = name, versions = vs }
+end
+
+local function launchWith(designs)
+	_G.love = LoveMock.new()
+	for _, d in ipairs(designs) do
+		assert(DesignStore.write(Config.designs.dir, d))
+	end
+	local game = GameHarness.startSession(World.new(20, 20), { storage = Config.stockpile })
+	return game, game.ctx.pools.characters[1]
+end
+
+test("key 1 places the first design with a live version", function()
+	local game = launchWith({ design("d1", "A", 1), design("d2", "B", 1), design("d3", "C", 1) })
+	local lib = game.flow.library
+	Library.deleteVersion(lib, "d1", 1)
+	Fake.tap(game, "1")
+	assertEqual("d2", game.flow.world.placing.design.id)
+end)
+
+test("picking a design places its newest live version", function()
+	local game = launchWith({ design("d1", "A", 3) })
+	Library.deleteVersion(game.flow.library, "d1", 3)
+	Fake.tap(game, "1")
+	assertEqual(2, game.flow.world.placing.version)
+end)
+
+test("a building placed from a deleted version survives save and load", function()
+	local game, c = launchWith({ design("d1", "A", 2) })
+	Fake.tap(game, "1")
+	local sx, sy = pointAt(game, c, 12, 9)
+	Fake.click(game, 1, sx, sy)
+	GameHarness.completeSites(game)
+	Library.deleteVersion(game.flow.library, "d1", 2)
+	local b = game.ctx.pools.buildings[2]
+	assertEqual(2, b.version)
+	local text = SaveCodec.encode(game.ctx)
+	local ctx = SaveCodec.decode(text, Config)
+	assertEqual(2, #ctx.pools.buildings)
+	assertEqual(2, ctx.pools.buildings[2].version)
+	assertEqual(text, SaveCodec.encode(ctx))
 end)

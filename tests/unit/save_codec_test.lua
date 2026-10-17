@@ -336,6 +336,7 @@ test("saving and loading mid-haul loses no items; the hauler takes its load to s
 	local store = assert(Placement.build(ctx, { design = { id = "d6", name = "Store", versions = { { width = 1, depth = 1, bricks = {
 		brick("depot", 0, 0, { width = 2, depth = 2, ability = "depot" }),
 		brick("storage", 2, 0, { width = 2, depth = 2, storage = 8 }),
+		brick("input", 0, 3, { width = 2, depth = 1, port = "input" }),
 	} } } }, version = 1, facing = "N", tileX = 20, tileY = 3 }))
 	for _ = 1, 3 do
 		Storage.add(cutter.ports[1].buffer, "log")
@@ -389,6 +390,7 @@ test("a converter's progress round-trips; its operator is dropped on load and ke
 	assert(Placement.build(ctx, { design = { id = "d6", name = "Store", versions = { { width = 1, depth = 1, bricks = {
 		brick("depot", 0, 0, { width = 2, depth = 2, ability = "depot" }),
 		brick("storage", 2, 0, { width = 2, depth = 2, storage = 8 }),
+		brick("input", 0, 3, { width = 2, depth = 1, port = "input" }),
 	} } } }, version = 1, facing = "N", tileX = 20, tileY = 5 }))
 	for _ = 1, 4 do
 		Storage.add(mill.ports[1].buffer, "log")
@@ -461,6 +463,8 @@ local function siteSession()
 	local store = assert(Placement.build(ctx, { design = { id = "d6", name = "Store", versions = { { width = 1, depth = 1, bricks = {
 		brick("depot", 0, 0, { width = 2, depth = 2, ability = "depot" }),
 		brick("storage", 2, 0, { width = 2, depth = 2, storage = 8 }),
+		brick("input", 0, 3, { width = 2, depth = 1, port = "input" }),
+		brick("output", 2, 3, { width = 2, depth = 1, port = "output" }),
 	} } } }, version = 1, facing = "N", tileX = 20, tileY = 3 }))
 	store.storage.capacity = 1000
 	local cost = Cost.of(HALL.versions[1], Config).plank
@@ -506,7 +510,7 @@ test("a construction site round-trips with part of its materials delivered and i
 	end
 	assertEqual(0, #loaded.pools.sites, "the loaded site gets built")
 	assertEqual(2, #loaded.pools.buildings)
-	assertEqual(5, lstore.storage.counts.plank)
+	assertEqual(5, StorageFacility.totals(loaded).plank, "what the site left stays in the facility")
 end)
 
 test("a site's build progress round-trips", function()

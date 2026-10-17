@@ -9,6 +9,7 @@ local Fake = require("tests.support.fake_input")
 local BuilderScreen = require("src.app.screens.builder")
 local BuilderCamera = require("src.app.builder_camera")
 local DesignStore = require("src.app.design_store")
+local Library = require("src.game.designs.library")
 local Config = require("src.game.config")
 
 local DIR = Config.designs.dir
@@ -39,8 +40,27 @@ end
 
 local function designButton(id)
 	return function(b)
-		return b.kind == "design" and b.value == id
+		return b.kind == "expand" and b.value == id
 	end
+end
+
+-- A predicate for the version row button of `kind` ("openVersion" or
+-- "deleteVersion") for version `n` of design `id`.
+local function versionButton(kind, id, n)
+	return function(b)
+		return b.kind == kind and b.value == id and b.version == n
+	end
+end
+
+-- The version numbers the Open list shows for design `id`, top to bottom.
+local function listedVersions(builder, id)
+	local out = {}
+	for _, b in ipairs(BuilderScreen.buttons(builder)) do
+		if b.kind == "openVersion" and b.value == id then
+			table.insert(out, b.version)
+		end
+	end
+	return out
 end
 
 -- Makes the draft a valid design (src/game/builder/validate.lua) away from
@@ -123,6 +143,7 @@ test("open a saved design, edit it, save: a new version, the old one intact", fu
 	game, builder, input = launch(love.filesystem.getSaveDirectory())
 	Fake.click(game, 1, button(builder, "Open"))
 	Fake.click(game, 1, button(builder, designButton(id)))
+	Fake.click(game, 1, button(builder, versionButton("openVersion", id, 1)))
 	assertEqual("Hut", builder.name)
 	assertEqual(1 + EXTRA, #builder.draft.bricks)
 
@@ -170,4 +191,126 @@ test("a corrupt design file is reported at launch, and the rest still load", fun
 	assertEqual(1, #builder.problems)
 	assertEqual("d9.design", builder.problems[1].name)
 	assertTrue(builder.message ~= nil, "expected the bad file reported on screen")
+end)
+
+-- Saves a valid design named `name` as three versions, each one brick
+-- taller. Returns its id.
+local function saveThreeVersions(game, builder, name)
+	makeValid(game, builder)
+	nameDesign(game, builder, name)
+	for z = 0, 2 do
+		Fake.click(game, 1, pixelOf(builder, 2, 2, z))
+		Fake.click(game, 1, button(builder, "Save"))
+	end
+	return builder.designId
+end
+
+local function expand(game, builder, id)
+	Fake.click(game, 1, button(builder, "Open"))
+	Fake.click(game, 1, button(builder, designButton(id)))
+end
+
+local function same(expected, actual, what)
+	assertEqual(table.concat(expected, ","), table.concat(actual, ","), what)
+end
+
+test("expand a design, delete v2 with two clicks: the list shows v3 and v1, and a relaunch keeps it deleted", function()
+	local game, builder = launch()
+	local id = saveThreeVersions(game, builder, "Saw mill")
+	expand(game, builder, id)
+	same({ 3, 2, 1 }, listedVersions(builder, id), "expected live versions newest first")
+
+	Fake.click(game, 1, button(builder, versionButton("deleteVersion", id, 2)))
+	same({ 3, 2, 1 }, listedVersions(builder, id), "expected one click only to arm the delete")
+	Fake.click(game, 1, button(builder, versionButton("deleteVersion", id, 2)))
+	same({ 3, 1 }, listedVersions(builder, id))
+	assertEqual("Deleted Saw mill v2.", builder.message)
+
+	game, builder = launch(love.filesystem.getSaveDirectory())
+	expand(game, builder, id)
+	same({ 3, 1 }, listedVersions(builder, id), "expected the delete to survive a relaunch")
+end)
+
+test("a Delete click then another button click deletes nothing", function()
+	local game, builder = launch()
+	local id = saveThreeVersions(game, builder, "Saw mill")
+	expand(game, builder, id)
+	Fake.click(game, 1, button(builder, versionButton("deleteVersion", id, 2)))
+	assertEqual("Click again to delete Saw mill v2.", builder.message)
+	Fake.click(game, 1, button(builder, versionButton("deleteVersion", id, 3)))
+	Fake.click(game, 1, button(builder, versionButton("deleteVersion", id, 2)))
+	same({ 3, 2, 1 }, listedVersions(builder, id), "expected another row's click to disarm v2")
+	Fake.click(game, 1, button(builder, "Width +"))
+	Fake.click(game, 1, button(builder, versionButton("deleteVersion", id, 2)))
+	same({ 3, 2, 1 }, listedVersions(builder, id), "expected another button's click to disarm")
+end)
+
+local function deleteTwice(game, builder, id, n)
+	Fake.click(game, 1, button(builder, versionButton("deleteVersion", id, n)))
+	Fake.click(game, 1, button(builder, versionButton("deleteVersion", id, n)))
+end
+
+test("delete the version the draft came from, then Save: the draft saves as the next version", function()
+	local game, builder = launch()
+	local id = saveThreeVersions(game, builder, "Saw mill")
+	expand(game, builder, id)
+	Fake.click(game, 1, button(builder, versionButton("openVersion", id, 2)))
+	local bricks = #builder.draft.bricks
+	Fake.click(game, 1, button(builder, "Open"))
+	same({ 3, 2, 1 }, listedVersions(builder, id), "expected the list to reopen expanded")
+	deleteTwice(game, builder, id, 2)
+	assertEqual(bricks, #builder.draft.bricks, "expected the draft kept")
+	assertEqual(id, builder.designId)
+
+	Fake.click(game, 1, button(builder, "Save"))
+	local design = builder.library.designs[1]
+	assertEqual(1, #builder.library.designs)
+	assertEqual(4, #design.versions, "expected v4, never v2 again")
+	assertEqual(bricks, #design.versions[4].bricks)
+	same({ 4, 3, 1 }, listedVersions(builder, id))
+end)
+
+test("delete every version of the open design, then Save: a new design with a new id", function()
+	local game, builder = launch()
+	local id = saveThreeVersions(game, builder, "Saw mill")
+	local bricks = #builder.draft.bricks
+	expand(game, builder, id)
+	for n = 3, 1, -1 do
+		deleteTwice(game, builder, id, n)
+	end
+	assertEqual("Deleted Saw mill v1.", builder.message)
+	for _, b in ipairs(BuilderScreen.buttons(builder)) do
+		assertFalse(b.kind == "expand" and b.value == id, "expected the deleted design hidden")
+	end
+	assertEqual(bricks, #builder.draft.bricks, "expected the draft kept")
+
+	Fake.click(game, 1, button(builder, "Save"))
+	assertEqual(2, #builder.library.designs)
+	assertTrue(builder.designId ~= id, "expected a new id")
+	assertEqual("Saw mill", builder.name)
+
+	game, builder = launch(love.filesystem.getSaveDirectory())
+	Fake.click(game, 1, button(builder, "Open"))
+	local listed = {}
+	for _, b in ipairs(BuilderScreen.buttons(builder)) do
+		if b.kind == "expand" then
+			table.insert(listed, b.value)
+		end
+	end
+	assertEqual(1, #listed)
+	assertTrue(listed[1] ~= id, "expected the deleted design to stay hidden after a relaunch")
+end)
+
+test("a failed design file write shows the error and leaves the version live", function()
+	local game, builder = launch()
+	local id = saveThreeVersions(game, builder, "Saw mill")
+	expand(game, builder, id)
+	-- The disk refuses every write.
+	love.filesystem.write = function()
+		return false, "disk full"
+	end
+	deleteTwice(game, builder, id, 2)
+	assertEqual("Could not delete: disk full", builder.message)
+	same({ 3, 2, 1 }, listedVersions(builder, id), "expected v2 still listed")
+	assertTrue(Library.isLive(Library.design(builder.library, id), 2), "expected memory to match disk")
 end)
