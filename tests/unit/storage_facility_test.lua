@@ -165,3 +165,48 @@ test("a depot moves what reaches its input into the facility's storage, so the i
 	assertEqual(1, b.storage.counts.log)
 	assertEqual(1, b.storage.counts.stone)
 end)
+
+test("fill is held over capacity as a whole percent rounded down; port buffers and incoming are ignored", function()
+	local ctx = newSession()
+	local b = build(ctx, DEPOT, 2, 2)
+	b.storage.capacity = 200
+	local f = StorageFacility.fill(b)
+	assertEqual(0, f.percent)
+	assertEqual(0, f.held)
+	assertEqual(200, f.capacity)
+
+	stock(b, "plank", 199)
+	assertEqual(99, StorageFacility.fill(b).percent)
+	Storage.add(b.ports[1].buffer, "log")
+	b.storage.incoming = 50
+	assertEqual(99, StorageFacility.fill(b).percent)
+
+	b.storage.incoming = 0
+	stock(b, "plank", 1)
+	assertEqual(100, StorageFacility.fill(b).percent)
+
+	b.storage.capacity = 0
+	assertEqual(nil, StorageFacility.fill(b))
+end)
+
+test("totalFill sums facilities before dividing, skipping other buildings and dead ones", function()
+	local ctx = newSession()
+	local a = build(ctx, DEPOT, 2, 2)
+	local b = build(ctx, DEPOT, 10, 2)
+	local cutter = build(ctx, CUTTER, 6, 2)
+	local gone = build(ctx, DEPOT, 14, 2)
+	a.storage.capacity = 100
+	b.storage.capacity = 300
+	gone.storage.capacity = 100
+	cutter.storage.capacity = 100
+	stock(a, "plank", 100)
+	stock(cutter, "plank", 100)
+	stock(gone, "plank", 100)
+	gone.dead = true
+
+	assertEqual(25, StorageFacility.totalFill(ctx))
+
+	a.storage.capacity = 0
+	b.storage.capacity = 0
+	assertEqual(nil, StorageFacility.totalFill(ctx))
+end)

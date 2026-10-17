@@ -131,6 +131,14 @@ Domain terms for Build-it. Code, docs and conversation use these words with thes
 - **Definition:** A helper character that assigns itself to jobs. A new game starts with 20 around the starting storage facility.
 - **Boundary:** Never controlled by the player. Holds one job at a time. Walks through building footprints, which the player can't.
 
+## Free villager
+- **Definition:** A villager with no job. It idles in a gather area until a job takes it.
+- **Boundary:** Free villagers may carry a load. Idling never delays a job: the job takes the villager at once.
+
+## Gather area
+- **Definition:** The open ground within a set range of a storage facility's footprint, where free villagers idle.
+- **Boundary:** Free villagers never idle on a footprint or a port tile. They keep personal space and step aside for passers-by.
+
 ## Job
 - **Definition:** A unit of work one villager holds: an operator job, a haul job or a build job.
 - **Boundary:** One villager per job. Free villagers take new jobs, nearest first. A busy villager is never pulled off a job.
@@ -161,7 +169,7 @@ Domain terms for Build-it. Code, docs and conversation use these words with thes
 
 ## Storage facility
 - **Definition:** A building with a depot. It holds the colony's items in its storage, and placement pays from it.
-- **Boundary:** Capacity comes from its storage bricks and capacity trait. A new game starts with one, built from a built-in design. Items no building input accepts are hauled here. Haulers use its port tiles, never its footprint, so one with no ports is skipped.
+- **Boundary:** Capacity comes from its storage bricks and capacity trait. Its fill is what its storage holds as a percentage of that capacity, ignoring port buffers. A new game starts with one, built from a built-in design. Items no building input accepts are hauled here. Haulers use its port tiles, never its footprint, so one with no ports is skipped.
 
 ## Construction site
 - **Definition:** A placed design not yet built. Its cost is reserved in storage at placement.

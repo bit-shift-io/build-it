@@ -37,6 +37,39 @@ local function stores(b)
 	return list
 end
 
+local function percent(held, capacity)
+	return math.floor(held * 100 / capacity)
+end
+
+-- { held, capacity, percent } for facility `b`'s storage alone (port buffers
+-- and incoming haul reservations don't count), percent a whole number
+-- rounded down; nil when it has no capacity.
+function StorageFacility.fill(b)
+	local capacity = b.storage.capacity
+	if not capacity or capacity <= 0 then
+		return nil
+	end
+	local held = Storage.total(b.storage)
+	return { held = held, capacity = capacity, percent = percent(held, capacity) }
+end
+
+-- The colony-wide fill percent: held over capacity summed across live
+-- facilities; nil when their capacity is 0.
+function StorageFacility.totalFill(ctx)
+	local held, capacity = 0, 0
+	for _, b in ipairs(StorageFacility.all(ctx)) do
+		local f = not b.dead and StorageFacility.fill(b)
+		if f then
+			held = held + f.held
+			capacity = capacity + f.capacity
+		end
+	end
+	if capacity == 0 then
+		return nil
+	end
+	return percent(held, capacity)
+end
+
 -- { [item] = n } over every store of every facility: what each(store,
 -- item) counts.
 local function sum(ctx, each)

@@ -197,7 +197,7 @@ function WorldScreen.draw(screen)
 		GhostRender.draw(screen.ctx, ghost, screen.camera.zoom)
 	end
 	Camera.detach()
-	Hud.draw(screen.player.inventory, StorageFacility.totals(screen.ctx), CharacterSystem.outputPortUnder(screen.player, screen.ctx), Aura.at(screen.ctx, screen.player), StorageFacility.claimed(screen.ctx))
+	Hud.draw(screen.player.inventory, StorageFacility.totals(screen.ctx), CharacterSystem.outputPortUnder(screen.player, screen.ctx), Aura.at(screen.ctx, screen.player), StorageFacility.claimed(screen.ctx), StorageFacility.totalFill(screen.ctx))
 	GhostRender.drawPanel(screen.library, screen.placing, WorldScreen.cost(screen), WorldScreen.status(screen))
 end
 

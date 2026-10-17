@@ -123,6 +123,9 @@ test("Session.step walks a villager sent across the map to its target, through t
 	for _ = 1, 60 * 30 do
 		Session.advance(ctx, 1 / 60)
 		crossed = crossed or World.buildingAt(ctx.world, math.floor(v.x / tile), math.floor(v.y / tile)) == b
+		if Walker.idle(v.walker) and v.animator.frame == 1 then
+			break
+		end
 	end
 	assertTrue(crossed, "expected the villager to walk through the footprint")
 	assertNear((tx + 0.5) * tile, v.x)
@@ -139,11 +142,15 @@ test("a villager sent across a generated map walks around water and trees to its
 		tx = tx + 1
 	end
 	assertTrue(Walker.goTo(v, ctx, tx, ty), "expected a route across the map")
+	-- Free, it heads for the gather area once it arrives: check the arrival.
 	for _ = 1, 60 * 60 do
 		Session.advance(ctx, 1 / 60)
 		local x, y = math.floor(v.x / tile), math.floor(v.y / tile)
 		assertEqual("grass", World.terrainAt(ctx.world, x, y))
 		assertEqual(nil, World.nodeAt(ctx.world, x, y))
+		if Walker.idle(v.walker) then
+			break
+		end
 	end
 	assertNear((tx + 0.5) * tile, v.x)
 	assertNear((ty + 0.5) * tile, v.y)

@@ -9,6 +9,7 @@ local DesignCache = require("src.app.bake.design_cache")
 local Storage = require("src.game.components.storage")
 local FunctionBrick = require("src.game.components.function_brick")
 local Site = require("src.game.buildings.site")
+local StorageFacility = require("src.game.components.storage_facility")
 
 local BuildingsRender = {}
 
@@ -180,6 +181,20 @@ function BuildingsRender.drawStatus(ctx, p)
 				love.graphics.setColor(WORK_BAR[1], WORK_BAR[2], WORK_BAR[3], 1)
 				love.graphics.rectangle("fill", fx + t * 0.1, fy + t * 0.4, t * 0.8 * math.min(1, fb.progress / cycle), t * 0.12)
 			end
+		end
+		local fill = StorageFacility.is(b) and StorageFacility.fill(b)
+		if fill then
+			-- Fill bar and "NN%" over the footprint, red at 100%. Sits
+			-- above the "FULL" tag when both show.
+			local x, y = Projection.worldToScreen(p, b.tileX, b.tileY, 0)
+			local font = love.graphics.getFont()
+			local label = fill.percent .. "%"
+			local color = fill.percent >= 100 and { 0.95, 0.2, 0.15 } or { 0.35, 0.75, 0.35 }
+			local lh = font:getHeight() + 4
+			local ly = y - lh - 2 - (b.full and lh + 2 or 0)
+			bar(x, ly + lh - 4, b.width * t, 4, fill.percent / 100, color)
+			love.graphics.setColor(color[1], color[2], color[3], 1)
+			love.graphics.print(label, x + (b.width * t - font:getWidth(label)) / 2, ly)
 		end
 		if b.full then
 			local x, y = Projection.worldToScreen(p, b.tileX, b.tileY, 0)

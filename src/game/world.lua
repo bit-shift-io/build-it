@@ -128,6 +128,17 @@ function World.isBlocked(world, x, y, throughBuildings)
 		or (not throughBuildings and World.buildingAt(world, x, y) ~= nil)
 end
 
+-- True when a villager may stand still on tile (x, y): inside the world,
+-- not blocked with footprints solid, and not a port tile.
+function World.isStandable(world, x, y)
+	return x >= 0
+		and y >= 0
+		and x < world.width
+		and y < world.height
+		and not World.isBlocked(world, x, y, false)
+		and World.portAt(world, x, y) == nil
+end
+
 -- The world's size in pixels.
 function World.pixelSize(world, config)
 	return world.width * config.tileSize, world.height * config.tileSize

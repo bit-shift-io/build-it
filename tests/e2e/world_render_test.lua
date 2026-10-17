@@ -3,6 +3,7 @@
 -- Captures land in tests/screenshots/world_render_test/.
 local GameHarness = require("tests.support.game_harness")
 local Capture = require("tests.support.capture")
+local StorageFacility = require("src.game.components.storage_facility")
 local Config = require("src.game.config")
 local World = require("src.game.world")
 local WorldGen = require("src.game.world_gen")
@@ -189,4 +190,18 @@ test("a seeded world draws water, trees and rocks, and leaves its prop cache beh
 		local path = config.props.cacheDir .. "/" .. kind .. "_v" .. Registry.KINDS[kind].version .. "_x2.png"
 		assertTrue(exists(path), "expected " .. path .. " cached after the first run")
 	end
+end)
+
+test("a storage facility shows its fill label over the footprint", function()
+	local config = configWithCacheDir("e2e_props_world")
+	local world = WorldGen.generate(config, 1)
+	local game = GameHarness.startSession(world, { real = true, config = config, seed = 1, storage = { plank = 2 } })
+	local b = game.ctx.pools.buildings[1]
+	local fill = StorageFacility.fill(b)
+	assertTrue(fill ~= nil, "expected the starter facility to have capacity")
+	local p = Projection.new(config)
+	game.camera.zoom = 2
+	game.camera.x, game.camera.y = Projection.worldToScreen(p, b.tileX + b.width / 2, b.tileY + b.depth / 2, 0)
+	renderFrame(game)
+	Capture.capture("storage_fill_label")
 end)

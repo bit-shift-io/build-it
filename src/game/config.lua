@@ -157,6 +157,27 @@ return {
 		speed = 120,
 		shirt = { 0.72, 0.36, 0.2 },
 		pathMaxExpansions = 4000,
+		-- Free villagers idle in the gather area (docs/CONTEXT.md): tiles
+		-- gatherMin..gatherRadius from a storage facility's footprint.
+		-- personalSpace (tiles): settled villagers keep this far from others.
+		-- driftSpeed: fraction of walk speed at full push. deadZone: pushes
+		-- weaker than this (0..1) are ignored, so the crowd rests.
+		-- pullBack: strength (0..1) of the pull toward the facility once
+		-- outside the gather radius.
+		idle = {
+			gatherMin = 1,
+			gatherRadius = 5,
+			personalSpace = 0.8,
+			driftSpeed = 0.4,
+			deadZone = 0.08,
+			wakeFactor = 2, -- a resting villager needs deadZone * wakeFactor to move
+			pullBack = 0.5,
+			-- Idle life: seconds between turns on the spot and between short
+			-- wanders; wanderDistance (tiles) is how far a wander may reach.
+			turnEvery = { 2, 5 },
+			wanderEvery = { 5, 10 },
+			wanderDistance = 1.5,
+		},
 	},
 
 	camera = {

@@ -99,3 +99,22 @@ test("haulers deliver to the starting storage facility standing on its input por
 		assertEqual(input.y, t.y, "hauler " .. i)
 	end
 end)
+
+test("a hauler ends its trip and walks to the gather area, off the port tile", function()
+	_G.love = LoveMock.new()
+	local game = GameHarness.launch()
+	Fake.tap(game, "return") -- New game
+	local ctx = game.ctx
+	local facility = ctx.pools.buildings[1]
+	local v = ctx.pools.villagers[1]
+	v.load.item, v.load.count = "log", 2
+	local delivered = false
+	Fake.runUntil(game, function()
+		delivered = delivered or v.load.count == 0
+		return delivered and v.job == nil and v.idle and v.idle.phase == "settled"
+	end, 60 * 60)
+	assertTrue(delivered, "the load was delivered")
+	local x, y = math.floor(v.x / TILE), math.floor(v.y / TILE)
+	assertTrue(World.isStandable(ctx.world, x, y), "settled on a standable tile")
+	assertEqual(facility, v.idle.facility)
+end)

@@ -26,14 +26,15 @@ end
 -- inventory: the player's. stock: the storage totals ({ [item] = n },
 -- StorageFacility.totals). port: the output port the player stands on, or
 -- nil. aura: the aura at the player. reserved: what construction sites
--- claimed ({ [item] = n }, StorageFacility.claimed), or nil.
-function Hud.draw(inventory, stock, port, aura, reserved)
+-- claimed ({ [item] = n }, StorageFacility.claimed), or nil. fill: the
+-- colony-wide storage percent (StorageFacility.totalFill), or nil.
+function Hud.draw(inventory, stock, port, aura, reserved, fill)
 	local lines = {}
 	for _, item in ipairs(ITEMS) do
 		table.insert(lines, item .. ": " .. Inventory.count(inventory, item))
 	end
 	local top = panel(lines, MARGIN, 110)
-	lines = { "Storage" }
+	lines = { fill and ("Storage " .. fill .. "%") or "Storage" }
 	local width = 110
 	for _, item in ipairs(ITEMS) do
 		local line = item .. ": " .. (stock[item] or 0)

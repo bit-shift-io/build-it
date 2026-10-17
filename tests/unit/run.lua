@@ -42,6 +42,7 @@ local defaultTestFiles = {
 	"tests/unit/storage_facility_test.lua",
 	"tests/unit/pathfind_test.lua",
 	"tests/unit/walker_test.lua",
+	"tests/unit/idle_test.lua",
 	"tests/unit/load_test.lua",
 	"tests/unit/haul_test.lua",
 	"tests/unit/job_system_test.lua",
