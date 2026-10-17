@@ -43,6 +43,11 @@ local STORE = { id = "d5", name = "Store", versions = { { width = 1, depth = 1, 
 	brick("output", 2, 3, { port = "output" }),
 } } } }
 
+local CANTEEN = { id = "d6", name = "Canteen", versions = { { width = 1, depth = 1, bricks = {
+	brick("canteen", 0, 0, { ability = "canteen" }),
+	brick("input", 0, 3, { port = "input" }),
+} } } }
+
 local function place(ctx, design, x, y)
 	return Placement.build(ctx, { design = design, version = 1, facing = "N", tileX = x, tileY = y })
 end
@@ -484,4 +489,136 @@ test("a saw with a tree in reach and a saw bench with logs each get an operator"
 	run(ctx, 3)
 	assertTrue(cutter.functionBricks[1].operator ~= nil, "the saw has an operator")
 	assertTrue(mill.functionBricks[1].operator ~= nil, "the saw bench has an operator")
+end)
+
+-- A starving villager at 0 health: full hunger keeps it there.
+local function collapse(v)
+	v.needs.hunger = 1
+	v.needs.health = 0
+end
+
+test("a collapsed villager ends its job, stays put with its load and takes no job", function()
+	local ctx = newCtx()
+	local cutter = place(ctx, CUTTER, 2, 2)
+	place(ctx, STORE, 12, 2)
+	local v = villager(ctx, 6, 8)
+	fill(cutter.ports[1].buffer, "log", 1)
+
+	run(ctx, 0.5)
+	assert(v.job and v.job.kind == "haul", "the villager took the haul")
+	v.load.item, v.load.count = "log", 1
+	collapse(v)
+	local x, y = v.x, v.y
+
+	run(ctx, 10)
+	assertEqual(nil, v.job)
+	assertEqual(0, #ctx.pools.jobs)
+	assertEqual(x, v.x)
+	assertEqual(y, v.y)
+	assertEqual(1, v.load.count)
+	assertEqual(true, v.needs.health <= 0)
+end)
+
+test("a job is never given to a collapsed villager while a healthy one is free", function()
+	local ctx = newCtx()
+	local cutter = place(ctx, CUTTER, 2, 2)
+	place(ctx, STORE, 12, 2)
+	local down = villager(ctx, 3, 5)
+	collapse(down)
+	local up = villager(ctx, 20, 20)
+	fill(cutter.ports[1].buffer, "log", 1)
+
+	run(ctx, 0.5)
+	assertEqual(nil, down.job)
+	assert(up.job, "the healthy villager took the job")
+end)
+
+-- A sawmill with an output port, so its saw bench has work from logs in its input.
+local WORKSHOP = { id = "d6", name = "Workshop", versions = { { width = 1, depth = 1, bricks = {
+	brick("sawbench", 0, 0, { ability = "sawbench" }),
+	brick("input", 0, 3, { port = "input" }),
+	brick("output", 2, 3, { port = "output" }),
+} } } }
+
+-- Hunger and jobs (ADR 0004): a hungry villager takes no new job, and an
+-- operator yields only at the end of a cycle.
+test("a hungry villager takes no new work while food is out of reach", function()
+	local ctx = newCtx()
+	local cutter = place(ctx, CUTTER, 2, 2)
+	place(ctx, STORE, 12, 2)
+	local v = villager(ctx, 6, 8)
+	fill(cutter.ports[1].buffer, "log", 1)
+	v.needs.hunger = Config.needs.hungryAt
+
+	run(ctx, 5)
+	assertEqual(nil, v.job)
+	assertEqual(1, cutter.ports[1].buffer.counts.log)
+end)
+
+test("an operator in need finishes its cycle, then eats, then returns to work", function()
+	local ctx = newCtx()
+	local mill = place(ctx, WORKSHOP, 12, 2)
+	local store = place(ctx, STORE, 4, 2)
+	fill(mill.ports[1].buffer, "log", 4)
+	fill(store.ports[2].buffer, "berry", 3)
+	local v = villager(ctx, 12, 8)
+
+	run(ctx, 1)
+	assertEqual("operate", v.job and v.job.kind)
+	v.needs.hunger = Config.needs.hungryAt
+	local cycle = Config.production.recipes.sawbench.cycle
+	run(ctx, 0.5)
+	assertEqual("operate", v.job and v.job.kind, "not pulled off mid-cycle")
+	assertTrue(v.job.brick.operator == v.job, "still holds the brick")
+
+	local ate, resumed = false, false
+	for _ = 1, 120 * 60 do
+		Session.advance(ctx, STEP)
+		if v.job and v.job.kind == "eat" then
+			ate = true
+		elseif ate and v.job and v.job.kind == "operate" then
+			resumed = true
+			break
+		end
+	end
+	assertTrue(ate, "ate")
+	assertTrue(resumed, "back at the saw bench")
+	assertTrue(cycle > 0)
+	assertTrue(v.needs.hunger < Config.needs.hungryAt)
+end)
+
+test("a hauler in need finishes its trip before eating", function()
+	local ctx = newCtx()
+	local cutter = place(ctx, CUTTER, 2, 2)
+	local store = place(ctx, STORE, 12, 2)
+	fill(store.ports[2].buffer, "berry", 3)
+	local v = villager(ctx, 6, 8)
+	fill(cutter.ports[1].buffer, "log", 1)
+
+	run(ctx, 0.5)
+	assertEqual("haul", v.job and v.job.kind)
+	v.needs.hunger = Config.needs.hungryAt
+	run(ctx, 0.5)
+	assertEqual("haul", v.job and v.job.kind, "the trip is not dropped")
+	local ate = false
+	for _ = 1, 60 * 60 do
+		Session.advance(ctx, STEP)
+		ate = ate or (v.job ~= nil and v.job.kind == "eat")
+	end
+	assertEqual(1, store.storage.counts.log or store.ports[2].buffer.counts.log, "the log arrived")
+	assertTrue(ate, "then ate")
+end)
+
+test("a canteen with an empty input gets food hauled from storage, and nothing else", function()
+	local ctx = newCtx()
+	local store = place(ctx, STORE, 4, 2)
+	fill(store.storage, "berry", 2)
+	fill(store.storage, "log", 2)
+	local canteen = place(ctx, CANTEEN, 14, 2)
+	villager(ctx, 6, 8)
+
+	run(ctx, 30)
+	local buffer = canteen.ports[1].buffer
+	assertEqual(2, buffer.counts.berry)
+	assertEqual(nil, buffer.counts.log)
 end)

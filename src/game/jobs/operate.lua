@@ -27,6 +27,8 @@ local Load = require("src.game.components.load")
 local Harvestable = require("src.game.components.harvestable")
 local NodeSystem = require("src.game.systems.node_system")
 local World = require("src.game.world")
+local Needs = require("src.game.components.needs")
+local AnimalSystem = require("src.game.systems.animal_system")
 
 local Operate = {}
 
@@ -63,12 +65,13 @@ function Operate.walkTo(job, ctx, stage, x, y)
 	return true
 end
 
--- A cycle is over: the next starts while the brick has work, else the job
+-- A cycle is over: the next starts while the brick has work and the
+-- villager is not in need (ADR 0004: it yields here to eat or sleep), else the job
 -- ends.
 function Operate.done(job, ctx)
 	local xp, key = job.villager.xp, job.brick.ability
 	xp[key] = (xp[key] or 0) + 1
-	if FunctionBrick.hasWork(job.brick, job.building, ctx) then
+	if not Needs.inNeed(job.villager.needs, ctx.config.needs) and FunctionBrick.hasWork(job.brick, job.building, ctx) then
 		job.work.begin(job, ctx)
 	else
 		Operate.finish(job)
@@ -396,11 +399,196 @@ function Plant.release(job)
 	job.brick.state = "idle"
 end
 
-Operate.works = { convert = Convert, harvest = Harvest, plant = Plant }
+-- Fisher work: stand on a free land tile beside water in reach, fish one
+-- item per cycle, carry it to an output port. Water needs no reservation and
+-- never runs out. One output room (job.out) is reserved before the operator
+-- starts fishing, so the catch always has somewhere to go.
+local Fish = {}
+
+-- The standable land tile beside a water tile in reach nearest the villager,
+-- inside the job's own building or on no footprint (never water, a node or a
+-- port tile); ties go to the first in row order. Nil when there is none.
+local function shoreTile(job, ctx)
+	local tile, v, world = ctx.config.tileSize, job.villager, ctx.world
+	local best, bestD
+	for _, w in ipairs(FunctionBrick.waterInReach(job.building, ctx, job.brick.ability)) do
+		for dy = -1, 1 do
+			for dx = -1, 1 do
+				local x, y = w[1] + dx, w[2] + dy
+				if (dx ~= 0 or dy ~= 0) and x >= 0 and y >= 0 and x < world.width and y < world.height
+					and not World.isBlocked(world, x, y, job.building) and not World.portAt(world, x, y)
+				then
+					local d = (v.x - (x + 0.5) * tile) ^ 2 + (v.y - (y + 0.5) * tile) ^ 2
+					if not bestD or d < bestD then
+						best, bestD = { x, y }, d
+					end
+				end
+			end
+		end
+	end
+	if best then
+		return best[1], best[2]
+	end
+end
+
+function Fish.begin(job, ctx)
+	local out = nearestPort(job, "output", function(p)
+		return Storage.room(p.buffer) > 0
+	end)
+	local x, y = shoreTile(job, ctx)
+	if not out or not x then
+		return Operate.finish(job)
+	end
+	job.out = out
+	Storage.reserveRoom(out.buffer, 1)
+	job.brick.progress = 0
+	Operate.walkTo(job, ctx, "toShore", x, y)
+end
+
+function Fish.toShore(job, ctx)
+	job.stage = "fishing"
+	Fish.fishing(job, ctx)
+end
+
+function Fish.fishing(job, ctx)
+	local fb = job.brick
+	local cycle = FunctionBrick.cycle(job.building.traits, ctx.config, ctx.config.production.fishCycle)
+	fb.progress = math.min(fb.progress + ctx.dt, cycle)
+	fb.state = "working"
+	if fb.progress < cycle then
+		return
+	end
+	Load.add(job.villager.load, fb.fishing, 1)
+	fb.progress = 0
+	fb.state = "idle"
+	Operate.walkTo(job, ctx, "toOutput", job.out.x, job.out.y)
+end
+
+function Fish.toOutput(job, ctx)
+	local store, load = job.out.buffer, job.villager.load
+	Storage.releaseRoom(store, 1)
+	job.out = nil
+	Storage.add(store, load.item)
+	Load.remove(load, 1)
+	Operate.done(job, ctx)
+end
+
+function Fish.release(job)
+	if job.out then
+		Storage.releaseRoom(job.out.buffer, 1)
+	end
+	job.out = nil
+	job.brick.progress = 0
+	job.brick.state = "idle"
+end
+
+-- Hunter work: reserve a free deer in reach (job.deer), walk to it, kill it
+-- over one cycle, carry the meat to an output port. The meat's room
+-- (job.out) is reserved before the deer is. The deer is held still by its
+-- reservation, so the walk is re-aimed only if it is not where the walk
+-- ended (it stood still only from the moment of reservation) or it left reach.
+local Hunt = {}
+
+local function deerTile(ctx, deer)
+	local tile = ctx.config.tileSize
+	return math.floor(deer.x / tile), math.floor(deer.y / tile)
+end
+
+function Hunt.begin(job, ctx)
+	local meat = ctx.config.production.meatPerDeer
+	local out = nearestPort(job, "output", function(p)
+		return Storage.room(p.buffer) >= meat
+	end)
+	local deer = out and FunctionBrick.nearestDeer(job.building, ctx, job.brick.ability)
+	if not deer then
+		return Operate.finish(job)
+	end
+	job.out, job.deer, job.meat = out, deer, meat
+	Storage.reserveRoom(out.buffer, meat)
+	AnimalSystem.reserve(deer, job.brick)
+	job.brick.progress = 0
+	local x, y = deerTile(ctx, deer)
+	job.goal = { x, y }
+	Operate.walkTo(job, ctx, "toDeer", x, y)
+end
+
+-- The reserved deer is gone or out of reach: give it up and pick again.
+local function retarget(job, ctx)
+	AnimalSystem.release(job.deer)
+	Storage.releaseRoom(job.out.buffer, job.meat)
+	job.deer, job.out, job.goal = nil, nil, nil
+	Hunt.begin(job, ctx)
+end
+
+local function lost(job, ctx)
+	return job.deer.dead or not FunctionBrick.deerInReach(job.building, ctx, job.brick.ability, job.deer)
+end
+
+function Hunt.toDeer(job, ctx)
+	if lost(job, ctx) then
+		return retarget(job, ctx)
+	end
+	local x, y = deerTile(ctx, job.deer)
+	if x ~= job.goal[1] or y ~= job.goal[2] then
+		job.goal = { x, y }
+		Operate.walkTo(job, ctx, "toDeer", x, y)
+		return
+	end
+	job.stage = "killing"
+	Hunt.killing(job, ctx)
+end
+
+function Hunt.killing(job, ctx)
+	local fb = job.brick
+	if lost(job, ctx) then
+		return retarget(job, ctx)
+	end
+	local cycle = FunctionBrick.cycle(job.building.traits, ctx.config, ctx.config.production.huntCycle)
+	fb.progress = math.min(fb.progress + ctx.dt, cycle)
+	fb.state = "working"
+	if fb.progress < cycle then
+		return
+	end
+	AnimalSystem.kill(job.deer)
+	job.deer = nil
+	Load.add(job.villager.load, fb.hunting, ctx.config.production.meatPerDeer)
+	fb.progress = 0
+	fb.state = "idle"
+	Operate.walkTo(job, ctx, "toOutput", job.out.x, job.out.y)
+end
+
+function Hunt.toOutput(job, ctx)
+	local store, load = job.out.buffer, job.villager.load
+	Storage.releaseRoom(store, job.meat)
+	job.out = nil
+	for _ = 1, load.count do
+		Storage.add(store, load.item)
+	end
+	Load.remove(load, load.count)
+	Operate.done(job, ctx)
+end
+
+function Hunt.release(job)
+	if job.deer then
+		AnimalSystem.release(job.deer)
+	end
+	if job.out then
+		Storage.releaseRoom(job.out.buffer, job.meat)
+	end
+	job.deer, job.out, job.goal = nil, nil, nil
+	job.brick.progress = 0
+	job.brick.state = "idle"
+end
+
+Operate.works = { convert = Convert, harvest = Harvest, plant = Plant, fish = Fish, hunt = Hunt }
 
 -- The work of function brick `fb`, or nil when it needs no operator yet.
 local function workFor(fb)
-	if fb.plants then
+	if fb.hunting then
+		return Operate.works.hunt
+	elseif fb.fishing then
+		return Operate.works.fish
+	elseif fb.plants then
 		return Operate.works.plant
 	elseif fb.recipe then
 		return Operate.works.convert

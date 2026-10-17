@@ -65,3 +65,18 @@ test("a rock passes through its stages and is marked dead when empty", function(
 	assertTrue(n.dead)
 	assertEqual(Config.nodes.rock.amount, Inventory.count(inv, "stone"))
 end)
+
+local function bush()
+	return { kind = "bush", amount = Config.nodes.bush.amount, stage = 1 }
+end
+
+test("a bush yields berries and, picked clean, shows its empty stage and stays", function()
+	local inv, n = Inventory.new(), bush()
+	Harvestable.work(worker(), n, CYCLE * Config.nodes.bush.amount, inv, Config)
+	assertEqual(Config.nodes.bush.amount, Inventory.count(inv, "berry"))
+	assertEqual(0, n.amount)
+	assertEqual(3, n.stage)
+	assertFalse(n.dead, "a bush never dies")
+	assertFalse(Harvestable.canHarvest(n))
+	assertEqual(0, n.refilling)
+end)

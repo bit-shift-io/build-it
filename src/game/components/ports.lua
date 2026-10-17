@@ -67,10 +67,11 @@ function Ports.flush(building)
 end
 
 -- Whether `building` takes `item` at its input ports: a depot takes every
--- item, otherwise some converting function brick must consume it.
-function Ports.accepts(building, item)
+-- item, a canteen takes food (a key of `food`, config.food), otherwise some
+-- converting function brick must consume it.
+function Ports.accepts(building, item, food)
 	for _, fb in ipairs(building.functionBricks) do
-		if fb.depot or (fb.recipe and fb.recipe.input[item]) then
+		if fb.depot or (fb.recipe and fb.recipe.input[item]) or (fb.canteen and food and food[item]) then
 			return true
 		end
 	end
@@ -79,14 +80,14 @@ end
 
 -- Moves accepted items from `inventory` into input `port`'s buffer, up to
 -- its free space; other items stay with the player.
-function Ports.deliver(port, building, inventory)
+function Ports.deliver(port, building, inventory, food)
 	local items = {}
 	for item in pairs(inventory.counts) do
 		table.insert(items, item)
 	end
 	table.sort(items)
 	for _, item in ipairs(items) do
-		if Ports.accepts(building, item) then
+		if Ports.accepts(building, item, food) then
 			local n = math.min(Inventory.count(inventory, item), Storage.room(port.buffer))
 			for _ = 1, n do
 				Storage.add(port.buffer, item)

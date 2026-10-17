@@ -1,7 +1,8 @@
 -- Draws the flat tile world: terrain and grid (render/terrain.lua), then
 -- building port tile markers on the ground (render/buildings.lua), then
 -- every baked sprite on its tile -- resource nodes (render/nodes.lua),
--- buildings and villagers (render/character.lua) -- sorted by depth. Everything goes through the one
+-- buildings, villagers (render/character.lua) and deer (render/animals.lua)
+-- -- sorted by depth. Everything goes through the one
 -- 3/4 projection (src/game/projection.lua), the same one the baker uses.
 -- Reads ctx, never mutates it.
 local Projection = require("src.game.projection")
@@ -9,13 +10,15 @@ local Terrain = require("src.app.render.terrain")
 local NodesRender = require("src.app.render.nodes")
 local BuildingsRender = require("src.app.render.buildings")
 local CharacterRender = require("src.app.render.character")
+local AnimalsRender = require("src.app.render.animals")
 
 local WorldRender = {}
 
 -- Draws each { sprite, tileX, tileY } back to front: by the depth of its
 -- footprint's south edge, then west to east. A sprite with a quad draws
 -- that region of its image (an atlas). A draw with `alpha` (0..1) is
--- translucent: a construction site.
+-- translucent: a construction site. A draw with `tint` ({ r, g, b }) is
+-- darkened by it.
 local function drawSprites(draws, p)
 	for _, d in ipairs(draws) do
 		d.order = Projection.depth(p, d.tileX, d.tileY + d.sprite.depth, 0)
@@ -34,7 +37,8 @@ local function drawSprites(draws, p)
 	for _, d in ipairs(draws) do
 		local left, top, s = Projection.placeSprite(p, d.sprite.frame, d.tileX, d.tileY)
 		local a = d.alpha or 1 -- premultiplied: the tint carries the alpha
-		love.graphics.setColor(a, a, a, a)
+		local t = d.tint or { 1, 1, 1 } -- a collapsed villager is dimmed
+		love.graphics.setColor(a * t[1], a * t[2], a * t[3], a)
 		if d.sprite.quad then
 			love.graphics.draw(d.sprite.image, d.sprite.quad, left, top, 0, s, s)
 		else
@@ -54,6 +58,7 @@ function WorldRender.draw(ctx, zoom)
 	NodesRender.addDraws(draws, ctx, scale)
 	BuildingsRender.addDraws(draws, ctx, scale)
 	CharacterRender.addVillagerDraws(draws, ctx, scale)
+	AnimalsRender.addDraws(draws, ctx, scale)
 	BuildingsRender.drawPorts(ctx, p)
 	drawSprites(draws, p)
 	BuildingsRender.drawStatus(ctx, p)

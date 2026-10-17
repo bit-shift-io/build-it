@@ -9,11 +9,11 @@ Domain terms for Build-it. Code, docs and conversation use these words with thes
 - **Boundary:** Footprints, ports and resource nodes all align to tiles. One tile is 4×4 studs, or 16×16 voxels.
 
 ## Resource node
-- **Definition:** A harvestable thing on a tile: a tree or a rock.
-- **Boundary:** Holds a remaining amount and a stage. A depleted node disappears and frees its tile. Saplings are tree nodes not yet harvestable.
+- **Definition:** A harvestable thing on a tile: a tree, a rock or a berry bush.
+- **Boundary:** Holds a remaining amount and a stage. A depleted node disappears and frees its tile, except a berry bush, which refills. Saplings are tree nodes not yet harvestable. Water tiles and deer are not nodes.
 
 ## Item
-- **Definition:** A countable unit of a resource: log, stone or plank.
+- **Definition:** A countable unit of a resource: log, stone, plank, or a food (berry, meat, fish).
 - **Boundary:** Items sit in an inventory, a buffer or storage. Logs are never a brick material.
 
 ## Inventory
@@ -21,11 +21,11 @@ Domain terms for Build-it. Code, docs and conversation use these words with thes
 - **Boundary:** Unlimited. Placement doesn't pay from it. The player delivers it to a depot to make it spendable.
 
 ## Stockpile
-- **Definition:** The planks and stone in the starting storage facility at the start of a new game.
+- **Definition:** The planks, stone and berries in the starting storage facility at the start of a new game.
 - **Boundary:** It's a starting amount, not a building or place.
 
 ## Prop
-- **Definition:** A world object drawn from a baked block model that isn't a building: tree, rock, sapling, stump.
+- **Definition:** A world object drawn from a baked block model that isn't a building: tree, rock, sapling, stump, berry bush, deer.
 - **Boundary:** Props are made by the developer, never the player.
 
 ## Prop generator
@@ -73,8 +73,8 @@ Domain terms for Build-it. Code, docs and conversation use these words with thes
 - **Boundary:** Sets the brick's cost and traits. Shows as surface texture. It's not the same thing as paint colour, which is free and cosmetic.
 
 ## Function brick
-- **Definition:** A brick that gives a building an ability: saw (harvest trees), pickaxe (harvest rocks), planter (plant saplings), saw bench (logs → planks).
-- **Boundary:** Each one works independently and in parallel with the others, and only while an operator holds its operator job. The depot is the exception and needs no operator. Each costs resources. A design needs at least one to save.
+- **Definition:** A brick that gives a building an ability: saw (harvest trees), pickaxe (harvest rocks), planter (plant saplings), saw bench (logs → planks), forager (harvest berry bushes), fishing brick (fish water), hunter (hunt deer), bed (sleep one villager), canteen (an eating spot).
+- **Boundary:** Each one works independently and in parallel with the others, and only while an operator holds its operator job. The depot, bed and canteen are the exceptions and need no operator. Each costs resources. A design needs at least one to save.
 
 ## Port
 - **Definition:** An input or output brick on the footprint edge at ground level. It faces one world tile, where the player delivers or collects items.
@@ -129,7 +129,7 @@ Domain terms for Build-it. Code, docs and conversation use these words with thes
 
 ## Villager
 - **Definition:** A helper character that assigns itself to jobs. A new game starts with 20 around the starting storage facility.
-- **Boundary:** Never controlled by the player. Holds one job at a time. Never enters a footprint, except the operator of a function brick entering that brick's building.
+- **Boundary:** Never controlled by the player. Holds one job at a time. Never enters a footprint, except the operator of a function brick entering that brick's building, or a sleeper entering its bed's building. Has a name and needs.
 
 ## Free villager
 - **Definition:** A villager with no job. It idles at the linger spot of its last task, or in a gather area if it has none, until a job takes it.
@@ -140,8 +140,8 @@ Domain terms for Build-it. Code, docs and conversation use these words with thes
 - **Boundary:** Free villagers never idle on a footprint or a port tile. They keep personal space and step aside for passers-by.
 
 ## Job
-- **Definition:** A unit of work one villager holds: an operator job, a haul job or a build job.
-- **Boundary:** One villager per job. A busy villager is never pulled off a job. A job goes first to a villager lingering on its task, then to free villagers not lingering, then to those lingering on other tasks. Within a group, nearest wins, with experience counting as nearness.
+- **Definition:** A unit of work one villager holds: an operator job, a haul job, a build job, or a needs job (eat, sleep, feed).
+- **Boundary:** One villager per job. A busy villager is never pulled off a job. A villager in need takes no new job, and an operator in need finishes at its cycle end (ADR 0004). A job goes first to a villager lingering on its task, then to free villagers not lingering, then to those lingering on other tasks. Within a group, nearest wins, with experience counting as nearness.
 
 ## Operator job
 - **Definition:** The job of running one function brick: harvesting, planting or converting, including carrying items in and out.
@@ -186,3 +186,71 @@ Domain terms for Build-it. Code, docs and conversation use these words with thes
 ## Construction site
 - **Definition:** A placed design not yet built. Its cost is reserved in storage at placement.
 - **Boundary:** Becomes a building once haulers deliver its cost and a build job finishes. Blocks its footprint like a building.
+
+# Needs and food
+
+## Name
+- **Definition:** A villager's or the player's display name.
+- **Boundary:** Drawn from a fixed list at spawn and saved. A label only.
+
+## Need
+- **Definition:** One of a villager's or the player's three meters: health, hunger, tiredness.
+- **Boundary:** "In need" means past the hungry or tired threshold. A villager in need eats or sleeps before taking work.
+
+## Health
+- **Definition:** How close a villager or the player is to collapse.
+- **Boundary:** Drains at full hunger. Regenerates while hunger is below the starving threshold. Unrelated to the health trait.
+
+## Hunger
+- **Definition:** A need that rises over time and falls when eating.
+- **Boundary:** Hungry threshold triggers eating. Full hunger drains health.
+
+## Tiredness
+- **Definition:** A need that rises while awake and falls while asleep.
+- **Boundary:** Villagers only; the player's stays at 0. Falls faster in a bed than on the ground.
+
+## Collapse
+- **Definition:** The state at 0 health.
+- **Boundary:** A collapsed villager can't move or work, and gets up once fed. A collapsed player respawns at the nearest storage facility with its inventory. Nobody dies for good.
+
+## Food
+- **Definition:** An item that fills hunger: berry, meat or fish.
+- **Boundary:** Each food has its own fill. Food never spoils. There is no cooking.
+
+## Meal
+- **Definition:** One sitting of eating.
+- **Boundary:** Eats one item at a time, highest fill first, until hunger reaches 0. Villagers eat at a canteen or storage facility; the player from inventory or a storage facility in range.
+
+## Feed job
+- **Definition:** A job carrying food to a collapsed villager.
+- **Boundary:** Goes before every other job. One feeder per collapsed villager.
+
+## Bed
+- **Definition:** A function brick that sleeps one villager.
+- **Boundary:** Needs no operator. Not owned. A tired villager with no free bed sleeps where it stands, more slowly.
+
+## Canteen
+- **Definition:** A function brick that makes its building an eating spot.
+- **Boundary:** Needs no operator. Haulers stock its input buffers with food. It doesn't cook.
+
+## Forager
+- **Definition:** A function brick whose operator picks berry bushes in reach.
+
+## Fishing brick
+- **Definition:** A function brick whose operator fishes water tiles in reach from the shore.
+- **Boundary:** Water never runs out of fish.
+
+## Hunter
+- **Definition:** A function brick whose operator kills a deer in reach and carries back its meat.
+
+## Berry bush
+- **Definition:** A resource node that yields berries.
+- **Boundary:** Picked clean, it refills over time and never vanishes.
+
+## Deer
+- **Definition:** A wandering animal, hunted for meat.
+- **Boundary:** Lives in its own pool, not a node. Never flees. Belongs to one herd.
+
+## Herd
+- **Definition:** A group of deer sharing a home spot they wander near.
+- **Boundary:** Grows by breeding up to a cap.

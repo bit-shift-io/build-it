@@ -39,6 +39,8 @@ local function nearestFacility(ctx, x, y)
 	return best
 end
 
+Idle.nearestFacility = nearestFacility
+
 -- The building `v` idles around from tile (x, y): its linger anchor while
 -- that stands (a dead anchor drops the linger), else the nearest storage
 -- facility.

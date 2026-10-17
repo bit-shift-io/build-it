@@ -1,5 +1,5 @@
--- Seeded world generation: grass, water blobs, then clusters of tree and
--- rock resource nodes on the grass. The same seed always gives the same
+-- Seeded world generation: grass, water blobs, then clusters of tree, rock
+-- and berry bush resource nodes on the grass. The same seed always gives the same
 -- world (docs/ARCHITECTURE.md "Rules"). Pure -- no `love.*`.
 --
 -- Tuning: config.world (size), config.worldGen (blobs and clusters),
@@ -72,7 +72,37 @@ local function addClusters(world, rng, config, kind, cluster)
 	end
 end
 
--- A new world from config and seed: { width, height, terrain, nodes, nodeAt }
+-- Deer herds: each a home tile on free grass outside the spawn clearing, a
+-- cap, and the tiles its deer start on (distinct, standable, near home).
+-- world.herds = { { id, tileX, tileY, cap, deer = { { x, y }, ... } }, ... }
+-- (Session.newGame turns them into records.)
+local function addHerds(world, rng, config)
+	local cfg = config.worldGen
+	local h = cfg.herds
+	world.herds = {}
+	for _ = 1, h.count do
+		local x, y = rng:int(0, world.width - 1), rng:int(0, world.height - 1)
+		local herd = { id = #world.herds + 1, tileX = x, tileY = y, cap = rng:int(h.cap[1], h.cap[2]), deer = {} }
+		if World.terrainAt(world, x, y) == "grass" and not World.nodeAt(world, x, y) and clearOfSpawn(world, cfg, x, y) then
+			local free = {}
+			eachTileWithin(world, x + 0.5, y + 0.5, h.spread, function(tx, ty)
+				if World.isStandable(world, tx, ty) then
+					free[#free + 1] = { x = tx, y = ty }
+				end
+			end)
+			for i = 1, math.min(herd.cap, #free) do
+				local k = rng:int(i, #free)
+				free[i], free[k] = free[k], free[i]
+				herd.deer[i] = free[i]
+			end
+			if #herd.deer > 0 then
+				table.insert(world.herds, herd)
+			end
+		end
+	end
+end
+
+-- A new world from config and seed: { width, height, terrain, nodes, nodeAt, herds }
 -- (src/game/world.lua).
 function WorldGen.generate(config, seed)
 	local world = World.new(config.world.width, config.world.height)
@@ -80,6 +110,10 @@ function WorldGen.generate(config, seed)
 	addWater(world, rng, config.worldGen)
 	addClusters(world, rng, config, "tree", config.worldGen.forests)
 	addClusters(world, rng, config, "rock", config.worldGen.rockFields)
+	-- Last, so adding bushes left the water, trees and rocks of every seed as they were.
+	addClusters(world, rng, config, "bush", config.worldGen.bushPatches)
+	-- After the bushes, so adding herds left every seed's terrain and nodes as they were.
+	addHerds(world, rng, config)
 	return world
 end
 

@@ -252,7 +252,7 @@ function BuilderScreen.buttons(screen)
 		end
 	else
 		local plain = { kind = "shape", heading = "Brick (R turns)", columns = SHAPE_COLUMNS, height = SHAPE_HEIGHT, items = {} }
-		local special = { kind = "shape", heading = "Function bricks", columns = 2, height = SHAPE_HEIGHT, items = {} }
+		local special = { kind = "shape", heading = "Function bricks", columns = 3, height = SHAPE_HEIGHT, items = {} }
 		sections = {
 			plain,
 			special,

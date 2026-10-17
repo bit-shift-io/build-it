@@ -22,6 +22,8 @@ local Aura = require("src.game.components.aura")
 local StorageFacility = require("src.game.components.storage_facility")
 local Hud = require("src.app.render.hud")
 local Projection = require("src.game.projection")
+local Status = require("src.game.components.status")
+local Card = require("src.app.render.card")
 
 local WorldScreen = {}
 
@@ -52,6 +54,19 @@ local function worldAt(screen, x, y)
 	local px = cam.x + (x - w / 2) / cam.zoom
 	local py = cam.y + (y - h / 2) / cam.zoom
 	return Projection.screenToWorld(Projection.new(screen.ctx.config), px, py, 0)
+end
+
+-- The villager or player whose sprite is under the pointer, or nil. Tests
+-- the sprite's screen rect, not the tile under the pointer.
+function WorldScreen.hovered(screen)
+	if not screen.mouse or screen.placing then
+		return nil
+	end
+	local w, h = Screen.dimensions()
+	local cam = screen.camera
+	local px = cam.x + (screen.mouse.x - w / 2) / cam.zoom
+	local py = cam.y + (screen.mouse.y - h / 2) / cam.zoom
+	return CharacterRender.at(screen.ctx, px, py)
 end
 
 -- The tile under the held left-click pointer, or nil when not held.
@@ -197,7 +212,11 @@ function WorldScreen.draw(screen)
 		GhostRender.draw(screen.ctx, ghost, screen.camera.zoom)
 	end
 	Camera.detach()
-	Hud.draw(screen.player.inventory, StorageFacility.totals(screen.ctx), CharacterSystem.outputPortUnder(screen.player, screen.ctx), Aura.at(screen.ctx, screen.player), StorageFacility.claimed(screen.ctx), StorageFacility.totalFill(screen.ctx))
+	Hud.draw(screen.player.inventory, StorageFacility.totals(screen.ctx), CharacterSystem.outputPortUnder(screen.player, screen.ctx), Aura.at(screen.ctx, screen.player), StorageFacility.claimed(screen.ctx), StorageFacility.totalFill(screen.ctx), Status.hunger(screen.player.needs, screen.ctx.config.needs))
+	local hovered = WorldScreen.hovered(screen)
+	if hovered then
+		Card.draw(Status.lines(hovered), screen.mouse.x, screen.mouse.y, Status.bars(hovered))
+	end
 	GhostRender.drawPanel(screen.library, screen.placing, WorldScreen.cost(screen), WorldScreen.status(screen))
 end
 

@@ -5,15 +5,20 @@
 -- Line based like a design file, with the same record format
 -- (src/game/designs/codec.lua: `tag key=n:1 key=s:text ...`):
 --
---   build-it-save 2
---   session seed=n:1 time=n:12.5 rng=n:<rng state> [nextNodeId=n:..]
+--   build-it-save 7
+--   session seed=n:1 time=n:12.5 rng=n:<rng state> [nextNodeId=n:..] [nextAnimalId=n:..]
 --   world width=n:128 height=n:128
---   character player=n:1 x=n:.. y=n:.. facing=n:.. frame=n:.. ...
+--   character player=n:1 name=s:Ada x=n:.. y=n:.. facing=n:.. frame=n:.. health=n:..
+--             hunger=n:.. tiredness=n:.. ...
 --   inventory log=n:3 plank=n:50 ...      -- belongs to the character above
---   villager id=n:1 x=n:.. y=n:.. facing=n:.. frame=n:.. distance=n:..
+--   villager id=n:1 name=s:Bram x=n:.. y=n:.. facing=n:.. frame=n:.. distance=n:..
 --   load item=s:log count=n:3             -- what the villager above carries,
 --                                         -- only when it carries something
 --   waypoint x=n:.. y=n:..                -- the villager's path, next first
+--   herd id=n:1 tileX=n:.. tileY=n:.. cap=n:4 breed=n:..   -- a deer herd
+--   deer id=n:1 herd=n:1 x=n:.. y=n:.. facing=n:.. frame=n:.. distance=n:..
+--                                         -- its path and wander timer are
+--                                         -- not saved: it wanders anew
 --   site design=s:d1 version=n:1 facing=s:N tileX=n:.. tileY=n:.. progress=n:..
 --   cost plank=n:30                       -- the site above's whole cost
 --   delivered plank=n:12                  -- what haulers brought it
@@ -44,6 +49,7 @@ local Session = require("src.game.session")
 local Placement = require("src.game.buildings.placement")
 local Site = require("src.game.buildings.site")
 local Storage = require("src.game.components.storage")
+local AnimalSystem = require("src.game.systems.animal_system")
 
 local SaveCodec = {}
 
@@ -52,7 +58,21 @@ local SaveCodec = {}
 --
 -- Format 3: a villager's experience follows its record as an `xp` record
 -- (count per role). Format 2 saves load with empty experience.
-local FORMAT = 3
+--
+-- Format 4: the player and each villager carry a `name`. Older saves give the
+-- player a name from the new session's rng and a villager one from
+-- config.names by its id.
+--
+-- Format 5: the player and each villager carry `health`, `hunger` and
+-- `tiredness` (fractions 0..1) on their record. Older saves load with full
+-- needs.
+--
+-- Format 6: a picked-clean berry bush carries `refilling` (seconds since it
+-- ran out) on its node record. Older saves have no bushes, so load as is.
+--
+-- Format 7: `herd` and `deer` records for the animals pool. Older saves have
+-- no deer, so load with none.
+local FORMAT = 7
 local OLDEST = 2
 local HEADER = "build-it-save " .. FORMAT
 
@@ -62,12 +82,17 @@ local function sessionRecord(ctx)
 		time = ctx.time,
 		rng = ctx.rng.state,
 		nextNodeId = ctx.nextNodeId,
+		nextAnimalId = ctx.nextAnimalId,
 	})
 end
 
 local function characterRecords(lines, c)
 	lines[#lines + 1] = Codec.record("character", {
 		player = c.player,
+		name = c.name,
+		health = c.needs.health,
+		hunger = c.needs.hunger,
+		tiredness = c.needs.tiredness,
 		x = c.x,
 		y = c.y,
 		facing = c.animator.facing,
@@ -82,6 +107,10 @@ end
 local function villagerRecords(lines, v)
 	lines[#lines + 1] = Codec.record("villager", {
 		id = v.id,
+		name = v.name,
+		health = v.needs.health,
+		hunger = v.needs.hunger,
+		tiredness = v.needs.tiredness,
 		x = v.x,
 		y = v.y,
 		facing = v.animator.facing,
@@ -241,6 +270,20 @@ function SaveCodec.encode(ctx)
 	for _, v in ipairs(ctx.pools.villagers) do
 		villagerRecords(lines, v)
 	end
+	for _, h in ipairs(ctx.pools.herds) do
+		lines[#lines + 1] = Codec.record("herd", { id = h.id, tileX = h.tileX, tileY = h.tileY, cap = h.cap, breed = h.breed })
+	end
+	for _, a in ipairs(ctx.pools.animals) do
+		lines[#lines + 1] = Codec.record("deer", {
+			id = a.id,
+			herd = a.herd,
+			x = a.x,
+			y = a.y,
+			facing = a.animator.facing,
+			frame = a.animator.frame,
+			distance = a.animator.distance,
+		})
+	end
 	return table.concat(lines, "\n") .. "\n"
 end
 
@@ -275,8 +318,17 @@ local function parse(text)
 	return records
 end
 
+-- Puts saved needs back; fields an older save lacks keep their defaults.
+local function restoreNeeds(r, f)
+	r.needs.health = f.health or r.needs.health
+	r.needs.hunger = f.hunger or r.needs.hunger
+	r.needs.tiredness = f.tiredness or r.needs.tiredness
+end
+
 local function restoreCharacter(c, f, nodesById)
+	restoreNeeds(c, f)
 	c.x, c.y = f.x, f.y
+	c.name = f.name or c.name
 	c.animator.facing, c.animator.frame, c.animator.distance = f.facing, f.frame, f.distance
 	c.harvester.progress = f.progress
 	c.harvester.node = f.harvesting and nodesById[f.harvesting]
@@ -350,6 +402,7 @@ end
 local function build(records, config)
 	local session, world
 	local characters, buildings, villagers, sites = {}, {}, {}, {}
+	local herds, animals = {}, {}
 	local designs, design, version = {}, nil, nil
 	local nodesById = {}
 	local tile = 0 -- terrain tiles read so far
@@ -405,7 +458,15 @@ local function build(records, config)
 		elseif tag == "villager" then
 			local v = Session.newVillager(f.id, f.x, f.y, config)
 			v.animator.facing, v.animator.frame, v.animator.distance = f.facing, f.frame, f.distance
+			v.name = f.name or config.names[(f.id - 1) % #config.names + 1]
+			restoreNeeds(v, f)
 			villagers[#villagers + 1] = v
+		elseif tag == "herd" then
+			herds[#herds + 1] = { id = f.id, tileX = f.tileX, tileY = f.tileY, cap = f.cap, breed = f.breed or 0 }
+		elseif tag == "deer" then
+			local a = AnimalSystem.newDeer(f.id, f.herd, f.x, f.y, config)
+			a.animator.facing, a.animator.frame, a.animator.distance = f.facing, f.frame, f.distance
+			animals[#animals + 1] = a
 		elseif tag == "load" then
 			local load = last(villagers, tag, r.line).load
 			load.item, load.count = f.item, f.count
@@ -424,6 +485,7 @@ local function build(records, config)
 	ctx.rng = Rng.new(0)
 	ctx.rng.state = session.rng
 	ctx.nextNodeId = session.nextNodeId
+	ctx.nextAnimalId = session.nextAnimalId
 	for i, saved in ipairs(characters) do
 		local c = assert(ctx.pools.characters[i], "more characters than the session holds")
 		restoreCharacter(c, saved.fields, nodesById)
@@ -436,6 +498,13 @@ local function build(records, config)
 		restoreSite(ctx, saved, designs)
 	end
 	ctx.pools.villagers = villagers
+	for i, h in ipairs(herds) do
+		assert(h.id == i, "herds are out of order")
+	end
+	for _, a in ipairs(animals) do
+		assert(herds[a.herd], "a deer belongs to a missing herd")
+	end
+	ctx.pools.herds, ctx.pools.animals = herds, animals
 	return ctx
 end
 

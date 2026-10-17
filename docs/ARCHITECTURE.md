@@ -55,8 +55,9 @@ end
   3. Villagers (`pools.villagers`): walk their paths. They never read intents.
   4. Nodes grow, dead nodes release their bricks, then construction sites are placed (`pools.sites`), built sites become buildings, and buildings run.
   5. Jobs (`pools.jobs`): free villagers take new jobs (operator, build, haul), then every job steps. This runs after the buildings, so haulers read output buffers after `Ports.flush`.
-  6. **Despawn sweeps**, the only place records are removed: ended jobs, then buildings and built sites, then nodes.
-- Pools: `characters`, `villagers`, `nodes`, `buildings`, `sites`, `jobs`. Villagers have their own pool so systems that loop characters for player intents never see them.
+  6. Animals (`pools.animals`): deer wander near their herd's home and herds under their cap breed. They walk through `Walker` and `Mover`, the same movement path as villagers.
+  7. **Despawn sweeps**, the only place records are removed: ended jobs, then buildings and built sites, then nodes, then dead animals.
+- Pools: `characters`, `villagers`, `nodes`, `buildings`, `sites`, `jobs`, `animals`, `herds`. Villagers have their own pool so systems that loop characters for player intents never see them. `animals` holds deer; `herds` holds each herd's home tile, cap and breed timer (never removed).
 - Jobs: `src/game/systems/job_system.lua` creates haul jobs (`src/game/jobs/haul.lua`) from world state and gives each one to the nearest free villager the moment it is created, so no job waits unassigned. A job reserves its source items (`Storage.reserve`) and destination room (`Storage.reserveRoom`) and releases them when it ends or fails. Jobs and reservations are not saved; a villager's `load` is.
 - Paths: `src/game/pathfind.lua` is A* over tiles (8-way, no corner cutting, deterministic, capped by `config.villagers.pathMaxExpansions`). The `walker` component finds a path once per target and steers through `Mover`. Footprints are solid to every record except the one building in `mover.enter` (an operator inside its own building; `opts.enter` for paths); the player's mover never sets it. A record already overlapping a footprint may move out of it, never into another.
 - Nothing is removed mid-iteration. Systems mark records `dead = true`; the sweep removes them.

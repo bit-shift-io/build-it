@@ -37,25 +37,80 @@ return {
 		water = { blobs = 14, lobes = { 2, 4 }, lobeRadius = { 2, 6 }, lobeSpread = 4 },
 		forests = { count = 24, radius = { 3, 8 }, density = 0.6, falloff = 0.6 },
 		rockFields = { count = 18, radius = { 2, 4 }, density = 0.6, falloff = 0.5 },
+		bushPatches = { count = 14, radius = { 2, 4 }, density = 0.5, falloff = 0.5 },
+		-- Deer herds (docs/CONTEXT.md "Herd"): each gets a home tile on
+		-- free grass outside the spawn clearing and a cap drawn from `cap`,
+		-- and starts at that cap, its deer within `spread` tiles of home.
+		herds = { count = 10, cap = { 3, 6 }, spread = 2 },
+	},
+
+	-- Animals (src/game/systems/animal_system.lua). A deer wanders to a
+	-- random standable tile within wanderRadius tiles of its herd's home
+	-- every wanderEvery seconds (a range). A herd under its cap adds a deer
+	-- every breedEvery seconds. size and speed are in px and px/s.
+	animals = {
+		deer = { size = 14, speed = 45, wanderRadius = 4, wanderEvery = { 3, 8 }, breedEvery = 60 },
 	},
 
 	-- Resource nodes: what a fresh node of each kind holds, the item one
 	-- harvest cycle takes from it, and stageAt: the remaining fractions at or
 	-- below which it steps to stage 2, 3, ... A node at 0 is depleted and
-	-- vanishes, freeing its tile.
+	-- vanishes, freeing its tile. A bush is the exception: picked clean (its
+	-- last stage) it refills after refillTime seconds and never vanishes.
 	nodes = {
 		tree = { amount = 10, item = "log", stageAt = { 0.6, 0.3 }, growTime = 120 },
 		rock = { amount = 8, item = "stone", stageAt = { 0.6, 0.3 } },
+		bush = { amount = 6, item = "berry", stageAt = { 0.5, 0.01 }, refillTime = 90 },
 	},
 
 	-- Hand harvesting: seconds per cycle (each yields 1 item) and how near
 	-- the character may stand, in px from its centre to the node's tile.
 	harvest = { handCycle = 0.5, reach = 12 },
 
-	-- The stockpile: the planks and stone a new game's starting storage
-	-- facility (src/game/designs/starter.lua) holds. The player's inventory
-	-- starts empty.
-	stockpile = { plank = 50, stone = 50 },
+	-- Names (docs/CONTEXT.md "Name"): the fixed list the player and each
+	-- villager draw from with ctx.rng at spawn.
+	names = {
+		"Ada", "Bram", "Cleo", "Dov", "Edda", "Finn", "Gwen", "Hugo", "Iris", "Jory",
+		"Kit", "Lena", "Milo", "Nora", "Otto", "Pia", "Quin", "Rhea", "Seth", "Tess",
+		"Uma", "Vic", "Wren", "Xavi", "Yara", "Zed",
+	},
+
+	-- Needs (src/game/components/needs.lua): every meter is a fraction 0..1,
+	-- rates in fractions per second. A meal falls due (hunger reaches
+	-- hungryAt) about every 3 min, sleep (tiredness reaches tiredAt) about
+	-- every 8 min. At full hunger health drains from full to collapse in
+	-- about 2 min; below starvingAt it regenerates.
+	needs = {
+		hungerRate = 0.6 / 180,
+		hungryAt = 0.6,
+		tirednessRate = 0.7 / 480,
+		tiredAt = 0.7,
+		starvingAt = 0.9,
+		drainRate = 1 / 120,
+		regenRate = 1 / 60,
+		-- Tiredness a sleeper loses per second (it stops rising while
+		-- asleep): in a bed about a minute from the tired threshold, on
+		-- the ground three times slower (docs/CONTEXT.md "Bed").
+		bedRestRate = 0.7 / 60,
+		groundRestRate = 0.7 / 180,
+	},
+
+	-- Food (docs/CONTEXT.md "Food", "Meal"): the hunger each item takes away
+	-- (a fraction of the 0..1 meter). eatTime: seconds a villager takes to
+	-- eat one item. facilityReach: whole tiles from a storage facility's
+	-- footprint within which the player may eat from its storage (F).
+	food = {
+		berry = { fill = 0.2 },
+		meat = { fill = 0.5 },
+		fish = { fill = 0.4 },
+	},
+	eatTime = 0.5,
+	facilityReach = 3,
+
+	-- The stockpile: the items a new game's starting storage facility
+	-- (src/game/designs/starter.lua) holds. The player's inventory starts
+	-- empty.
+	stockpile = { plank = 50, stone = 50, berry = 20 },
 
 	-- What placing a building costs (src/game/builder/cost.lua): items per
 	-- baseplate tile, and items per stud of each brick's footprint by its
@@ -97,7 +152,7 @@ return {
 	--   capacityStep: each capacity point grows buffers and storage by this
 	--     fraction of their base size (rounded down).
 	production = {
-		abilities = { saw = "tree", pickaxe = "rock" },
+		abilities = { saw = "tree", pickaxe = "rock", forager = "bush" },
 		-- planters: the node kind each planter ability plants, one sapling
 		-- per plantCycle seconds (scaled like harvestCycle). A sapling takes
 		-- nodes.<kind>.growTime seconds to grow (first half sapling, then young).
@@ -111,7 +166,19 @@ return {
 		productivityStep = 0.02,
 		minSpeed = 0.25,
 		reachBase = 2,
-		abilityReach = { saw = 10 },
+		abilityReach = { saw = 10, fishing = 4, hunter = 8 },
+		-- fishers: the item each fishing ability catches, one per fishCycle
+		-- seconds (scaled like harvestCycle) from any water tile in reach,
+		-- without limit.
+		fishers = { fishing = "fish" },
+		fishCycle = 8,
+		-- hunters: the item each hunter ability yields per deer killed
+		-- (meatPerDeer of it, at most villagers.carryLimit); a kill takes
+		-- huntCycle seconds (scaled like harvestCycle) once the operator
+		-- stands at the deer.
+		hunters = { hunter = "meat" },
+		huntCycle = 4,
+		meatPerDeer = 3,
 		reachPerPoint = 0.25,
 		bufferSize = 4,
 		capacityStep = 0.05,
@@ -247,6 +314,36 @@ return {
 				layers = { { ".#." }, { ".#." }, { "woe" } },
 			},
 			{
+				name = "forager",
+				label = "Forager",
+				ability = "forager",
+				width = 3,
+				depth = 1,
+				cost = { plank = 4 },
+				accent = { 0.8, 0.2, 0.35 },
+				layers = { { "###" }, { "o.o" }, { ".o." } },
+			},
+			{
+				name = "fishing",
+				label = "Fishing",
+				ability = "fishing",
+				width = 3,
+				depth = 1,
+				cost = { plank = 4 },
+				accent = { 0.25, 0.55, 0.8 },
+				layers = { { "###" }, { "o.o" }, { ".o." } },
+			},
+			{
+				name = "hunter",
+				label = "Hunter",
+				ability = "hunter",
+				width = 3,
+				depth = 1,
+				cost = { plank = 4 },
+				accent = { 0.6, 0.35, 0.2 },
+				layers = { { "###" }, { "o.o" }, { ".o." } },
+			},
+			{
 				name = "planter",
 				label = "Planter",
 				ability = "planter",
@@ -278,6 +375,32 @@ return {
 				cost = { plank = 4 },
 				accent = { 0.55, 0.36, 0.18 },
 				layers = { { "##", "##" }, { "oo", "oo" }, { "#.", ".#" } },
+			},
+			-- The bed (docs/CONTEXT.md "Bed") sleeps one villager. An
+			-- exception to ADR 0003: it needs no operator, a sleeper
+			-- reserves it (src/game/jobs/sleep.lua).
+			{
+				name = "bed",
+				label = "Bed",
+				ability = "bed",
+				width = 2,
+				depth = 2,
+				cost = { plank = 3 },
+				accent = { 0.85, 0.85, 0.9 },
+				layers = { { "##", "##" }, { "oo", "o." } },
+			},
+			-- The canteen (docs/CONTEXT.md "Canteen") makes its building an
+			-- eating spot. An exception to ADR 0003: it needs no operator;
+			-- haulers stock its input ports with food.
+			{
+				name = "canteen",
+				label = "Canteen",
+				ability = "canteen",
+				width = 2,
+				depth = 2,
+				cost = { plank = 4 },
+				accent = { 0.95, 0.7, 0.3 },
+				layers = { { "##", "##" }, { "oo", ".." } },
 			},
 			{
 				name = "input",

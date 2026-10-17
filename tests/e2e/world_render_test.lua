@@ -62,7 +62,7 @@ test("the first launch bakes each prop kind into the cache, a second launch only
 
 	local first = PropCache.new(Registry.KINDS, config)
 	touchAll(first, Registry.KINDS, 1)
-	assertEqual("rock@1,tree@1", keys(first.baked))
+	assertEqual("bush@1,rock@1,tree@1", keys(first.baked))
 	assertTrue(exists(config.props.cacheDir .. "/tree_v" .. Registry.KINDS.tree.version .. "_x1.png"), "tree atlas cached")
 	assertTrue(exists(config.props.cacheDir .. "/rock_v" .. Registry.KINDS.rock.version .. "_x1.png"), "rock atlas cached")
 

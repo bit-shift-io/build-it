@@ -24,13 +24,17 @@ local function stageFor(def, amount, max)
 end
 
 -- Takes one item out of the node: lowers amount, steps the stage, marks a
--- depleted node dead. Returns the item name. Check canHarvest first.
+-- depleted node dead (a bush starts refilling instead). Returns the item name. Check canHarvest first.
 function Harvestable.take(node, config)
 	local def = config.nodes[node.kind]
 	node.amount = node.amount - 1
 	node.stage = stageFor(def, node.amount, def.amount)
 	if node.amount <= 0 then
-		node.dead = true
+		if def.refillTime then
+			node.refilling = 0
+		else
+			node.dead = true
+		end
 	end
 	return def.item
 end

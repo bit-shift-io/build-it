@@ -2,14 +2,15 @@
 -- counts, the storage totals across every storage facility below them
 -- (what placement may still spend, with what construction sites reserved
 -- beside it),
--- what E does on an output port tile, and the aura the player stands in.
+-- what E does on an output port tile, the aura the player stands in, and
+-- "Hungry" or "Starving" while it applies (F eats).
 local Inventory = require("src.game.components.inventory")
 local Aura = require("src.game.components.aura")
 local Storage = require("src.game.components.storage")
 
 local Hud = {}
 
-local ITEMS = { "log", "stone", "plank" }
+local ITEMS = { "log", "stone", "plank", "berry", "meat", "fish" }
 local MARGIN, LINE = 8, 18
 
 -- A dark panel of `lines` from `top`; returns the top of the next panel.
@@ -27,8 +28,9 @@ end
 -- StorageFacility.totals). port: the output port the player stands on, or
 -- nil. aura: the aura at the player. reserved: what construction sites
 -- claimed ({ [item] = n }, StorageFacility.claimed), or nil. fill: the
--- colony-wide storage percent (StorageFacility.totalFill), or nil.
-function Hud.draw(inventory, stock, port, aura, reserved, fill)
+-- colony-wide storage percent (StorageFacility.totalFill), or nil. hunger:
+-- the player's warning (Status.hunger), or nil.
+function Hud.draw(inventory, stock, port, aura, reserved, fill, hunger)
 	local lines = {}
 	for _, item in ipairs(ITEMS) do
 		table.insert(lines, item .. ": " .. Inventory.count(inventory, item))
@@ -46,6 +48,9 @@ function Hud.draw(inventory, stock, port, aura, reserved, fill)
 		table.insert(lines, line)
 	end
 	top = panel(lines, top, width)
+	if hunger then
+		top = panel({ hunger .. " (F: eat)" }, top, 130)
+	end
 	if port then
 		local n = Storage.total(port.buffer)
 		top = panel({ n > 0 and ("E: collect " .. n .. " items") or "Output port: empty" }, top, 160)

@@ -6,7 +6,7 @@ local Config = require("src.game.config")
 
 local Viewer = {}
 
-local KIND_ORDER = { "tree", "rock", "character" }
+local KIND_ORDER = { "tree", "rock", "bush", "character" }
 local GAP = 6
 local SCALE = 1
 

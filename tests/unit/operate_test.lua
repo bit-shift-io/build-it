@@ -11,6 +11,7 @@ local Walker = require("src.game.components.walker")
 local FunctionBrick = require("src.game.components.function_brick")
 local Operate = require("src.game.jobs.operate")
 local Load = require("src.game.components.load")
+local AnimalSystem = require("src.game.systems.animal_system")
 
 local TILE = Config.tileSize
 local STEP = 1 / 60
@@ -275,4 +276,136 @@ test("a finished operator cycle adds one to the brick's ability, and nothing els
 		others = others + (k ~= key and 1 or 0)
 	end
 	assertEqual(0, others)
+end)
+
+local ANGLER = { id = "d9", name = "Angler", versions = { { width = 2, depth = 1, bricks = {
+	brick("fishing", 0, 0, { width = 3, ability = "fishing" }),
+	brick("output", 3, 3, { port = "output" }),
+} } } }
+
+local function angler(waterX, waterY)
+	local ctx = Session.new(World.new(20, 20), Config, 1)
+	ctx.dt = STEP
+	if waterX then
+		World.setTerrain(ctx.world, waterX, waterY, "water")
+	end
+	local b = Placement.build(ctx, { design = ANGLER, version = 1, facing = "N", tileX = 8, tileY = 8 })
+	return ctx, b
+end
+
+test("a fishing brick has work only while water is in reach", function()
+	local ctx, b = angler()
+	assertEqual(false, FunctionBrick.hasWork(b.functionBricks[1], b, ctx), "no water")
+	local ctx2, b2 = angler(8 + 3 + Config.production.abilityReach.fishing + 1, 8)
+	assertEqual(false, FunctionBrick.hasWork(b2.functionBricks[1], b2, ctx2), "water out of reach")
+	local ctx3, b3 = angler(13, 8)
+	assertEqual(true, FunctionBrick.hasWork(b3.functionBricks[1], b3, ctx3), "water in reach")
+end)
+
+test("a fisher stands on land beside the water, never on it, and delivers a fish", function()
+	local ctx, b = angler(13, 9)
+	local v = Session.newVillager(1, 3.5 * TILE, 3.5 * TILE, Config)
+	local job = Operate.new(b, b.functionBricks[1])
+	assertTrue(Operate.start(job, v, ctx))
+	local out = b.ports[1].buffer
+	for _ = 1, 60 * 120 do
+		Walker.step(v, ctx)
+		Operate.step(job, ctx)
+		local tx, ty = math.floor(v.x / TILE), math.floor(v.y / TILE)
+		assertEqual("grass", World.terrainAt(ctx.world, tx, ty), "never on water")
+		if (out.counts.fish or 0) >= 1 then
+			break
+		end
+	end
+	assertEqual(1, out.counts.fish)
+	assertTrue(Load.empty(v.load), "fish delivered")
+end)
+
+local HUNTER = { id = "d10", name = "Hunter", versions = { { width = 2, depth = 1, bricks = {
+	brick("hunter", 0, 0, { width = 3, ability = "hunter" }),
+	brick("output", 3, 3, { port = "output" }),
+} } } }
+
+-- A hunter building at tile (8, 8) in an open world, with deer at `spots`
+-- (tiles) of one herd.
+local function huntRange(spots)
+	local ctx = Session.new(World.new(30, 30), Config, 1)
+	ctx.dt = STEP
+	local b = Placement.build(ctx, { design = HUNTER, version = 1, facing = "N", tileX = 8, tileY = 8 })
+	local herd = AnimalSystem.addHerd(ctx, 12, 12, 4)
+	local deer = {}
+	for i, s in ipairs(spots) do
+		deer[i] = AnimalSystem.spawn(ctx, herd, s[1], s[2])
+	end
+	return ctx, b, deer
+end
+
+test("a hunter brick has work only while a free deer is in reach and an output has room", function()
+	local ctx, b = huntRange({})
+	assertEqual(false, FunctionBrick.hasWork(b.functionBricks[1], b, ctx), "no deer")
+	local ctx2, b2 = huntRange({ { 8 + 3 + Config.production.abilityReach.hunter + 1, 8 } })
+	assertEqual(false, FunctionBrick.hasWork(b2.functionBricks[1], b2, ctx2), "deer out of reach")
+	local ctx3, b3 = huntRange({ { 13, 9 } })
+	assertEqual(true, FunctionBrick.hasWork(b3.functionBricks[1], b3, ctx3), "deer in reach")
+	AnimalSystem.reserve(ctx3.pools.animals[1], {})
+	assertEqual(false, FunctionBrick.hasWork(b3.functionBricks[1], b3, ctx3), "the only deer is reserved")
+end)
+
+test("two hunters never reserve the same deer", function()
+	local ctx, b, deer = huntRange({ { 13, 9 }, { 14, 9 } })
+	local a = Session.newVillager(1, 3.5 * TILE, 3.5 * TILE, Config)
+	local c = Session.newVillager(2, 3.5 * TILE, 4.5 * TILE, Config)
+	local fb = b.functionBricks[1]
+	local j1 = Operate.new(b, fb)
+	assertTrue(Operate.start(j1, a, ctx))
+	local d1 = j1.deer
+	local b2 = Placement.build(ctx, { design = HUNTER, version = 1, facing = "N", tileX = 8, tileY = 14 })
+	local j2 = Operate.new(b2, b2.functionBricks[1])
+	assertTrue(Operate.start(j2, c, ctx))
+	assertTrue(d1 ~= nil and j2.deer ~= nil and d1 ~= j2.deer, "different deer")
+	local b3 = Placement.build(ctx, { design = HUNTER, version = 1, facing = "N", tileX = 15, tileY = 14 })
+	local j3 = Operate.new(b3, b3.functionBricks[1])
+	assertEqual(false, Operate.start(j3, Session.newVillager(3, 3.5 * TILE, 5.5 * TILE, Config), ctx), "no free deer left")
+end)
+
+test("a hunter kills a deer, which despawns, and delivers its meat", function()
+	local ctx, b, deer = huntRange({ { 13, 9 } })
+	local v = Session.newVillager(1, 3.5 * TILE, 3.5 * TILE, Config)
+	local job = Operate.new(b, b.functionBricks[1])
+	assertTrue(Operate.start(job, v, ctx))
+	local out = b.ports[1].buffer
+	for _ = 1, 60 * 120 do
+		Walker.step(v, ctx)
+		Operate.step(job, ctx)
+		if (out.counts.meat or 0) >= 1 then
+			break
+		end
+	end
+	assertEqual(Config.production.meatPerDeer, out.counts.meat)
+	assertTrue(deer[1].dead, "the deer is dead")
+	assertTrue(Load.empty(v.load), "meat delivered")
+	AnimalSystem.despawn(ctx)
+	assertEqual(0, #ctx.pools.animals)
+end)
+
+test("a reserved deer stops wandering; one that leaves reach is released and re-targeted", function()
+	local ctx, b, deer = huntRange({ { 13, 9 }, { 12, 12 } })
+	local v = Session.newVillager(1, 3.5 * TILE, 3.5 * TILE, Config)
+	local job = Operate.new(b, b.functionBricks[1])
+	assertTrue(Operate.start(job, v, ctx))
+	local first = job.deer
+	-- Walk the reserved deer out of reach by hand.
+	first.x, first.y = 29.5 * TILE, 29.5 * TILE
+	local was = first.x
+	for _ = 1, 60 * 20 do
+		Walker.step(v, ctx)
+		AnimalSystem.update(ctx)
+		Operate.step(job, ctx)
+		if job.deer ~= first then
+			break
+		end
+	end
+	assertTrue(job.deer ~= first and job.deer ~= nil, "re-targeted")
+	assertTrue(first.hunter == nil, "old deer released")
+	assertEqual(was, first.x, "the far deer never wandered")
 end)

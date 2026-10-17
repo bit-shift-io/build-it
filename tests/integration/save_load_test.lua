@@ -48,7 +48,9 @@ local function play()
 		end
 	end
 	local game = GameHarness.startSession(world, { storage = Config.stockpile })
-	table.insert(game.ctx.pools.villagers, Session.newVillager(1, 5.5 * TILE, 12.5 * TILE, Config))
+	local villager = Session.newVillager(1, 5.5 * TILE, 12.5 * TILE, Config)
+	villager.name = "Ada"
+	table.insert(game.ctx.pools.villagers, villager)
 	local input = Fake.FakeInput.new()
 	local c = game.ctx.pools.characters[1]
 	Fake.tap(game, "1")

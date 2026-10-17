@@ -29,7 +29,7 @@ end
 
 -- The stores of facility `b` in the order spending takes from them: its
 -- storage, then its port buffers in port order.
-local function stores(b)
+function StorageFacility.stores(b)
 	local list = { b.storage }
 	for _, port in ipairs(b.ports) do
 		list[#list + 1] = port.buffer
@@ -75,7 +75,7 @@ end
 local function sum(ctx, each)
 	local totals = {}
 	for _, b in ipairs(StorageFacility.all(ctx)) do
-		for _, store in ipairs(stores(b)) do
+		for _, store in ipairs(StorageFacility.stores(b)) do
 			for item in pairs(store.counts) do
 				local n = each(store, item)
 				if n > 0 then
@@ -153,7 +153,7 @@ function StorageFacility.claim(ctx, cost, x, y)
 	for _, item in ipairs(items) do
 		local n = cost[item]
 		for _, b in ipairs(facilities) do
-			for _, store in ipairs(stores(b)) do
+			for _, store in ipairs(StorageFacility.stores(b)) do
 				local take = math.min(n, Storage.unclaimed(store, item))
 				if take > 0 then
 					Storage.claim(store, item, take)

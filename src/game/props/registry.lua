@@ -7,6 +7,8 @@
 local Rng = require("src.core.rng")
 local Tree = require("src.game.props.tree")
 local Rock = require("src.game.props.rock")
+local Bush = require("src.game.props.bush")
+local Deer = require("src.game.props.deer")
 local Character = require("src.game.props.character")
 
 local Registry = {}
@@ -14,6 +16,7 @@ local Registry = {}
 Registry.KINDS = {
 	tree = { kind = "tree", version = Tree.VERSION, stages = Tree.STAGES, generate = Tree.generate },
 	rock = { kind = "rock", version = Rock.VERSION, stages = Rock.STAGES, generate = Rock.generate },
+	bush = { kind = "bush", version = Bush.VERSION, stages = Bush.STAGES, generate = Bush.generate },
 }
 
 -- The character (src/game/props/character.lua): baked and cached like a
@@ -26,6 +29,16 @@ Registry.CHARACTER = {
 	variants = #Character.DIRECTIONS,
 	stages = Character.FRAMES,
 	generate = Character.generate,
+}
+
+-- The deer (src/game/props/deer.lua): baked like the character, one variant
+-- per facing and one stage per animator frame, but never a resource node.
+Registry.DEER = {
+	kind = "deer",
+	version = Deer.VERSION,
+	variants = #Character.DIRECTIONS,
+	stages = Character.FRAMES,
+	generate = Deer.generate,
 }
 
 -- The villager (docs/CONTEXT.md "Villager"): the character's figure in

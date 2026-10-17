@@ -203,30 +203,43 @@ test("every function, port and storage brick draws its own model, turned", funct
 	local game = GameHarness.startSession({ width = 20, height = 20 }, { real = true })
 	Fake.tap(game, "b")
 	local builder = game.flow.builder
-	for _, label in ipairs({ "Width +", "Width +", "Width +", "Depth +", "Depth +", "Depth +" }) do
-		clickButton(game, builder, label)
-	end
-	-- Zoomed out so the whole 4x4 tile baseplate fits between the panels.
-	game:wheelmoved(0, -6)
-	-- Placed back (north) to front so no brick hides the next one's studs:
-	-- each as authored, and turned a quarter 5 studs east of it.
+	-- The 4x4 tile baseplate holds four rows of two shapes, so the shapes
+	-- are placed a page at a time, on a fresh design for each.
+	local PER_PAGE = 8
 	local shapes = roleShapes()
-	for i, shape in ipairs(shapes) do
-		clickButton(game, builder, shape.label)
-		clickButton(game, builder, "paint:" .. (i % 2 == 1 and 4 or 10))
-		local x, y = 1 + ((i - 1) % 2) * 9, math.floor((i - 1) / 2) * 4
-		local w, d = Bricks.footprint(shape.name, 0, CFG)
-		Fake.click(game, 1, pixelOf(builder, x + w / 2, y + d / 2, 0))
-		Fake.tap(game, "r")
-		Fake.click(game, 1, pixelOf(builder, x + 5 + d / 2, y + w / 2, 0))
-		Fake.tap(game, "r")
-		Fake.tap(game, "r")
-		Fake.tap(game, "r")
-		assertEqual(2 * i, #builder.draft.bricks, "expected both " .. shape.name .. " bricks placed")
+	for page = 1, math.ceil(#shapes / PER_PAGE) do
+		if page > 1 then
+			clickButton(game, builder, "New")
+		end
+		for _, label in ipairs({ "Width +", "Width +", "Width +", "Depth +", "Depth +", "Depth +" }) do
+			clickButton(game, builder, label)
+		end
+		-- Zoomed out so the whole 4x4 tile baseplate fits between the panels.
+		game:wheelmoved(0, -6)
+		-- Placed back (north) to front so no brick hides the next one's studs:
+		-- each as authored, and turned a quarter 5 studs east of it.
+		for n = 1, PER_PAGE do
+			local i = (page - 1) * PER_PAGE + n
+			local shape = shapes[i]
+			if not shape then
+				break
+			end
+			clickButton(game, builder, shape.label)
+			clickButton(game, builder, "paint:" .. (i % 2 == 1 and 4 or 10))
+			local x, y = 1 + ((n - 1) % 2) * 9, math.floor((n - 1) / 2) * 4
+			local w, d = Bricks.footprint(shape.name, 0, CFG)
+			Fake.click(game, 1, pixelOf(builder, x + w / 2, y + d / 2, 0))
+			Fake.tap(game, "r")
+			Fake.click(game, 1, pixelOf(builder, x + 5 + d / 2, y + w / 2, 0))
+			Fake.tap(game, "r")
+			Fake.tap(game, "r")
+			Fake.tap(game, "r")
+			assertEqual(2 * n, #builder.draft.bricks, "expected both " .. shape.name .. " bricks placed")
+		end
+		game:mousemoved(5, 5, 0, 0)
+		renderFrame(game)
+		Capture.capture(page == 1 and "function_bricks" or "function_bricks_" .. page)
 	end
-	game:mousemoved(5, 5, 0, 0)
-	renderFrame(game)
-	Capture.capture("function_bricks")
 end)
 
 test("the info panel shows traits, cost red where short, and every broken rule, clear of the sidebar", function()

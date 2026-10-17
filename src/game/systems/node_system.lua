@@ -77,6 +77,22 @@ function NodeSystem.grow(ctx)
 	end
 end
 
+-- Refills picked-clean nodes (node.refilling counts seconds): after
+-- nodes.<kind>.refillTime the node is full again at stage 1.
+function NodeSystem.refill(ctx)
+	for _, n in ipairs(ctx.pools.nodes) do
+		if n.refilling then
+			n.refilling = n.refilling + ctx.dt
+			local def = ctx.config.nodes[n.kind]
+			if n.refilling >= def.refillTime then
+				n.refilling = nil
+				n.amount = def.amount
+				n.stage = 1
+			end
+		end
+	end
+end
+
 -- Releases the reservations of dead nodes. Runs before function bricks pick
 -- targets, so none keeps working a node the sweep is about to remove.
 function NodeSystem.releaseDead(ctx)

@@ -8,15 +8,23 @@ local NodeSystem = require("src.game.systems.node_system")
 local BuildingSystem = require("src.game.systems.building_system")
 local VillagerSystem = require("src.game.systems.villager_system")
 local JobSystem = require("src.game.systems.job_system")
+local AnimalSystem = require("src.game.systems.animal_system")
 local Walker = require("src.game.components.walker")
 local Load = require("src.game.components.load")
 local Inventory = require("src.game.components.inventory")
 local Animator = require("src.game.components.animator")
+local Needs = require("src.game.components.needs")
 local Storage = require("src.game.components.storage")
 local Placement = require("src.game.buildings.placement")
 local Starter = require("src.game.designs.starter")
 
 local Session = {}
+
+-- A name from config.names, picked with ctx.rng.
+local function pickName(ctx)
+	local names = ctx.config.names
+	return names[ctx.rng:int(1, #names)]
+end
 
 local function newCharacter(id, player, x, y, config)
 	return {
@@ -28,6 +36,7 @@ local function newCharacter(id, player, x, y, config)
 		mover = { speed = config.character.speed },
 		inventory = Inventory.new(),
 		harvester = { progress = 0 },
+		needs = Needs.new(),
 		animator = Animator.new(),
 	}
 end
@@ -47,6 +56,7 @@ function Session.newVillager(id, x, y, config)
 		walker = Walker.new(),
 		load = Load.new(config),
 		xp = {},
+		needs = Needs.new(),
 		animator = Animator.new(),
 	}
 end
@@ -63,10 +73,12 @@ function Session.new(world, config, seed)
 		seed = seed,
 		rng = Rng.new(seed),
 		intents = {},
-		pools = { characters = {}, nodes = world.nodes or {}, buildings = {}, sites = {}, villagers = {}, jobs = {} },
+		pools = { characters = {}, nodes = world.nodes or {}, buildings = {}, sites = {}, villagers = {}, jobs = {}, animals = {}, herds = {} },
 	}
 	local cx, cy = World.center(world, config)
-	table.insert(ctx.pools.characters, newCharacter(1, 1, cx, cy, config))
+	local player = newCharacter(1, 1, cx, cy, config)
+	player.name = pickName(ctx)
+	table.insert(ctx.pools.characters, player)
 	return ctx
 end
 
@@ -92,7 +104,20 @@ local function spawnVillagers(ctx, b, player)
 		local k = ctx.rng:int(id, #free)
 		free[id], free[k] = free[k], free[id]
 		local t = free[id]
-		table.insert(ctx.pools.villagers, Session.newVillager(id, (t.x + 0.5) * tile, (t.y + 0.5) * tile, config))
+		local v = Session.newVillager(id, (t.x + 0.5) * tile, (t.y + 0.5) * tile, config)
+		v.name = pickName(ctx)
+		table.insert(ctx.pools.villagers, v)
+	end
+end
+
+-- A herd record and its deer for each of the generated world's herds
+-- (world.herds, src/game/world_gen.lua).
+local function spawnHerds(ctx)
+	for _, h in ipairs(ctx.world.herds or {}) do
+		local herd = AnimalSystem.addHerd(ctx, h.tileX, h.tileY, h.cap)
+		for _, t in ipairs(h.deer) do
+			AnimalSystem.spawn(ctx, herd, t.x, t.y)
+		end
 	end
 end
 
@@ -101,7 +126,7 @@ end
 -- with its footprint centred on the world's centre tile, the stockpile
 -- (config.stockpile) in its storage, the player moved to the tile just
 -- south of its middle port tile, so it starts outside the footprint, and
--- the villagers around it (spawnVillagers).
+-- the villagers around it (spawnVillagers), and the deer herds (spawnHerds).
 function Session.newGame(world, config, seed)
 	local ctx = Session.new(world, config, seed)
 	local design = Starter.design(config)
@@ -129,6 +154,7 @@ function Session.newGame(world, config, seed)
 	c.x = (request.tileX + math.floor(b.width / 2) + 0.5) * config.tileSize
 	c.y = (request.tileY + b.depth + 1.5) * config.tileSize
 	spawnVillagers(ctx, b, c)
+	spawnHerds(ctx)
 	return ctx
 end
 
@@ -147,6 +173,8 @@ end
 --      (pick up or drop on arrival). After the buildings, so haulers read
 --      output buffers after Ports.flush, and jobs see buildings marked
 --      dead this step.
+--   4b. Animals: deer wander near their herd's home, and a herd under its
+--      cap breeds. They use the walker, so footprints and water hold.
 --   5. Despawn sweeps (last): ended jobs leave the pool, removed buildings
 --      release their nodes and leave theirs, built sites leave theirs, then
 --      depleted nodes leave theirs. Nothing is ever removed mid-iteration.
@@ -154,12 +182,15 @@ function Session.step(ctx)
 	CharacterSystem.update(ctx)
 	VillagerSystem.update(ctx)
 	NodeSystem.grow(ctx)
+	NodeSystem.refill(ctx)
 	NodeSystem.releaseDead(ctx)
 	BuildingSystem.update(ctx)
 	JobSystem.update(ctx)
+	AnimalSystem.update(ctx)
 	JobSystem.despawn(ctx)
 	BuildingSystem.despawn(ctx)
 	NodeSystem.despawn(ctx)
+	AnimalSystem.despawn(ctx)
 end
 
 -- One fixed step: `app` accumulates real time and calls this every 1/60 s.

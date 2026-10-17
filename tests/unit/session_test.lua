@@ -155,3 +155,57 @@ test("a villager sent across a generated map walks around water and trees to its
 	assertNear((tx + 0.5) * tile, v.x)
 	assertNear((ty + 0.5) * tile, v.y)
 end)
+
+test("villagers and the player start with full needs", function()
+	local ctx = Session.new(World.new(20, 10), Config, 1)
+	local v = Session.newVillager(1, 0, 0, Config)
+	for _, r in ipairs({ ctx.pools.characters[1], v }) do
+		assertEqual(1, r.needs.health)
+		assertEqual(0, r.needs.hunger)
+		assertEqual(0, r.needs.tiredness)
+	end
+end)
+
+test("Session.step raises a villager's needs by the config rates", function()
+	local ctx = Session.new(World.new(20, 10), Config, 1)
+	local v = Session.newVillager(1, 100, 100, Config)
+	table.insert(ctx.pools.villagers, v)
+	ctx.dt = 10
+	Session.step(ctx)
+	assert(math.abs(v.needs.hunger - 10 * Config.needs.hungerRate) < 1e-9)
+	assert(math.abs(v.needs.tiredness - 10 * Config.needs.tirednessRate) < 1e-9)
+	assertEqual(0, ctx.pools.characters[1].needs.tiredness)
+end)
+
+test("a collapsed villager does not walk its path", function()
+	local ctx = Session.new(World.new(20, 10), Config, 1)
+	local v = Session.newVillager(1, 100, 100, Config)
+	table.insert(ctx.pools.villagers, v)
+	v.walker.path = { { x = 8, y = 3 } }
+	v.needs.health, v.needs.hunger = 0, 1
+	ctx.dt = 1 / 60
+	for _ = 1, 30 do
+		Session.step(ctx)
+	end
+	assertEqual(100, v.x)
+	assertEqual(100, v.y)
+end)
+
+test("a starving player respawns at the storage facility with full needs and its inventory", function()
+	local ctx = Session.newGame(WorldGen.generate(Config, 1), Config, 1)
+	local p = ctx.pools.characters[1]
+	p.inventory.counts.log = 3
+	p.x, p.y = 40, 40
+	p.needs.hunger, p.needs.health = 1, 0
+	ctx.dt = 1 / 60
+	Session.step(ctx)
+	assertEqual(1, p.needs.health)
+	assertEqual(0, p.needs.hunger)
+	assertEqual(3, p.inventory.counts.log)
+	local b = ctx.pools.buildings[1]
+	local tx, ty = math.floor(p.x / Config.tileSize), math.floor(p.y / Config.tileSize)
+	local dx = math.max(b.tileX - tx, 0, tx - (b.tileX + b.width - 1))
+	local dy = math.max(b.tileY - ty, 0, ty - (b.tileY + b.depth - 1))
+	local d = math.max(dx, dy)
+	assert(d >= Config.villagers.idle.gatherMin and d <= Config.villagers.idle.gatherRadius, "respawned in the gather area")
+end)

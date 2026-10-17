@@ -6,6 +6,17 @@
 -- unassigned holding reservations, and no two villagers chase one buffer.
 --
 -- What gets done, in this order:
+--   0. A hungry free villager takes no new job: it eats a meal from the
+--      nearest storage facility output port holding food (src/game/jobs/eat.lua),
+--      or idles when there is none. A job it already holds runs to its
+--      end (operators yield at cycle end, ADR 0004).
+--      A tired free villager (or a hungry one with no food) sleeps
+--      (src/game/jobs/sleep.lua): in the nearest free bed, else where it
+--      stands. A sleeper that turns hungry with food to eat wakes and eats
+--      first.
+--      Before that, a collapsed villager with no feeder gets a feed job
+--      (src/game/jobs/feed.lua): the nearest free empty-handed villager
+--      carries it a meal from the nearest food.
 --   1. A free villager already carrying a load takes it to the nearest
 --      storage facility with room (it keeps its linger).
 --   2. Every function brick with work (FunctionBrick.hasWork) and no
@@ -40,6 +51,10 @@ local Build = require("src.game.jobs.build")
 local Site = require("src.game.buildings.site")
 local World = require("src.game.world")
 local FunctionBrick = require("src.game.components.function_brick")
+local Needs = require("src.game.components.needs")
+local Eat = require("src.game.jobs.eat")
+local Feed = require("src.game.jobs.feed")
+local Sleep = require("src.game.jobs.sleep")
 
 local JobSystem = {}
 
@@ -68,16 +83,24 @@ local function atPort(b, port)
 	return { building = b, store = port.buffer, x = port.x, y = port.y }
 end
 
--- Villagers with no job, in pool order: those carrying a load and those
--- empty-handed.
+-- Villagers with no job and not collapsed, in pool order: those carrying a
+-- load and those empty-handed. One in need takes no new job (ADR 0004): a
+-- hungry one goes in `hungry` and eats first, a tired one in `tired` and
+-- sleeps.
 local function freeVillagers(ctx)
-	local loaded, empty = {}, {}
+	local loaded, empty, hungry, tired = {}, {}, {}, {}
 	for _, v in ipairs(ctx.pools.villagers) do
-		if not v.job then
-			table.insert(Load.empty(v.load) and empty or loaded, v)
+		if not v.job and not Needs.collapsed(v.needs) then
+			if Needs.hungry(v.needs, ctx.config.needs) then
+				table.insert(hungry, v)
+			elseif Needs.inNeed(v.needs, ctx.config.needs) then
+				table.insert(tired, v)
+			else
+				table.insert(Load.empty(v.load) and empty or loaded, v)
+			end
 		end
 	end
-	return loaded, empty
+	return loaded, empty, hungry, tired
 end
 
 -- Whether lingering task `a` is the same kind of work as task `b`: an
@@ -184,11 +207,12 @@ local function nearestSource(ctx, item, dest, x, y)
 	return best
 end
 
--- The items `b`'s function bricks consume, in name order.
-local function consumed(b)
+-- The items `b`'s function bricks consume, in name order: a recipe's input,
+-- or any food for a canteen (`food` is config.food).
+local function consumed(b, food)
 	local set, items = {}, {}
 	for _, fb in ipairs(b.functionBricks) do
-		for item in pairs(fb.recipe and fb.recipe.input or {}) do
+		for item in pairs(fb.recipe and fb.recipe.input or (fb.canteen and food) or {}) do
 			if not set[item] then
 				set[item] = true
 				items[#items + 1] = item
@@ -197,6 +221,131 @@ local function consumed(b)
 	end
 	table.sort(items)
 	return items
+end
+
+-- Where food may be eaten at storage facility `b`: its storage at the output
+-- port tile nearest (x, y), and each output port's buffer (a facility's
+-- storage drains into its output buffers).
+local function foodSpots(b, x, y)
+	local list = {}
+	list[#list + 1] = atStorage(b, "output", x, y)
+	for _, port in ipairs(b.ports) do
+		if port.kind == "output" then
+			list[#list + 1] = atPort(b, port)
+		end
+	end
+	return list
+end
+
+-- Whether `b` has a canteen.
+local function isCanteen(b)
+	for _, fb in ipairs(b.functionBricks) do
+		if fb.canteen then
+			return true
+		end
+	end
+	return false
+end
+
+-- The canteen's input port buffers, where its food is eaten.
+local function canteenSpots(b)
+	local list = {}
+	for _, port in ipairs(b.ports) do
+		if port.kind == "input" then
+			list[#list + 1] = atPort(b, port)
+		end
+	end
+	return list
+end
+
+-- The spot nearest tile (x, y) holding food nobody reserved, as an
+-- endpoint; nil when there is none. Spots are a facility's output ports and
+-- a canteen's input ports. Ties go to the first building, storage before
+-- buffers.
+local function nearestFood(ctx, x, y)
+	local best, bestD
+	for _, b in ipairs(ctx.pools.buildings) do
+		local spots = {}
+		if not b.dead and StorageFacility.is(b) then
+			spots = foodSpots(b, x, y)
+		elseif not b.dead and isCanteen(b) then
+			spots = canteenSpots(b)
+		end
+		for _, e in ipairs(spots) do
+			local d = tiles(e.x, e.y, x, y)
+			if (not bestD or d < bestD) and #Eat.plan(function(item)
+				return Storage.available(e.store, item)
+			end, 1, ctx.config.food) > 0 then
+				best, bestD = e, d
+			end
+		end
+	end
+	return best
+end
+
+-- Every hungry villager walks to the nearest food and eats a meal. One with
+-- no food anywhere is added to `tired` when it is tired too, else it stays
+-- free and idle.
+local function feed(ctx, hungry, tired)
+	local tile = ctx.config.tileSize
+	for _, v in ipairs(hungry) do
+		local source = nearestFood(ctx, math.floor(v.x / tile), math.floor(v.y / tile))
+		local job = source and Eat.new(source, v.needs.hunger, ctx.config.food)
+		if job then
+			v.linger = nil
+			table.insert(ctx.pools.jobs, job)
+			Eat.start(job, v, ctx)
+		elseif v.needs.tiredness >= ctx.config.needs.tiredAt then
+			table.insert(tired, v)
+		end
+	end
+end
+
+-- Every tired villager sleeps: in the nearest free bed, else where it stands.
+local function sleep(ctx, tired)
+	local tile = ctx.config.tileSize
+	for _, v in ipairs(tired) do
+		local building, bed = Sleep.nearestBed(ctx, math.floor(v.x / tile), math.floor(v.y / tile))
+		local job = Sleep.new(building, bed)
+		table.insert(ctx.pools.jobs, job)
+		Sleep.start(job, v, ctx)
+	end
+end
+
+-- A sleeper that turned hungry wakes when there is food to eat (ADR 0004
+-- puts eating first); with none it sleeps on.
+local function wakeHungry(ctx)
+	local tile = ctx.config.tileSize
+	for _, job in ipairs(ctx.pools.jobs) do
+		local v = job.villager
+		if job.kind == "sleep" and not job.dead and Needs.hungry(v.needs, ctx.config.needs)
+			and nearestFood(ctx, math.floor(v.x / tile), math.floor(v.y / tile))
+		then
+			Sleep.finish(job)
+		end
+	end
+end
+
+-- Every collapsed villager with no feeder gets one: the nearest free
+-- empty-handed villager carries it a meal from the nearest food. With no
+-- food anywhere, or nobody free, it waits.
+local function feedCollapsed(ctx, free)
+	local tile = ctx.config.tileSize
+	for _, target in ipairs(ctx.pools.villagers) do
+		if #free == 0 then
+			return
+		end
+		if Needs.collapsed(target.needs) and not Feed.fed(target) then
+			local x, y = math.floor(target.x / tile), math.floor(target.y / tile)
+			local source = nearestFood(ctx, x, y)
+			local job = source and Feed.new(source, target, ctx.config.food)
+			if job then
+				local v = pick(free, nil, x, y, tile, nil)
+				table.insert(ctx.pools.jobs, job)
+				Feed.start(job, v, ctx)
+			end
+		end
+	end
 end
 
 local function storeLoads(ctx, loaded)
@@ -302,7 +451,7 @@ end
 
 local function feedInputs(ctx, free)
 	for _, b in ipairs(ctx.pools.buildings) do
-		local items = not b.dead and not StorageFacility.is(b) and consumed(b) or {}
+		local items = not b.dead and not StorageFacility.is(b) and consumed(b, ctx.config.food) or {}
 		for _, port in ipairs(b.ports) do
 			if port.kind == "input" then
 				for _, item in ipairs(items) do
@@ -341,7 +490,11 @@ end
 
 -- Creates jobs and hands them to free villagers (see the top).
 function JobSystem.generate(ctx)
-	local loaded, free = freeVillagers(ctx)
+	wakeHungry(ctx)
+	local loaded, free, hungry, tired = freeVillagers(ctx)
+	feedCollapsed(ctx, free)
+	feed(ctx, hungry, tired)
+	sleep(ctx, tired)
 	storeLoads(ctx, loaded)
 	if #free == 0 then
 		return
@@ -353,13 +506,35 @@ function JobSystem.generate(ctx)
 	clearOutputs(ctx, free)
 end
 
--- Steps every job, in pool order; a job that ends marks itself dead.
+-- Steps every job, in pool order; a job that ends marks itself dead. A job
+-- whose villager collapsed ends instead.
 function JobSystem.run(ctx)
 	for _, job in ipairs(ctx.pools.jobs) do
-		if job.kind == "operate" then
+		if job.villager and Needs.collapsed(job.villager.needs) then
+			-- A villager at 0 health ends its job where it stands, keeping its load.
+			if job.kind == "operate" then
+				Operate.finish(job)
+			elseif job.kind == "build" then
+				Build.finish(job)
+			elseif job.kind == "eat" then
+				Eat.finish(job)
+			elseif job.kind == "feed" then
+				Feed.finish(job)
+			elseif job.kind == "sleep" then
+				Sleep.finish(job)
+			else
+				Haul.finish(job)
+			end
+		elseif job.kind == "operate" then
 			Operate.step(job, ctx)
 		elseif job.kind == "build" then
 			Build.step(job, ctx)
+		elseif job.kind == "eat" then
+			Eat.step(job, ctx)
+		elseif job.kind == "feed" then
+			Feed.step(job, ctx)
+		elseif job.kind == "sleep" then
+			Sleep.step(job, ctx)
 		else
 			Haul.step(job, ctx)
 		end

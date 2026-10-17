@@ -299,6 +299,7 @@ test("a villager's load round-trips", function()
 	local v = Session.newVillager(1, 100, 100, Config)
 	v.load.item, v.load.count = "log", 3
 	local empty = Session.newVillager(2, 140, 100, Config)
+	v.name, empty.name = "Ada", "Bram"
 	ctx.pools.villagers = { v, empty }
 
 	local loaded = roundTrip(ctx)
@@ -479,6 +480,7 @@ end
 test("a construction site round-trips with part of its materials delivered and its claims", function()
 	local ctx, site, store, cost = siteSession()
 	ctx.pools.villagers = { Session.newVillager(1, 6.5 * Config.tileSize, 7.5 * Config.tileSize, Config) }
+	ctx.pools.villagers[1].name = "Ada"
 	for _ = 1, 60 * 60 do
 		Session.advance(ctx, STEP)
 		local n = site.delivered.counts.plank or 0
@@ -538,4 +540,99 @@ test("villager experience round-trips; a format 2 save loads with empty experien
 	local old = text:gsub("^build%-it%-save %d+", "build-it-save 2"):gsub("\nxp [^\n]*", "")
 	local back = assert(SaveCodec.decode(old, Config))
 	assertEqual(nil, next(back.pools.villagers[1].xp))
+end)
+
+test("names round-trip; a format 3 save loads with names", function()
+	local ctx = Session.new(World.new(20, 20), Config, 1)
+	local v = Session.newVillager(1, 40, 40, Config)
+	v.name = "Quin"
+	table.insert(ctx.pools.villagers, v)
+	ctx.pools.characters[1].name = "Zed"
+
+	local text = SaveCodec.encode(ctx)
+	local loaded = roundTrip(ctx)
+	assertEqual("Quin", loaded.pools.villagers[1].name)
+	assertEqual("Zed", loaded.pools.characters[1].name)
+
+	local old = text:gsub("^build%-it%-save %d+", "build-it-save 3"):gsub(" name=s:%S+", "")
+	local back = assert(SaveCodec.decode(old, Config))
+	assertTrue(back.pools.villagers[1].name ~= nil)
+	assertTrue(back.pools.characters[1].name ~= nil)
+end)
+
+test("needs round-trip for the player and villagers; a format 4 save loads with full needs", function()
+	local ctx = Session.new(World.new(20, 20), Config, 1)
+	local v = Session.newVillager(1, 40, 40, Config)
+	v.name = "Quin"
+	v.needs.health, v.needs.hunger, v.needs.tiredness = 0.4, 0.55, 0.25
+	table.insert(ctx.pools.villagers, v)
+	local p = ctx.pools.characters[1]
+	p.needs.health, p.needs.hunger = 0.7, 0.3
+
+	local text = SaveCodec.encode(ctx)
+	local loaded = roundTrip(ctx)
+	assertEqual(0.4, loaded.pools.villagers[1].needs.health)
+	assertEqual(0.55, loaded.pools.villagers[1].needs.hunger)
+	assertEqual(0.25, loaded.pools.villagers[1].needs.tiredness)
+	assertEqual(0.7, loaded.pools.characters[1].needs.health)
+	assertEqual(0.3, loaded.pools.characters[1].needs.hunger)
+
+	local old = text:gsub("^build%-it%-save %d+", "build-it-save 4"):gsub(" health=n:%S+", ""):gsub(" hunger=n:%S+", ""):gsub(" tiredness=n:%S+", "")
+	local back = assert(SaveCodec.decode(old, Config))
+	assertEqual(1, back.pools.villagers[1].needs.health)
+	assertEqual(0, back.pools.villagers[1].needs.hunger)
+	assertEqual(1, back.pools.characters[1].needs.health)
+end)
+
+test("a refilling bush round-trips with its timer; format 5 saves still load", function()
+	local world = World.new(20, 20)
+	World.addNode(world, { id = 1, kind = "bush", tileX = 5, tileY = 5, variant = 2, stage = 3, amount = 0, refilling = 41.5 })
+	local ctx = Session.new(world, Config, 1)
+
+	local text = SaveCodec.encode(ctx)
+	assertTrue(text:find("^build%-it%-save %d") ~= nil, "expected a format header")
+	local n = roundTrip(ctx).pools.nodes[1]
+	assertEqual("bush", n.kind)
+	assertEqual(0, n.amount)
+	assertEqual(41.5, n.refilling)
+
+	local old = text:gsub("^build%-it%-save %d+", "build-it-save 5"):gsub(" refilling=n:%S+", "")
+	local back = assert(SaveCodec.decode(old, Config))
+	assertEqual(nil, back.pools.nodes[1].refilling)
+end)
+
+test("herds and deer round-trip, and a loaded herd keeps breeding; format 6 saves load with no deer", function()
+	local AnimalSystem = require("src.game.systems.animal_system")
+	local ctx = Session.new(World.new(40, 40), Config, 1)
+	local herd = AnimalSystem.addHerd(ctx, 20, 20, 4)
+	AnimalSystem.spawn(ctx, herd, 21, 20)
+	AnimalSystem.spawn(ctx, herd, 19, 22)
+	herd.breed = 12.5
+	ctx.pools.animals[2].animator.facing = 3
+
+	local text = SaveCodec.encode(ctx)
+	assertTrue(text:find("^build%-it%-save 7") ~= nil, "expected format 7")
+	local loaded = roundTrip(ctx)
+	assertEqual(1, #loaded.pools.herds)
+	local h = loaded.pools.herds[1]
+	assertEqual(20, h.tileX)
+	assertEqual(20, h.tileY)
+	assertEqual(4, h.cap)
+	assertEqual(12.5, h.breed)
+	assertEqual(2, #loaded.pools.animals)
+	local a = loaded.pools.animals[2]
+	assertEqual(2, a.id)
+	assertEqual(h.id, a.herd)
+	assertEqual(ctx.pools.animals[2].x, a.x)
+	assertEqual(ctx.pools.animals[2].y, a.y)
+	assertEqual(3, a.animator.facing)
+	assertEqual(3, ctx.nextAnimalId)
+	assertEqual(3, loaded.nextAnimalId)
+	run(loaded, Config.animals.deer.breedEvery)
+	assertEqual(3, #loaded.pools.animals)
+
+	local old = text:gsub("^build%-it%-save %d+", "build-it-save 6"):gsub("herd [^\n]*\n", ""):gsub("deer [^\n]*\n", "")
+	local back = assert(SaveCodec.decode(old, Config))
+	assertEqual(0, #back.pools.animals)
+	assertEqual(0, #back.pools.herds)
 end)

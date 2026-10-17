@@ -15,6 +15,9 @@ local defaultTestFiles = {
 	"tests/unit/planter_test.lua",
 	"tests/unit/growth_test.lua",
 	"tests/unit/rock_prop_test.lua",
+	"tests/unit/animal_system_test.lua",
+	"tests/unit/bush_prop_test.lua",
+	"tests/unit/deer_prop_test.lua",
 	"tests/unit/world_gen_test.lua",
 	"tests/unit/draft_test.lua",
 	"tests/unit/pick_test.lua",
@@ -48,6 +51,11 @@ local defaultTestFiles = {
 	"tests/unit/job_system_test.lua",
 	"tests/unit/operate_test.lua",
 	"tests/unit/site_test.lua",
+	"tests/unit/status_test.lua",
+	"tests/unit/needs_test.lua",
+	"tests/unit/eat_test.lua",
+	"tests/unit/feed_test.lua",
+	"tests/unit/sleep_test.lua",
 }
 
 local tests = {}

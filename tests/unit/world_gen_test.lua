@@ -44,6 +44,7 @@ test("a world is the configured size, with water and both node kinds", function(
 	assertTrue(water < world.width * world.height / 3, "expected mostly land, got " .. water .. " water tiles")
 	assertTrue((kinds.tree or 0) > 100, "expected forests, got " .. tostring(kinds.tree) .. " trees")
 	assertTrue((kinds.rock or 0) > 20, "expected rocks, got " .. tostring(kinds.rock) .. " rocks")
+	assertTrue((kinds.bush or 0) > 20, "expected berry bushes, got " .. tostring(kinds.bush) .. " bushes")
 end)
 
 test("every node sits alone on grass, at full stage with its kind's amount and a valid variant", function()

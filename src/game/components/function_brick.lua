@@ -16,10 +16,26 @@
 -- Every record of a placed building has tileX, tileY: the world tile
 -- under its brick.
 --
+-- A fishing brick ({ ability = "fishing", fishing = <item>, progress, state,
+-- operator }) does nothing by itself: its operator stands on land beside any
+-- water tile in reach and fishes one item per cycle, without limit.
+--
+-- A hunter ({ ability = "hunter", hunting = <item>, progress, state, operator })
+-- does nothing by itself: its operator reserves a free deer in reach, walks to
+-- it, kills it and carries its meat to an output port.
+--
 -- A planter ({ ability, plants = <node kind>, progress, state, operator })
 -- does nothing by itself: its operator readies a seed, picks a free tile in
 -- reach (reserved in operator.target) and plants it there. `progress` is
 -- saved; `operator` is not.
+--
+-- A bed ({ ability = "bed", bed = true, state, occupant = <sleep job> | nil })
+-- does nothing by itself; a tired villager reserves it by sleeping in it
+-- (src/game/jobs/sleep.lua). `occupant` is never saved.
+--
+-- A canteen ({ ability = "canteen", canteen = true, state }) does nothing by
+-- itself: its input buffers hold food, stocked by haulers and eaten from by
+-- hungry villagers (src/game/systems/job_system.lua).
 --
 -- A depot ({ ability = "depot", depot = true, state }) makes its building a
 -- storage facility (src/game/components/storage_facility.lua) and produces
@@ -28,12 +44,21 @@ local World = require("src.game.world")
 local Harvestable = require("src.game.components.harvestable")
 local Storage = require("src.game.components.storage")
 local NodeSystem = require("src.game.systems.node_system")
+local AnimalSystem = require("src.game.systems.animal_system")
 
 local FunctionBrick = {}
 
 -- The ability of a depot brick (docs/CONTEXT.md "Depot"): it makes its
 -- building a storage facility and runs without an operator.
 FunctionBrick.DEPOT = "depot"
+
+-- The ability of a bed brick (docs/CONTEXT.md "Bed"): it sleeps one villager
+-- and, an exception to ADR 0003, needs no operator.
+FunctionBrick.BED = "bed"
+
+-- The ability of a canteen brick (docs/CONTEXT.md "Canteen"): it makes its
+-- building an eating spot and needs no operator.
+FunctionBrick.CANTEEN = "canteen"
 
 -- One record per function brick of `version`, in brick order: a depot
 -- ({ ability, depot = true, state }), or one that harvests a node kind
@@ -47,8 +72,18 @@ function FunctionBrick.fromVersion(version, config, brickTile)
 		local kind = b.ability and config.production.abilities[b.ability]
 		local recipe = b.ability and config.production.recipes[b.ability]
 		local plants = b.ability and config.production.planters[b.ability]
+		local catch = b.ability and config.production.fishers[b.ability]
+		local game = b.ability and config.production.hunters[b.ability]
 		if b.ability == FunctionBrick.DEPOT then
 			table.insert(list, { ability = b.ability, depot = true, state = "idle" })
+		elseif b.ability == FunctionBrick.BED then
+			table.insert(list, { ability = b.ability, bed = true, state = "idle" })
+		elseif b.ability == FunctionBrick.CANTEEN then
+			table.insert(list, { ability = b.ability, canteen = true, state = "idle" })
+		elseif game then
+			table.insert(list, { ability = b.ability, hunting = game, progress = 0, state = "idle" })
+		elseif catch then
+			table.insert(list, { ability = b.ability, fishing = catch, progress = 0, state = "idle" })
 		elseif plants then
 			table.insert(list, { ability = b.ability, plants = plants, progress = 0, state = "idle" })
 		elseif recipe then
@@ -104,6 +139,49 @@ function FunctionBrick.nearestFree(building, kind, ctx, ability)
 	return best
 end
 
+-- Whether `deer` stands within reach of `building` (hunter ability `ability`).
+function FunctionBrick.deerInReach(building, ctx, ability, deer)
+	local tile = ctx.config.tileSize
+	return distance(building, math.floor(deer.x / tile), math.floor(deer.y / tile))
+		<= FunctionBrick.reach(building.traits, ctx.config, ability)
+end
+
+-- The nearest free (alive, unreserved) deer within reach; ties go to the
+-- first in pool order.
+function FunctionBrick.nearestDeer(building, ctx, ability)
+	local tile, best, bestD = ctx.config.tileSize, nil, nil
+	for _, a in ipairs(ctx.pools.animals) do
+		if AnimalSystem.isFree(a) and FunctionBrick.deerInReach(building, ctx, ability, a) then
+			local d = distance(building, math.floor(a.x / tile), math.floor(a.y / tile))
+			if not bestD or d < bestD then
+				best, bestD = a, d
+			end
+		end
+	end
+	return best
+end
+
+-- Whether tile (x, y) is water.
+local function isWater(ctx, x, y)
+	return x >= 0 and y >= 0 and x < ctx.world.width and y < ctx.world.height
+		and World.terrainAt(ctx.world, x, y) == "water"
+end
+
+-- Every water tile within reach of `building` (fishing ability `ability`),
+-- as { x, y } in row order.
+function FunctionBrick.waterInReach(building, ctx, ability)
+	local r = FunctionBrick.reach(building.traits, ctx.config, ability)
+	local list = {}
+	for y = building.tileY - r, building.tileY + building.depth - 1 + r do
+		for x = building.tileX - r, building.tileX + building.width - 1 + r do
+			if isWater(ctx, x, y) then
+				table.insert(list, { x, y })
+			end
+		end
+	end
+	return list
+end
+
 -- The one item and count a converter's recipe takes. A villager's load
 -- holds one kind of item, so a recipe has one input item.
 function FunctionBrick.recipeInput(recipe)
@@ -125,6 +203,28 @@ function FunctionBrick.hasWork(fb, building, ctx)
 		end
 		for _, port in ipairs(building.ports) do
 			if port.kind == "output" and Storage.room(port.buffer) > 0 then
+				return true
+			end
+		end
+		return false
+	end
+	if fb.fishing then
+		if #FunctionBrick.waterInReach(building, ctx, fb.ability) == 0 then
+			return false
+		end
+		for _, port in ipairs(building.ports) do
+			if port.kind == "output" and Storage.room(port.buffer) > 0 then
+				return true
+			end
+		end
+		return false
+	end
+	if fb.hunting then
+		if not FunctionBrick.nearestDeer(building, ctx, fb.ability) then
+			return false
+		end
+		for _, port in ipairs(building.ports) do
+			if port.kind == "output" and Storage.room(port.buffer) >= ctx.config.production.meatPerDeer then
 				return true
 			end
 		end
