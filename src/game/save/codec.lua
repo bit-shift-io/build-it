@@ -49,7 +49,11 @@ local SaveCodec = {}
 
 -- Format 2 (villagers): placement pays from storage facilities and a new
 -- game starts with one, so format 1 saves are refused, never migrated.
-local FORMAT = 2
+--
+-- Format 3: a villager's experience follows its record as an `xp` record
+-- (count per role). Format 2 saves load with empty experience.
+local FORMAT = 3
+local OLDEST = 2
 local HEADER = "build-it-save " .. FORMAT
 
 local function sessionRecord(ctx)
@@ -86,6 +90,9 @@ local function villagerRecords(lines, v)
 	})
 	if v.load.count > 0 then
 		lines[#lines + 1] = Codec.record("load", { item = v.load.item, count = v.load.count })
+	end
+	if next(v.xp) then
+		lines[#lines + 1] = Codec.record("xp", v.xp)
 	end
 	for _, p in ipairs(v.walker.path) do
 		lines[#lines + 1] = Codec.record("waypoint", { x = p.x, y = p.y })
@@ -247,9 +254,9 @@ local function parse(text)
 	for line in text:gmatch("[^\n]+") do
 		n = n + 1
 		if n == 1 then
-			if line ~= HEADER then
-				local format = tonumber(line:match("^build%-it%-save (%d+)$"))
-				if format and format < FORMAT then
+			local format = tonumber(line:match("^build%-it%-save (%d+)$"))
+			if not (format and format >= OLDEST and format <= FORMAT) then
+				if format and format < OLDEST then
 					return nil, "save is from an older version of the game (format " .. format .. ")"
 				end
 				return nil, "not a world save"
@@ -402,6 +409,8 @@ local function build(records, config)
 		elseif tag == "load" then
 			local load = last(villagers, tag, r.line).load
 			load.item, load.count = f.item, f.count
+		elseif tag == "xp" then
+			last(villagers, tag, r.line).xp = f
 		elseif tag == "waypoint" then
 			table.insert(last(villagers, tag, r.line).walker.path, { x = f.x, y = f.y })
 		else

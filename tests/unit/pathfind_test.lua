@@ -1,6 +1,7 @@
 -- The A* tile pathfinder (src/game/pathfind.lua): 8-way paths that go
 -- around water and nodes, never cut a blocked corner, and cross building
--- footprints only when asked.
+-- footprints, except the one building a caller may enter (and the one it
+-- starts inside, to walk out).
 local Pathfind = require("src.game.pathfind")
 local World = require("src.game.world")
 
@@ -73,11 +74,36 @@ local function footprintWorld()
 	return world
 end
 
-test("Pathfind.find stops at building footprints unless told to walk through them", function()
-	assertEqual(nil, Pathfind.find(footprintWorld(), 1, 2, 8, 2))
-	local path = Pathfind.find(footprintWorld(), 1, 2, 8, 2, { throughBuildings = true })
-	assertTrue(path ~= nil and onPath(path, 4, 2), "expected a straight route through the footprint")
-	assertEqual(7, #path)
+test("Pathfind.find goes around a footprint, and through the one building in opts.enter", function()
+	local world = World.new(10, 5)
+	-- A 1-wide building wall at x = 4 with a gap only at y = 4.
+	local wall = { tileX = 4, tileY = 0, width = 1, depth = 4, ports = {} }
+	World.addBuilding(world, wall)
+	local around = Pathfind.find(world, 1, 2, 8, 2)
+	assertTrue(around ~= nil and onPath(around, 4, 4) and not onPath(around, 4, 2), "expected a route round the wall")
+	local through = Pathfind.find(world, 1, 2, 8, 2, { enter = wall })
+	assertTrue(through ~= nil and onPath(through, 4, 2), "expected a straight route through the footprint")
+	assertEqual(7, #through)
+end)
+
+test("Pathfind.find with enter = a building still stops at any other footprint", function()
+	local world = World.new(10, 5)
+	local mine = { tileX = 2, tileY = 0, width = 1, depth = 5, ports = {} }
+	local other = { tileX = 5, tileY = 0, width = 1, depth = 5, ports = {} }
+	World.addBuilding(world, mine)
+	World.addBuilding(world, other)
+	assertTrue(Pathfind.find(world, 0, 2, 3, 2, { enter = mine }) ~= nil)
+	assertEqual(nil, Pathfind.find(world, 0, 2, 8, 2, { enter = mine }))
+	assertEqual(nil, Pathfind.find(world, 0, 2, 5, 2, { enter = mine }), "the target may not be another footprint")
+end)
+
+test("Pathfind.find lets a walker that starts inside a footprint walk out of it", function()
+	local world = World.new(10, 10)
+	World.addBuilding(world, { tileX = 3, tileY = 3, width = 3, depth = 3, ports = {} })
+	-- The centre tile has only footprint tiles around it.
+	local path = Pathfind.find(world, 4, 4, 8, 4)
+	assertTrue(path ~= nil, "expected a way out")
+	assertEqual(8, path[#path].x)
 end)
 
 test("Pathfind.find gives the same path for the same input", function()

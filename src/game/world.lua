@@ -120,12 +120,15 @@ end
 
 -- True when nothing may stand on tile (x, y): water, a node or a building.
 -- Port tiles stay open. Tiles off the world are not blocked here; Mover
--- clamps to the world edge. throughBuildings leaves building footprints
--- open: villagers walk through them, the player can't.
-function World.isBlocked(world, x, y, throughBuildings)
-	return World.terrainAt(world, x, y) == "water"
-		or World.nodeAt(world, x, y) ~= nil
-		or (not throughBuildings and World.buildingAt(world, x, y) ~= nil)
+-- clamps to the world edge. Footprints are solid except `enter`, the one
+-- building the asker may walk into (a brick's operator; nil for everyone
+-- else, the player included).
+function World.isBlocked(world, x, y, enter)
+	if World.terrainAt(world, x, y) == "water" or World.nodeAt(world, x, y) ~= nil then
+		return true
+	end
+	local b = World.buildingAt(world, x, y)
+	return b ~= nil and b ~= enter
 end
 
 -- True when a villager may stand still on tile (x, y): inside the world,
@@ -135,8 +138,30 @@ function World.isStandable(world, x, y)
 		and y >= 0
 		and x < world.width
 		and y < world.height
-		and not World.isBlocked(world, x, y, false)
+		and not World.isBlocked(world, x, y)
 		and World.portAt(world, x, y) == nil
+end
+
+-- The standable tile touching building b's footprint (corners included)
+-- nearest tile (x, y); ties go to the first in row order. Nil when the
+-- footprint is walled in. Where villagers stand to work on a site, since
+-- nobody walks onto a footprint.
+function World.tileBeside(world, b, x, y)
+	local best, bestD
+	for ty = b.tileY - 1, b.tileY + b.depth do
+		for tx = b.tileX - 1, b.tileX + b.width do
+			local inside = tx >= b.tileX and tx < b.tileX + b.width and ty >= b.tileY and ty < b.tileY + b.depth
+			if not inside and World.isStandable(world, tx, ty) then
+				local d = (tx - x) ^ 2 + (ty - y) ^ 2
+				if not bestD or d < bestD then
+					best, bestD = { tx, ty }, d
+				end
+			end
+		end
+	end
+	if best then
+		return best[1], best[2]
+	end
 end
 
 -- The world's size in pixels.

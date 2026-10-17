@@ -129,31 +129,43 @@ Domain terms for Build-it. Code, docs and conversation use these words with thes
 
 ## Villager
 - **Definition:** A helper character that assigns itself to jobs. A new game starts with 20 around the starting storage facility.
-- **Boundary:** Never controlled by the player. Holds one job at a time. Walks through building footprints, which the player can't.
+- **Boundary:** Never controlled by the player. Holds one job at a time. Never enters a footprint, except the operator of a function brick entering that brick's building.
 
 ## Free villager
-- **Definition:** A villager with no job. It idles in a gather area until a job takes it.
+- **Definition:** A villager with no job. It idles at the linger spot of its last task, or in a gather area if it has none, until a job takes it.
 - **Boundary:** Free villagers may carry a load. Idling never delays a job: the job takes the villager at once.
 
 ## Gather area
-- **Definition:** The open ground within a set range of a storage facility's footprint, where free villagers idle.
+- **Definition:** The open ground within a set range of an anchor footprint, where free villagers idle. The anchor is the linger spot's building, else the nearest storage facility.
 - **Boundary:** Free villagers never idle on a footprint or a port tile. They keep personal space and step aside for passers-by.
 
 ## Job
 - **Definition:** A unit of work one villager holds: an operator job, a haul job or a build job.
-- **Boundary:** One villager per job. Free villagers take new jobs, nearest first. A busy villager is never pulled off a job.
+- **Boundary:** One villager per job. A busy villager is never pulled off a job. A job goes first to a villager lingering on its task, then to free villagers not lingering, then to those lingering on other tasks. Within a group, nearest wins, with experience counting as nearness.
 
 ## Operator job
 - **Definition:** The job of running one function brick: harvesting, planting or converting, including carrying items in and out.
-- **Boundary:** Sticky: the operator keeps it while the brick has work. Every function brick except the depot has one.
+- **Boundary:** Sticky: the operator keeps it while the brick has work, then lingers beside the building for the next one. Every function brick except the depot has one.
 
 ## Haul job
 - **Definition:** One trip carrying a load from an output port or storage facility to an input port, a storage facility or a construction site.
-- **Boundary:** Moves existing items only, never harvests. Ends after one trip. At a storage facility the hauler stands on a port tile: the input port to drop off, the output port to pick up.
+- **Boundary:** Moves existing items only, never harvests. Ends after one trip. At a storage facility the hauler stands on a port tile: the input port to drop off, the output port to pick up. At a construction site it stands beside the footprint.
 
 ## Build job
 - **Definition:** The job of turning a construction site into a working building once all its materials are delivered.
-- **Boundary:** Ends when the building is finished.
+- **Boundary:** Ends when the building is finished. The builder works from beside the site, never inside it.
+
+## Task
+- **Definition:** What makes two jobs "the same" for lingering. Operator: the same function brick. Hauler: the same item, source building and destination building. Builder: any build job.
+- **Boundary:** Not a job. A task outlives the job that set it.
+
+## Linger spot
+- **Definition:** Where a free villager waits after a job, as if it would get that task again. Operator: beside its building. Hauler: beside its route's source. Builder: beside the finished building.
+- **Boundary:** Never expires. Taking any job clears it. Gone with its building; the villager then uses a storage facility's gather area. Not saved.
+
+## Experience
+- **Definition:** A villager's count of finished work per role: haul trips, builds, and operator cycles per brick ability.
+- **Boundary:** Capped for picking, never decays, saved with the villager. Grants no perks yet.
 
 ## Load
 - **Definition:** The items a villager carries.

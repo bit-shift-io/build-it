@@ -279,7 +279,7 @@ test("villagers round-trip with their position, animation and the rest of their 
 		assertEqual(ov.animator.facing, lv.animator.facing)
 		assertEqual(ov.animator.frame, lv.animator.frame)
 		assertEqual(ov.animator.distance, lv.animator.distance)
-		assertTrue(lv.mover.throughBuildings)
+		assertEqual(nil, lv.mover.enter, "a loaded villager holds no job, so may enter no footprint")
 		assertEqual(#ov.walker.path, #lv.walker.path)
 		for k, p in ipairs(ov.walker.path) do
 			assertEqual(p.x, lv.walker.path[k].x)
@@ -520,4 +520,22 @@ test("a site's build progress round-trips", function()
 
 	local loaded = roundTrip(ctx)
 	assertEqual(0.75, loaded.pools.sites[1].progress)
+end)
+
+test("villager experience round-trips; a format 2 save loads with empty experience", function()
+	local ctx = Session.new(World.new(20, 20), Config, 1)
+	local v = Session.newVillager(1, 40, 40, Config)
+	v.xp.haul, v.xp.saw = 3, 25
+	table.insert(ctx.pools.villagers, v)
+	table.insert(ctx.pools.villagers, Session.newVillager(2, 60, 60, Config))
+
+	local text = SaveCodec.encode(ctx)
+	local loaded = roundTrip(ctx)
+	assertEqual(3, loaded.pools.villagers[1].xp.haul)
+	assertEqual(25, loaded.pools.villagers[1].xp.saw)
+	assertEqual(nil, next(loaded.pools.villagers[2].xp))
+
+	local old = text:gsub("^build%-it%-save %d+", "build-it-save 2"):gsub("\nxp [^\n]*", "")
+	local back = assert(SaveCodec.decode(old, Config))
+	assertEqual(nil, next(back.pools.villagers[1].xp))
 end)

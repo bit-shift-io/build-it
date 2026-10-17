@@ -70,6 +70,45 @@ test("an operator job ends when its building is gone; the villager keeps what it
 	assertEqual(2, v.load.count)
 end)
 
+test("an operator may enter its building while it holds the job, and loses that when the job ends", function()
+	local ctx, mill, v = setup()
+	local job = Operate.new(mill, mill.functionBricks[1])
+	assertEqual(nil, v.mover.enter)
+	assertTrue(Operate.start(job, v, ctx))
+	assertTrue(v.mover.enter == mill, "enter is the job's building")
+	Operate.finish(job)
+	assertEqual(nil, v.mover.enter)
+end)
+
+test("an operator that cannot start (no route) does not keep the right to enter", function()
+	local ctx, mill, v = setup()
+	-- Wall the villager in with water.
+	for y = 2, 4 do
+		for x = 2, 4 do
+			if x ~= 3 or y ~= 3 then
+				World.setTerrain(ctx.world, x, y, "water")
+			end
+		end
+	end
+	local job = Operate.new(mill, mill.functionBricks[1])
+	assertFalse(Operate.start(job, v, ctx))
+	assertEqual(nil, v.mover.enter)
+end)
+
+test("a saw bench operator reaches its brick tile inside the footprint", function()
+	local ctx, mill, v = setup()
+	local fb = mill.functionBricks[1]
+	local job = Operate.new(mill, fb)
+	Operate.start(job, v, ctx)
+	run(ctx, job, v, 60 * 60, function()
+		return job.stage == "working"
+	end)
+	assertEqual("working", job.stage)
+	assertEqual(fb.tileX, math.floor(v.x / TILE))
+	assertEqual(fb.tileY, math.floor(v.y / TILE))
+	assertTrue(World.buildingAt(ctx.world, fb.tileX, fb.tileY) == mill, "the brick tile is in the footprint")
+end)
+
 test("an operator heading to the output reserves one room there and frees it when the job ends", function()
 	local ctx, mill, v = setup()
 	local out = mill.ports[2].buffer
@@ -208,4 +247,32 @@ test("a woodcutter operator ended mid-harvest gives back the room it held", func
 
 	Operate.finish(job)
 	assertEqual(out.capacity, Storage.room(out))
+end)
+
+test("a harvester's stand tile never lies on another building's footprint", function()
+	local ctx, b, tree, v = cutterWithTree()
+	local fb = b.functionBricks[1]
+	-- Every tile beside the tree belongs to someone else's building.
+	World.addBuilding(ctx.world, { tileX = 7, tileY = 5, width = 3, depth = 3, ports = {} })
+	local job = Operate.new(b, fb)
+	assertFalse(Operate.start(job, v, ctx), "no free tile beside the tree: the job ends")
+	assertEqual(nil, v.mover.enter)
+	assertEqual(nil, fb.node)
+end)
+
+test("a finished operator cycle adds one to the brick's ability, and nothing else", function()
+	local ctx, b, tree, v = cutterWithTree()
+	local out = b.ports[1].buffer
+	fill(out, "log", out.capacity - 1)
+	local job = Operate.new(b, b.functionBricks[1])
+	Operate.start(job, v, ctx)
+	run(ctx, job, v, 60 * 120)
+	assertTrue(job.dead)
+	local key = b.functionBricks[1].ability
+	assertEqual(1, v.xp[key])
+	local others = 0
+	for k in pairs(v.xp) do
+		others = others + (k ~= key and 1 or 0)
+	end
+	assertEqual(0, others)
 end)

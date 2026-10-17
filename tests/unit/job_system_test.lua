@@ -299,3 +299,189 @@ test("a hauler drops off at the input port tile nearest it, ties to the first po
 		assertEqual(store.ports[case.port].x, v.job.dest.x, "from x " .. case.x)
 	end
 end)
+
+-- pick: tiers (lingering on the task, free, lingering elsewhere).
+local JobSystem = require("src.game.systems.job_system")
+
+local function pv(x, y, linger)
+	return { x = (x + 0.5) * TILE, y = (y + 0.5) * TILE, linger = linger }
+end
+
+local TASK = { kind = "operate", brick = {} }
+local function lingerOn(task)
+	return { task = task, anchor = {} }
+end
+
+test("pick takes the villager lingering on the task over a nearer free one", function()
+	local near, mine = pv(5, 5), pv(20, 20, lingerOn(TASK))
+	local free = { near, mine }
+	assertEqual(mine, JobSystem.pick(free, TASK, 5, 5, TILE))
+	assertEqual(1, #free)
+	assertEqual(nil, mine.linger, "taking the villager clears its linger")
+end)
+
+test("pick prefers a free villager to one lingering elsewhere, whatever the distance", function()
+	local other = lingerOn({ kind = "operate", brick = {} })
+	local near, far = pv(5, 5, other), pv(25, 25)
+	assertEqual(far, JobSystem.pick({ near, far }, TASK, 5, 5, TILE))
+	assertEqual(far, JobSystem.pick({ near, far }, nil, 5, 5, TILE))
+end)
+
+test("pick falls back to a villager lingering elsewhere, nearest first, ties in pool order", function()
+	local other = lingerOn({ kind = "operate", brick = {} })
+	local a, b, c = pv(10, 5, other), pv(10, 5, other), pv(20, 5, other)
+	local free = { c, a, b }
+	assertEqual(a, JobSystem.pick(free, TASK, 5, 5, TILE))
+	assertEqual(b, JobSystem.pick(free, TASK, 5, 5, TILE))
+	assertEqual(c, JobSystem.pick(free, TASK, 5, 5, TILE))
+end)
+
+test("a loaded harvester keeps its linger on the way to storage", function()
+	local ctx = newCtx()
+	place(ctx, DEPOT, 10, 10)
+	local v = villager(ctx, 4, 4)
+	local anchor = place(ctx, MILL, 20, 20)
+	v.linger = { task = TASK, anchor = anchor }
+	v.load.item, v.load.count = "log", 1
+	run(ctx, STEP)
+	assertTrue(v.job ~= nil, "it took the storage haul")
+	assertEqual(anchor, v.linger.anchor)
+end)
+
+-- Haul and build tasks.
+local function haulTask(item, source, dest)
+	return { kind = "haul", item = item, source = source, dest = dest }
+end
+
+test("pick matches a haul task on item, source building and destination building only", function()
+	local src, dst = {}, {}
+	local same = pv(20, 20, lingerOn(haulTask("log", src, dst)))
+	local wrongItem = pv(5, 6, lingerOn(haulTask("plank", src, dst)))
+	local wrongDest = pv(5, 7, lingerOn(haulTask("log", src, {})))
+	local near = pv(5, 5)
+	assertEqual(same, JobSystem.pick({ near, wrongItem, wrongDest, same }, haulTask("log", src, dst), 5, 5, TILE))
+	assertEqual(near, JobSystem.pick({ wrongItem, near, wrongDest }, haulTask("log", src, dst), 5, 5, TILE))
+end)
+
+test("a finished build job's villager is first pick for any build task", function()
+	local mine = pv(20, 20, lingerOn({ kind = "build" }))
+	local near = pv(5, 5)
+	assertEqual(mine, JobSystem.pick({ near, mine }, { kind = "build" }, 5, 5, TILE))
+end)
+
+local function lingerOf(v)
+	return v.linger
+end
+
+test("a villager lingers on the haul route after a trip, a nearer free villager loses the next one", function()
+	local ctx = newCtx()
+	local cutter = place(ctx, CUTTER, 2, 2)
+	local mill = place(ctx, MILL, 12, 2)
+	local first = villager(ctx, 4, 6)
+	fill(cutter.ports[1].buffer, "log", 1)
+	run(ctx, 20)
+	assertEqual(1, mill.ports[1].buffer.counts.log)
+	local l = assert(lingerOf(first), "lingers after the haul")
+	assertEqual("haul", l.task.kind)
+	assertEqual("log", l.task.item)
+	assertEqual(cutter, l.task.source)
+	assertEqual(mill, l.task.dest)
+	assertEqual(cutter, l.anchor)
+
+	local second = villager(ctx, 12, 6) -- nearer to the cutter's port than first? no: far side
+	second.x, second.y = cutter.ports[1].x * TILE + TILE / 2, (cutter.ports[1].y + 1) * TILE + TILE / 2
+	mill.ports[1].buffer.counts.log = nil
+	fill(cutter.ports[1].buffer, "log", 1)
+	run(ctx, STEP)
+	assertEqual(first.job, ctx.pools.jobs[#ctx.pools.jobs], "the lingering villager took it")
+	assertEqual(nil, second.job)
+end)
+
+test("a hauled-off load with no source leaves no linger", function()
+	local ctx = newCtx()
+	place(ctx, DEPOT, 10, 10)
+	local v = villager(ctx, 4, 4)
+	v.load.item, v.load.count = "log", 1
+	run(ctx, 20)
+	assertEqual(nil, v.linger)
+end)
+
+test("a finished build job lingers beside the new building and takes the next build first", function()
+	local ctx = newCtx()
+	local store = place(ctx, STORE, 4, 2)
+	store.storage.capacity = 100
+	fill(store.storage, "plank", 40)
+	local siteA = assert(Placement.place(ctx, { design = HALL, version = 1, facing = "N", tileX = 12, tileY = 2 }))
+	local v = villager(ctx, 4, 0)
+	local built = false
+	for _ = 1, 60 * 120 do
+		Session.advance(ctx, STEP)
+		if siteA.dead then
+			built = true
+			break
+		end
+	end
+	assertTrue(built, "site built")
+	run(ctx, STEP * 2)
+	local l = assert(v.linger, "builder lingers")
+	assertEqual("build", l.task.kind)
+	assertEqual(siteA.tileX, l.anchor.tileX)
+	assertEqual(nil, l.anchor.dead)
+end)
+
+-- Experience: weighted distance within tiers 2 and 3.
+local EXP = Config.villagers.experience
+
+local function xpv(x, y, xp, linger)
+	local v = pv(x, y, linger)
+	v.xp = xp
+	return v
+end
+
+test("pick: an experienced villager slightly farther beats a nearer novice", function()
+	local novice, expert = xpv(5, 6, {}), xpv(5, 8, { haul = EXP.cap })
+	assertEqual(expert, JobSystem.pick({ novice, expert }, { kind = "haul" }, 5, 5, TILE, EXP))
+end)
+
+test("pick: a novice much nearer still beats an experienced villager", function()
+	local novice, expert = xpv(5, 5, {}), xpv(5, 5 + EXP.bonusTiles + 3, { haul = EXP.cap })
+	assertEqual(novice, JobSystem.pick({ expert, novice }, { kind = "haul" }, 5, 5, TILE, EXP))
+end)
+
+test("pick: only experience in the task's own role counts; operators use the brick's ability", function()
+	local hauler, sawyer = xpv(5, 7, { haul = EXP.cap }), xpv(5, 7, { saw = EXP.cap })
+	local task = { kind = "operate", brick = { ability = "saw" } }
+	assertEqual(sawyer, JobSystem.pick({ hauler, sawyer }, task, 5, 5, TILE, EXP))
+end)
+
+test("pick: experience past the cap earns nothing more", function()
+	local a, b = xpv(5, 8, { build = EXP.cap }), xpv(5, 8, { build = EXP.cap * 5 })
+	local near = xpv(5, 7, {})
+	assertEqual(a, JobSystem.pick({ near, a, b }, { kind = "build" }, 5, 5, TILE, EXP))
+	assertEqual(near, JobSystem.pick({ near, xpv(5, 12, { build = EXP.cap * 5 }) }, { kind = "build" }, 5, 5, TILE, EXP))
+end)
+
+test("pick: lingering on the task beats any experience", function()
+	local mine = xpv(30, 30, {}, lingerOn({ kind = "build" }))
+	local expert = xpv(5, 5, { build = EXP.cap })
+	assertEqual(mine, JobSystem.pick({ expert, mine }, { kind = "build" }, 5, 5, TILE, EXP))
+end)
+
+local MILL_OUT = { id = "d9", name = "Mill", versions = { { width = 1, depth = 1, bricks = {
+	brick("sawbench", 0, 0, { ability = "sawbench" }),
+	brick("input", 0, 3, { port = "input" }),
+	brick("output", 2, 3, { port = "output" }),
+} } } }
+
+test("a saw with a tree in reach and a saw bench with logs each get an operator", function()
+	local ctx = newCtx()
+	local cutter = place(ctx, CUTTER, 5, 5)
+	local mill = place(ctx, MILL_OUT, 15, 5)
+	World.addNode(ctx.world, { id = 1, kind = "tree", tileX = 5, tileY = 3, variant = 1, stage = 1, amount = 5 })
+	fill(mill.ports[1].buffer, "log", 2)
+	villager(ctx, 10, 12)
+	villager(ctx, 11, 12)
+	run(ctx, 3)
+	assertTrue(cutter.functionBricks[1].operator ~= nil, "the saw has an operator")
+	assertTrue(mill.functionBricks[1].operator ~= nil, "the saw bench has an operator")
+end)

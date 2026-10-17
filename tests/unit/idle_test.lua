@@ -57,6 +57,24 @@ test("a villager on a port tile ends on a standable gather tile, off footprint a
 	assertEqual("settled", v.idle.phase)
 end)
 
+test("a settled villager caught under a new footprint walks out and settles on a standable tile", function()
+	local ctx, b = newGame()
+	local t = Idle.gatherTiles(ctx, b)[1]
+	local v = addVillager(ctx, t.x, t.y)
+	run(ctx, 1)
+	assertEqual("settled", v.idle.phase)
+	assertTrue(Walker.idle(v.walker))
+
+	-- A 3x3 footprint lands on it, the villager at its centre tile.
+	local over = { tileX = t.x - 1, tileY = t.y - 1, width = 3, depth = 3, ports = {} }
+	World.addBuilding(ctx.world, over)
+	run(ctx, 6)
+	local x, y = tileOf(v)
+	assertTrue(World.isStandable(ctx.world, x, y), "ended on " .. x .. "," .. y)
+	assertEqual("settled", v.idle.phase)
+	assertTrue(Walker.idle(v.walker))
+end)
+
 test("a free villager carrying a load gathers and keeps the load", function()
 	-- No facility, so no haul job takes the load.
 	local world = World.new(20, 20)
@@ -383,4 +401,54 @@ test("a job assigned mid-wander takes over at once", function()
 	Session.advance(ctx, STEP)
 	assertEqual(nil, v.idle)
 	assertEqual(last, v.walker.path[#v.walker.path])
+end)
+
+local function placeStarter(ctx, x, y)
+	return Placement.build(ctx, { design = Starter.design(Config), version = 1, facing = "N", tileX = x, tileY = y })
+end
+
+test("a lingering villager idles around its anchor, never on its footprint or ports", function()
+	local ctx, storage = newGame()
+	local anchor = placeStarter(ctx, 5, 5)
+	-- Starts beside the storage facility, nearer to it than to the anchor.
+	local v = addVillager(ctx, storage.tileX + 1, storage.tileY + storage.depth + 1)
+	v.linger = { task = { kind = "operate", brick = {} }, anchor = anchor }
+	run(ctx, 30)
+	local x, y = tileOf(v)
+	assertEqual(anchor, v.idle.facility)
+	assertTrue(inGatherArea(ctx, anchor, x, y), "should gather at the anchor")
+	assertEqual(nil, World.buildingAt(ctx.world, x, y))
+	assertEqual(nil, World.portAt(ctx.world, x, y))
+	assertTrue(v.linger ~= nil, "the linger never expires")
+end)
+
+test("when its anchor dies a lingering villager drops the linger and gathers at a storage facility", function()
+	local ctx, storage = newGame()
+	local anchor = placeStarter(ctx, 5, 5)
+	local v = addVillager(ctx, anchor.tileX + 1, anchor.tileY + anchor.depth + 1)
+	v.linger = { task = { kind = "operate", brick = {} }, anchor = anchor }
+	run(ctx, 10)
+	assertEqual(anchor, v.idle.facility)
+
+	World.removeBuilding(ctx.world, anchor)
+	anchor.dead = true
+	run(ctx, 40)
+	local x, y = tileOf(v)
+	assertEqual(nil, v.linger)
+	assertEqual(storage, v.idle.facility)
+	assertTrue(inGatherArea(ctx, storage, x, y), "should gather at the storage facility")
+end)
+
+test("a villager lingering with a port tile idles within portReach of it, off footprint and ports", function()
+	local ctx, storage = newGame()
+	local anchor = placeStarter(ctx, 20, 20)
+	local port = anchor.ports[1]
+	local v = addVillager(ctx, storage.tileX + 1, storage.tileY + storage.depth + 1)
+	v.linger = { task = { kind = "haul" }, anchor = anchor, at = { x = port.x, y = port.y } }
+	run(ctx, 30)
+	local x, y = tileOf(v)
+	assertEqual(anchor, v.idle.facility)
+	assertTrue(math.max(math.abs(x - port.x), math.abs(y - port.y)) <= Config.villagers.idle.portReach, "should wait near the port")
+	assertEqual(nil, World.buildingAt(ctx.world, x, y))
+	assertEqual(nil, World.portAt(ctx.world, x, y))
 end)

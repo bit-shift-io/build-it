@@ -1,7 +1,7 @@
 -- A* over the tile grid (docs/CONTEXT.md "Tile"). 8-way: a straight step
 -- costs 10, a diagonal 14, and a diagonal never cuts a corner -- both tiles
 -- beside it must be open too. Blocked tiles are World.isBlocked's: water and
--- nodes, and building footprints unless the caller walks through them.
+-- nodes, and building footprints except the one in opts.enter.
 -- Deterministic: open tiles leave the heap by cost, then by the heuristic,
 -- then in the order they were first reached, and neighbours are tried in a
 -- fixed order. Pure -- no `love.*`.
@@ -79,14 +79,21 @@ end
 -- last, as { { x, y }, ... }; an empty list when already there. nil when
 -- the target is blocked, off the world, or out of reach within
 -- opts.maxExpansions tiles taken off the open list (unlimited when nil).
--- The start tile may itself be blocked, so a walker can step out of one.
--- opts = { throughBuildings = <bool>, maxExpansions = <n> }, optional.
+-- The start tile may itself be blocked, so a walker can step out of one:
+-- the footprint it starts in is open for the walk, so it can cross it to
+-- the edge.
+-- opts = { enter = <building>, maxExpansions = <n> }, optional.
 function Pathfind.find(world, fromX, fromY, toX, toY, opts)
 	opts = opts or {}
-	local through = opts.throughBuildings
+	local enter = opts.enter
+	local startIn = World.buildingAt(world, fromX, fromY)
 	local w, h = world.width, world.height
 	local function open(x, y)
-		return x >= 0 and y >= 0 and x < w and y < h and not World.isBlocked(world, x, y, through)
+		return x >= 0
+			and y >= 0
+			and x < w
+			and y < h
+			and (not World.isBlocked(world, x, y, enter) or (startIn ~= nil and not World.isBlocked(world, x, y, startIn)))
 	end
 	if not open(toX, toY) then
 		return nil

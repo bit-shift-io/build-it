@@ -58,7 +58,7 @@ end
   6. **Despawn sweeps**, the only place records are removed: ended jobs, then buildings and built sites, then nodes.
 - Pools: `characters`, `villagers`, `nodes`, `buildings`, `sites`, `jobs`. Villagers have their own pool so systems that loop characters for player intents never see them.
 - Jobs: `src/game/systems/job_system.lua` creates haul jobs (`src/game/jobs/haul.lua`) from world state and gives each one to the nearest free villager the moment it is created, so no job waits unassigned. A job reserves its source items (`Storage.reserve`) and destination room (`Storage.reserveRoom`) and releases them when it ends or fails. Jobs and reservations are not saved; a villager's `load` is.
-- Paths: `src/game/pathfind.lua` is A* over tiles (8-way, no corner cutting, deterministic, capped by `config.villagers.pathMaxExpansions`). The `walker` component finds a path once per target and steers through `Mover`. `mover.throughBuildings` lets a record cross building footprints (villagers); the player's mover never sets it.
+- Paths: `src/game/pathfind.lua` is A* over tiles (8-way, no corner cutting, deterministic, capped by `config.villagers.pathMaxExpansions`). The `walker` component finds a path once per target and steers through `Mover`. Footprints are solid to every record except the one building in `mover.enter` (an operator inside its own building; `opts.enter` for paths); the player's mover never sets it. A record already overlapping a footprint may move out of it, never into another.
 - Nothing is removed mid-iteration. Systems mark records `dead = true`; the sweep removes them.
 
 ## `ctx`

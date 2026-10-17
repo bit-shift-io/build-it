@@ -1,8 +1,12 @@
 -- Idle state of a free villager (docs/CONTEXT.md "Free villager", "Gather
--- area"), on the villager record: `v.idle = { phase, facility }`.
+-- area", "Linger spot"), on the villager record: `v.idle = { phase, facility }`.
+-- `facility` is the anchor building whose gather area it idles in: the
+-- building it lingers at (`v.linger.anchor`), else the nearest storage
+-- facility.
 --   gathering: walking to its picked tile in the gather area
 --   settled:   arrived (or already there); stays put, now and then turns
---              (`turnTo`, a facing the villager system applies) or wanders
+--              (`turnTo`, a facing the villager system applies) or wanders;
+--              on a tile that is no longer standable it gathers again
 --   wandering: walking a short way to another gather tile, then settled
 -- Idle state exists only while `v.job` is nil. Pure -- no `love.*`.
 local World = require("src.game.world")
@@ -35,8 +39,19 @@ local function nearestFacility(ctx, x, y)
 	return best
 end
 
--- Standable tiles of facility b's gather area, in row order.
-function Idle.gatherTiles(ctx, b)
+-- The building `v` idles around from tile (x, y): its linger anchor while
+-- that stands (a dead anchor drops the linger), else the nearest storage
+-- facility.
+local function anchorFor(v, ctx, x, y)
+	if v.linger and v.linger.anchor.dead then
+		v.linger = nil
+	end
+	return v.linger and v.linger.anchor or nearestFacility(ctx, x, y)
+end
+
+-- Standable tiles of facility b's gather area, in row order. With `at`
+-- (a tile {x, y}), only those within portReach of it, when there are any.
+function Idle.gatherTiles(ctx, b, at)
 	local cfg, world = ctx.config.villagers.idle, ctx.world
 	local r = cfg.gatherRadius
 	local list = {}
@@ -47,6 +62,17 @@ function Idle.gatherTiles(ctx, b)
 			if d >= cfg.gatherMin and d <= r and World.isStandable(world, x, y) then
 				list[#list + 1] = { x = x, y = y }
 			end
+		end
+	end
+	if at then
+		local near = {}
+		for _, t in ipairs(list) do
+			if math.max(math.abs(t.x - at.x), math.abs(t.y - at.y)) <= cfg.portReach then
+				near[#near + 1] = t
+			end
+		end
+		if #near > 0 then
+			return near
 		end
 	end
 	return list
@@ -76,12 +102,12 @@ end
 local function start(v, ctx)
 	local tile = ctx.config.tileSize
 	local x, y = tileOf(v, tile)
-	local facility = nearestFacility(ctx, x, y)
-	local idle = { phase = "settled", facility = facility }
+	local facility = anchorFor(v, ctx, x, y)
+	local idle = { phase = "settled", facility = facility, at = v.linger and v.linger.at }
 	v.idle = idle
 	local target
 	if facility then
-		local tiles = Idle.gatherTiles(ctx, facility)
+		local tiles = Idle.gatherTiles(ctx, facility, idle.at)
 		for _, t in ipairs(tiles) do
 			if t.x == x and t.y == y then
 				return
@@ -115,7 +141,7 @@ local function life(v, ctx)
 			local tile = ctx.config.tileSize
 			local x, y = tileOf(v, tile)
 			local near = {}
-			for _, t in ipairs(Idle.gatherTiles(ctx, idle.facility)) do
+			for _, t in ipairs(Idle.gatherTiles(ctx, idle.facility, idle.at)) do
 				local d = math.sqrt((t.x - x) ^ 2 + (t.y - y) ^ 2)
 				if d > 0 and d <= cfg.wanderDistance then
 					near[#near + 1] = t
@@ -148,6 +174,10 @@ function Idle.update(v, ctx)
 		v.idle = nil
 		return
 	end
+	-- The building it idles around is gone: gather again once it stands still.
+	if v.idle and v.idle.facility and v.idle.facility.dead then
+		v.idle = nil
+	end
 	if v.idle == nil then
 		-- A villager still on a path (e.g. after a load) finishes it first.
 		if Walker.idle(v.walker) then
@@ -156,7 +186,13 @@ function Idle.update(v, ctx)
 	elseif v.idle.phase ~= "settled" and Walker.idle(v.walker) then
 		v.idle.phase = "settled"
 	elseif v.idle.phase == "settled" and Walker.idle(v.walker) then
-		life(v, ctx)
+		-- A footprint placed on it, or a job that ended inside one: walk out.
+		local x, y = tileOf(v, ctx.config.tileSize)
+		if World.isStandable(ctx.world, x, y) then
+			life(v, ctx)
+		else
+			start(v, ctx)
+		end
 	end
 end
 

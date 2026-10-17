@@ -15,7 +15,7 @@ local function walkerAt(tileX, tileY)
 		x = (tileX + 0.5) * TILE,
 		y = (tileY + 0.5) * TILE,
 		size = Config.villagers.size,
-		mover = { speed = Config.villagers.speed, throughBuildings = true },
+		mover = { speed = Config.villagers.speed },
 		walker = Walker.new(),
 	}
 end
@@ -49,20 +49,83 @@ test("a walker sent to a tile walks around water, reaches the tile's centre and 
 	assertEqual(y, r.y)
 end)
 
-test("a villager walker crosses a building footprint; an unreachable target leaves it standing", function()
+test("a walker goes round a footprint, through its own building with mover.enter; an unreachable target leaves it standing", function()
 	local world = World.new(10, 5)
-	World.addBuilding(world, { tileX = 4, tileY = 0, width = 2, depth = 5, ports = {} })
+	local b = { tileX = 4, tileY = 0, width = 2, depth = 4, ports = {} }
+	World.addBuilding(world, b)
 	local ctx = ctxWith(world)
 	local r = walkerAt(1, 2)
 
 	assertTrue(Walker.goTo(r, ctx, 8, 2))
-	assertEqual(7, #r.walker.path, "the straight line through the footprint")
+	local viaGap = false
+	for _, p in ipairs(r.walker.path) do
+		viaGap = viaGap or p.y == 4
+	end
+	assertTrue(viaGap, "the route detours through the gap below the footprint")
 	for _ = 1, 60 * 5 do
+		local x, y = tileOf(r)
+		assertFalse(World.buildingAt(world, x, y) ~= nil, "walked onto the footprint at " .. x .. "," .. y)
 		Walker.step(r, ctx)
 	end
 	assertNear(8.5 * TILE, r.x)
 
+	local inside = walkerAt(1, 2)
+	inside.mover.enter = b
+	assertTrue(Walker.goTo(inside, ctx, 8, 2))
+	assertEqual(7, #inside.walker.path, "the straight line through the footprint")
+	for _ = 1, 60 * 5 do
+		Walker.step(inside, ctx)
+	end
+	assertNear(8.5 * TILE, inside.x)
+
 	World.setTerrain(world, 0, 0, "water")
 	assertFalse(Walker.goTo(r, ctx, 0, 0))
 	assertTrue(Walker.idle(r.walker))
+end)
+
+test("a walker that starts inside a footprint it may not enter walks out and never into another", function()
+	local world = World.new(12, 5)
+	World.addBuilding(world, { tileX = 3, tileY = 0, width = 3, depth = 5, ports = {} })
+	World.addBuilding(world, { tileX = 8, tileY = 0, width = 1, depth = 4, ports = {} })
+	local ctx = ctxWith(world)
+	local r = walkerAt(4, 2)
+	assertTrue(Walker.goTo(r, ctx, 10, 2))
+	for _ = 1, 60 * 8 do
+		Walker.step(r, ctx)
+	end
+	assertNear(10.5 * TILE, r.x)
+	assertNear(2.5 * TILE, r.y)
+end)
+
+test("a footprint placed across the path makes the walker repath around it", function()
+	local world = World.new(12, 12)
+	local ctx = ctxWith(world)
+	local r = walkerAt(1, 5)
+	assertTrue(Walker.goTo(r, ctx, 9, 5))
+	World.addBuilding(world, { tileX = 5, tileY = 3, width = 1, depth = 5, ports = {} })
+	for _ = 1, 60 * 20 do
+		Walker.step(r, ctx)
+		local x, y = tileOf(r)
+		assertFalse(World.buildingAt(world, x, y) ~= nil, "walked onto the footprint")
+	end
+	assertTrue(Walker.idle(r.walker))
+	assertFalse(Walker.failed(r.walker))
+	local x, y = tileOf(r)
+	assertEqual(9, x)
+	assertEqual(5, y)
+end)
+
+test("a footprint that walls the target off ends the walk as failed, not arrived", function()
+	local world = World.new(12, 12)
+	local ctx = ctxWith(world)
+	local r = walkerAt(1, 5)
+	assertTrue(Walker.goTo(r, ctx, 9, 5))
+	World.addBuilding(world, { tileX = 5, tileY = 0, width = 1, depth = 12, ports = {} })
+	for _ = 1, 60 * 5 do
+		Walker.step(r, ctx)
+	end
+	assertTrue(Walker.idle(r.walker))
+	assertTrue(Walker.failed(r.walker))
+	assertTrue(Walker.goTo(r, ctx, 2, 5))
+	assertFalse(Walker.failed(r.walker), "a new walk clears the failure")
 end)

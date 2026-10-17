@@ -91,13 +91,13 @@ test("a second placement that needs more than the unclaimed stock is unaffordabl
 	assertEqual(1, #ctx.pools.sites)
 end)
 
-test("a site blocks its footprint for placement and the player, not villagers", function()
+test("a site blocks its footprint for placement, the player and every villager", function()
 	local ctx = newSession(COST.plank * 2)
 	local site = assert(Placement.place(ctx, request(4, 4)))
 
 	assertEqual(site, World.buildingAt(ctx.world, 5, 4))
 	assertTrue(World.isBlocked(ctx.world, 4, 4))
-	assertFalse(World.isBlocked(ctx.world, 4, 4, true))
+	assertTrue(World.isBlocked(ctx.world, 4, 4, {}), "only the one building named may be entered")
 	assertEqual(nil, World.portAt(ctx.world, 5, 5), "its port tile stays open ground")
 	local _, reason = Placement.check(ctx, request(5, 4))
 	assertEqual("building", reason)
@@ -119,6 +119,13 @@ local function stepUntil(ctx, done, frames)
 	return false
 end
 
+-- True when tile (x, y) lies on the ring of tiles touching site's footprint.
+local function beside(site, x, y)
+	local dx = math.max(site.tileX - x, 0, x - (site.tileX + site.width - 1))
+	local dy = math.max(site.tileY - y, 0, y - (site.tileY + site.depth - 1))
+	return math.max(dx, dy) == 1
+end
+
 local function jobOf(ctx, kind)
 	for _, job in ipairs(ctx.pools.jobs) do
 		if job.kind == kind and not job.dead then
@@ -137,6 +144,7 @@ test("villagers haul the claimed cost from storage to the site", function()
 	assert(haul, "a haul job to the site")
 	assertEqual(site, haul.dest.building)
 	assertEqual(f, haul.source.building)
+	assertTrue(beside(site, haul.dest.x, haul.dest.y), "the hauler drops off beside the footprint")
 
 	assertTrue(stepUntil(ctx, function()
 		return (site.delivered.counts.plank or 0) == COST.plank
@@ -162,6 +170,13 @@ test("a build job starts only once everything is delivered, then the site become
 	assertFalse(early, "no build job before all materials arrived")
 	local build = jobOf(ctx, "build")
 	assertEqual(site, build.site)
+	local path = build.villager.walker.path
+	local last = path[#path] or { x = math.floor(build.villager.x / TILE), y = math.floor(build.villager.y / TILE) }
+	assertTrue(beside(site, last.x, last.y), "the builder works from a tile beside the footprint")
+	assertTrue(stepUntil(ctx, function()
+		return build.stage == "building"
+	end, 60 * 30), "the builder starts building")
+	assertTrue(beside(site, math.floor(build.villager.x / TILE), math.floor(build.villager.y / TILE)))
 
 	local built = Site.buildTime(site, Config)
 	assertEqual(Config.villagers.buildTime * 2, built, "scaled by the footprint")
@@ -170,6 +185,7 @@ test("a build job starts only once everything is delivered, then the site become
 	end, math.ceil(built * 60) + 60 * 10), "the site turned into a building")
 
 	assertEqual(0, #ctx.pools.sites)
+	assertEqual(1, build.villager.xp.build, "the builder earned build experience")
 	local b = ctx.pools.buildings[2]
 	assertEqual(HALL, b.design)
 	assertEqual(4, b.tileX)

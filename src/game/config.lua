@@ -92,6 +92,7 @@ return {
 	--     reachBase + floor(reach * reachPerPoint) tiles of its footprint,
 	--     counted in whole tiles in any direction (diagonals count as one),
 	--     so 1 means the ring of tiles touching the footprint.
+	--   abilityReach: reachBase for a harvesting ability, where it differs.
 	--   bufferSize: items one port buffer holds at capacity 0.
 	--   capacityStep: each capacity point grows buffers and storage by this
 	--     fraction of their base size (rounded down).
@@ -110,6 +111,7 @@ return {
 		productivityStep = 0.02,
 		minSpeed = 0.25,
 		reachBase = 2,
+		abilityReach = { saw = 10 },
 		reachPerPoint = 0.25,
 		bufferSize = 4,
 		capacityStep = 0.05,
@@ -157,6 +159,12 @@ return {
 		speed = 120,
 		shirt = { 0.72, 0.36, 0.2 },
 		pathMaxExpansions = 4000,
+		-- Experience (v.xp, one count per role: haul, build, each brick
+		-- ability): +1 per finished haul trip, operator cycle and build.
+		-- In a job pick, a villager counts as bonusTiles nearer at `cap`
+		-- experience in the role, scaling up from none; counts past cap
+		-- keep growing but earn nothing more.
+		experience = { cap = 20, bonusTiles = 4 },
 		-- Free villagers idle in the gather area (docs/CONTEXT.md): tiles
 		-- gatherMin..gatherRadius from a storage facility's footprint.
 		-- personalSpace (tiles): settled villagers keep this far from others.
@@ -167,6 +175,7 @@ return {
 		idle = {
 			gatherMin = 1,
 			gatherRadius = 5,
+			portReach = 2, -- tiles: a hauler waits this near its source port tile
 			personalSpace = 0.8,
 			driftSpeed = 0.4,
 			deadZone = 0.08,

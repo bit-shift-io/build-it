@@ -127,3 +127,34 @@ test("a haul whose destination building is gone ends; the villager keeps its loa
 	assertEqual(2, v.load.count, "the load stays with the villager")
 	assertEqual(inp.buffer.capacity, Storage.room(inp.buffer))
 end)
+
+test("a haul whose route is cut off mid-walk ends instead of stalling, and releases its reservations", function()
+	local ctx, cutter, mill, v = setup()
+	local out, inp = cutter.ports[1], mill.ports[1]
+	Storage.add(out.buffer, "log")
+	local job = Haul.new("log", 1, endpoint(cutter, out), endpoint(mill, inp))
+	assertTrue(Haul.start(job, v, ctx))
+	for y = out.y - 1, out.y + 1 do
+		for x = out.x - 1, out.x + 1 do
+			if not (x == out.x and y == out.y) then
+				World.setTerrain(ctx.world, x, y, "water")
+			end
+		end
+	end
+	run(ctx, job, v, 60 * 30)
+	assertTrue(job.dead, "the job ended")
+	assertEqual(nil, v.job)
+	assertEqual(1, Storage.available(out.buffer, "log"))
+	assertEqual(inp.buffer.capacity, Storage.room(inp.buffer))
+end)
+
+test("a finished haul trip adds one to the villager's haul experience", function()
+	local ctx, cutter, mill, v = setup()
+	Storage.add(cutter.ports[1].buffer, "log")
+	local job = Haul.new("log", 1, endpoint(cutter, cutter.ports[1]), endpoint(mill, mill.ports[1]))
+	assertEqual(nil, v.xp.haul)
+	Haul.start(job, v, ctx)
+	run(ctx, job, v, 60 * 30)
+	assertTrue(job.dead)
+	assertEqual(1, v.xp.haul)
+end)

@@ -132,7 +132,19 @@ local function drop(job)
 		Storage.add(store, job.item)
 	end
 	Load.remove(load, n)
+	local xp = job.villager.xp
+	xp.haul = (xp.haul or 0) + 1
 	Haul.finish(job)
+	local source = job.source
+	if source and not source.building.dead then
+		-- Lingers beside the source's port (docs/CONTEXT.md "Linger spot"): the
+		-- same route next time comes to this villager first.
+		job.villager.linger = {
+			task = { kind = "haul", item = job.item, source = source.building, dest = job.dest.building },
+			anchor = source.building,
+			at = { x = source.x, y = source.y },
+		}
+	end
 end
 
 -- One step, after the villager walked: ends the job when an end's
@@ -142,6 +154,9 @@ function Haul.step(job, ctx)
 		return
 	end
 	if job.dest.building.dead or (job.stage == "toSource" and job.source.building.dead) then
+		return Haul.finish(job)
+	end
+	if Walker.failed(job.villager.walker) then
 		return Haul.finish(job)
 	end
 	if not Walker.idle(job.villager.walker) then

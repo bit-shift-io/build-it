@@ -1,10 +1,12 @@
 -- Walker component: follows a tile path (src/game/pathfind.lua), steering
 -- through Mover one tile centre at a time. Plain data on the record
 -- (`record.walker`); the owning pool system calls Walker.step. Pure.
---   walker = { path = { { x, y }, ... } }   -- tiles still to reach, next first
--- The record needs `mover` (and its throughBuildings flag picks the paths).
+--   walker = { path = { { x, y }, ... },   -- tiles still to reach, next first
+--              failed = true | nil }        -- the walk lost its route (Walker.failed)
+-- The record needs `mover` (and its `enter` building, if any, picks the paths).
 local Mover = require("src.game.components.mover")
 local Pathfind = require("src.game.pathfind")
+local World = require("src.game.world")
 
 local Walker = {}
 
@@ -23,11 +25,30 @@ end
 function Walker.goTo(record, ctx, tileX, tileY)
 	local tile = ctx.config.tileSize
 	local path = Pathfind.find(ctx.world, math.floor(record.x / tile), math.floor(record.y / tile), tileX, tileY, {
-		throughBuildings = record.mover.throughBuildings,
+		enter = record.mover.enter,
 		maxExpansions = ctx.config.villagers.pathMaxExpansions,
 	})
 	record.walker.path = path or {}
+	record.walker.failed = nil
 	return path ~= nil
+end
+
+-- True when the walk was cut off: the path crossed a footprint placed after
+-- it was found and no other route exists. The walker stands still; a job
+-- must end rather than count this as arrived. Cleared by the next goTo.
+function Walker.failed(walker)
+	return walker.failed == true
+end
+
+-- Whether tile (x, y) stops a walk from tile (fromX, fromY): the same rule
+-- Pathfind.find uses (the footprint the walker stands in is open).
+local function stops(record, ctx, x, y, fromX, fromY)
+	local world = ctx.world
+	if not World.isBlocked(world, x, y, record.mover.enter) then
+		return false
+	end
+	local startIn = World.buildingAt(world, fromX, fromY)
+	return not (startIn ~= nil and not World.isBlocked(world, x, y, startIn))
 end
 
 -- Walks toward the next tile's centre. Within one step of it, lands on the
@@ -40,6 +61,13 @@ function Walker.step(record, ctx)
 		return
 	end
 	local tile = ctx.config.tileSize
+	if stops(record, ctx, nextTile.x, nextTile.y, math.floor(record.x / tile), math.floor(record.y / tile)) then
+		local last = path[#path]
+		if not Walker.goTo(record, ctx, last.x, last.y) then
+			record.walker.failed = true
+		end
+		return
+	end
 	local dx, dy = (nextTile.x + 0.5) * tile - record.x, (nextTile.y + 0.5) * tile - record.y
 	local d = math.sqrt(dx * dx + dy * dy)
 	if d <= record.mover.speed * ctx.dt then

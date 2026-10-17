@@ -33,8 +33,9 @@ local function newCharacter(id, player, x, y, config)
 end
 
 -- A villager record (docs/CONTEXT.md "Villager") at (x, y) px, standing
--- idle and empty-handed (load). It walks through building footprints
--- (mover.throughBuildings). `job` is the job it holds, nil while free.
+-- idle and empty-handed (load). Footprints are solid to it unless it
+-- operates a brick there (mover.enter, set by src/game/jobs/operate.lua).
+-- `job` is the job it holds, nil while free.
 function Session.newVillager(id, x, y, config)
 	local cfg = config.villagers
 	return {
@@ -42,9 +43,10 @@ function Session.newVillager(id, x, y, config)
 		x = x,
 		y = y,
 		size = cfg.size,
-		mover = { speed = cfg.speed, throughBuildings = true },
+		mover = { speed = cfg.speed },
 		walker = Walker.new(),
 		load = Load.new(config),
+		xp = {},
 		animator = Animator.new(),
 	}
 end

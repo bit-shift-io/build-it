@@ -17,7 +17,9 @@
 --   work.release(job)        -- (optional) frees what the job holds
 -- A step calls Operate.walkTo to move on and Operate.done when a cycle is
 -- over. The villager keeps whatever it carries when the job ends, and the
--- brick's `operator` is the job while it is held.
+-- brick's `operator` is the job while it is held. While it holds the job the
+-- villager may walk into the job's building (villager.mover.enter); every
+-- other footprint stays solid to it.
 local FunctionBrick = require("src.game.components.function_brick")
 local Walker = require("src.game.components.walker")
 local Storage = require("src.game.components.storage")
@@ -29,7 +31,9 @@ local World = require("src.game.world")
 local Operate = {}
 
 -- Ends `job`: the work releases what it holds, the brick and the villager
--- are free again.
+-- are free again. The villager lingers at the building (docs/CONTEXT.md
+-- "Linger spot"): `villager.linger = { task, anchor }`, kept until it takes
+-- another job (src/game/systems/job_system.lua clears it) or the building dies.
 function Operate.finish(job)
 	if job.dead then
 		return
@@ -41,6 +45,10 @@ function Operate.finish(job)
 	job.brick.operator = nil
 	if job.villager then
 		job.villager.job = nil
+		job.villager.mover.enter = nil
+		if not job.building.dead then
+			job.villager.linger = { task = { kind = "operate", brick = job.brick }, anchor = job.building }
+		end
 	end
 end
 
@@ -58,6 +66,8 @@ end
 -- A cycle is over: the next starts while the brick has work, else the job
 -- ends.
 function Operate.done(job, ctx)
+	local xp, key = job.villager.xp, job.brick.ability
+	xp[key] = (xp[key] or 0) + 1
 	if FunctionBrick.hasWork(job.brick, job.building, ctx) then
 		job.work.begin(job, ctx)
 	else
@@ -69,6 +79,7 @@ end
 function Operate.start(job, v, ctx)
 	job.villager = v
 	v.job = job
+	v.mover.enter = job.building
 	job.brick.operator = job
 	job.work.begin(job, ctx)
 	return not job.dead
@@ -82,6 +93,9 @@ function Operate.step(job, ctx)
 		return
 	end
 	if job.building.dead then
+		return Operate.finish(job)
+	end
+	if Walker.failed(job.villager.walker) then
 		return Operate.finish(job)
 	end
 	if not Walker.idle(job.villager.walker) then
@@ -191,7 +205,8 @@ end
 local Harvest = {}
 
 -- The tile beside node `n` the villager walks to: the free neighbour nearest
--- the villager; ties go to the first in row order. Nil when walled in.
+-- the villager, inside the job's own building or on no footprint at all; ties
+-- go to the first in row order. Nil when walled in.
 local function standTile(job, ctx, n)
 	local tile, v = ctx.config.tileSize, job.villager
 	local best, bestD
@@ -199,7 +214,7 @@ local function standTile(job, ctx, n)
 		for dx = -1, 1 do
 			local x, y = n.tileX + dx, n.tileY + dy
 			if (dx ~= 0 or dy ~= 0) and x >= 0 and y >= 0 and x < ctx.world.width and y < ctx.world.height
-				and not World.isBlocked(ctx.world, x, y, true)
+				and not World.isBlocked(ctx.world, x, y, job.building)
 			then
 				local d = (v.x - (x + 0.5) * tile) ^ 2 + (v.y - (y + 0.5) * tile) ^ 2
 				if not bestD or d < bestD then
@@ -246,7 +261,7 @@ function Harvest.begin(job, ctx)
 		return Harvest.deliver(job, ctx)
 	end
 	if not fb.node then
-		local n = FunctionBrick.nearestFree(job.building, fb.kind, ctx)
+		local n = FunctionBrick.nearestFree(job.building, fb.kind, ctx, fb.ability)
 		if not n then
 			if Load.empty(load) then
 				return Operate.finish(job)

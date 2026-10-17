@@ -3,6 +3,7 @@
 -- player input at all, villagers carry the woodcutter's logs to the
 -- sawmill's input, and the sawmill turns them into planks.
 local GameHarness = require("tests.support.game_harness")
+local FrameStepper = require("tests.support.frame_stepper")
 local LoveMock = require("tests.support.love_mock")
 local Fake = require("tests.support.fake_input")
 local Config = require("src.game.config")
@@ -117,4 +118,32 @@ test("a hauler ends its trip and walks to the gather area, off the port tile", f
 	local x, y = math.floor(v.x / TILE), math.floor(v.y / TILE)
 	assertTrue(World.isStandable(ctx.world, x, y), "settled on a standable tile")
 	assertEqual(facility, v.idle.facility)
+end)
+
+test("a building placed on settled villagers leaves them standing on standable tiles", function()
+	_G.love = LoveMock.new()
+	local game = GameHarness.startSession(World.new(30, 30), { storage = Config.stockpile })
+	local ctx = game.ctx
+	for i = 1, 4 do
+		table.insert(ctx.pools.villagers, Session.newVillager(i, (12 + i + 0.5) * TILE, 17.5 * TILE, Config))
+	end
+	Fake.runUntil(game, function()
+		for _, v in ipairs(ctx.pools.villagers) do
+			if not (v.idle and v.idle.phase == "settled") then
+				return false
+			end
+		end
+		return true
+	end, 60 * 30)
+
+	-- The mill's footprint lands on the first villager's tile.
+	local v1 = ctx.pools.villagers[1]
+	local mill = Placement.build(ctx, { design = SAWMILL, version = 1, facing = "N", tileX = math.floor(v1.x / TILE), tileY = math.floor(v1.y / TILE) })
+	assertTrue(World.buildingAt(ctx.world, math.floor(v1.x / TILE), math.floor(v1.y / TILE)) == mill, "fixture: the villager is under the footprint")
+
+	FrameStepper.step(game, FrameStepper.secondsToFrames(5))
+	for i, v in ipairs(ctx.pools.villagers) do
+		local x, y = math.floor(v.x / TILE), math.floor(v.y / TILE)
+		assertTrue(World.isStandable(ctx.world, x, y), "villager " .. i .. " stands on " .. x .. "," .. y)
+	end
 end)

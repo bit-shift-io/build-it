@@ -7,7 +7,7 @@
 --
 -- What gets done, in this order:
 --   1. A free villager already carrying a load takes it to the nearest
---      storage facility with room.
+--      storage facility with room (it keeps its linger).
 --   2. Every function brick with work (FunctionBrick.hasWork) and no
 --      operator gets one: the free villager nearest its tile takes its
 --      operator job (src/game/jobs/operate.lua), and keeps it while the
@@ -21,10 +21,14 @@
 --      buffer or storage facility (its storage or output buffers).
 --   5. What is left in output port buffers of buildings that are not
 --      storage facilities goes to the nearest storage facility with room.
--- Haulers use a storage facility's port tiles, never its footprint: they
--- drop off into its storage at the nearest input port tile and pick up
--- from it at the nearest output port tile, so a facility with no such port
--- is skipped.
+-- Haulers use a storage facility's port tiles, never its footprint, and a
+-- tile beside a construction site to deliver to it (nobody walks onto a
+-- footprint): they drop off into a facility's storage at the nearest input
+-- port tile and pick up from it at the nearest output port tile, so a
+-- facility with no such port is skipped.
+-- Free villagers are picked in tiers (`pick`): lingering on the job's own
+-- task (an operator and its brick, a haul route, any build), then free and not lingering, then
+-- lingering elsewhere, so an operator is the last choice for a haul.
 -- Pools are walked in order and items in name order (Storage.items), so the
 -- same world makes the same jobs. Pure -- no `love.*`.
 local Storage = require("src.game.components.storage")
@@ -34,6 +38,7 @@ local Haul = require("src.game.jobs.haul")
 local Operate = require("src.game.jobs.operate")
 local Build = require("src.game.jobs.build")
 local Site = require("src.game.buildings.site")
+local World = require("src.game.world")
 local FunctionBrick = require("src.game.components.function_brick")
 
 local JobSystem = {}
@@ -41,11 +46,6 @@ local JobSystem = {}
 -- Whole tiles between two tiles (diagonals count as one).
 local function tiles(ax, ay, bx, by)
 	return math.max(math.abs(ax - bx), math.abs(ay - by))
-end
-
--- The footprint tile of `b` nearest tile (x, y).
-local function nearestTile(b, x, y)
-	return math.max(b.tileX, math.min(x, b.tileX + b.width - 1)), math.max(b.tileY, math.min(y, b.tileY + b.depth - 1))
 end
 
 -- An endpoint at storage facility `b`'s storage, on the tile of its `kind`
@@ -80,19 +80,51 @@ local function freeVillagers(ctx)
 	return loaded, empty
 end
 
--- Takes the villager of `free` nearest tile (x, y)'s centre out of the
--- list; ties go to the first in pool order.
-local function takeNearest(free, x, y, tile)
+-- Whether lingering task `a` is the same kind of work as task `b`: an
+-- operator and its brick, a haul with its item, source building and
+-- destination building, any build.
+local function sameTask(a, b)
+	if a.kind ~= b.kind then
+		return false
+	elseif a.kind == "haul" then
+		return a.item == b.item and a.source == b.source and a.dest == b.dest
+	end
+	return a.brick == b.brick
+end
+
+-- Takes a villager out of `free` for the job at tile (x, y), in tiers: one
+-- lingering on `task` (nil for jobs with no task), then one free not
+-- lingering, then one lingering elsewhere. Within a tier the nearest to the
+-- tile's centre, less the experience bonus in the task's role (`exp` is
+-- config.villagers.experience); ties go to the first in pool order. Taking a villager
+-- clears its linger.
+local function pick(free, task, x, y, tile, exp)
 	local cx, cy = (x + 0.5) * tile, (y + 0.5) * tile
-	local best, bestD
+	local key = task and task.kind
+	if key == "operate" then
+		key = task.brick.ability
+	end
+	local best, bestTier, bestD
 	for i, v in ipairs(free) do
-		local d = (v.x - cx) ^ 2 + (v.y - cy) ^ 2
-		if not bestD or d < bestD then
-			best, bestD = i, d
+		local l = v.linger
+		local tier = 2
+		if l then
+			tier = (task and sameTask(l.task, task)) and 1 or 3
+		end
+		local d = math.sqrt((v.x - cx) ^ 2 + (v.y - cy) ^ 2) / tile
+		if exp and key then
+			d = d - math.min((v.xp or {})[key] or 0, exp.cap) / exp.cap * exp.bonusTiles
+		end
+		if not best or tier < bestTier or (tier == bestTier and d < bestD) then
+			best, bestTier, bestD = i, tier, d
 		end
 	end
-	return table.remove(free, best)
+	local v = table.remove(free, best)
+	v.linger = nil
+	return v
 end
+
+JobSystem.pick = pick
 
 local function open(ctx, job, v)
 	table.insert(ctx.pools.jobs, job)
@@ -179,9 +211,13 @@ local function storeLoads(ctx, loaded)
 	end
 end
 
+local function haulTask(item, source, dest)
+	return { kind = "haul", item = item, source = source.building, dest = dest.building }
+end
+
 local function haul(ctx, free, item, source, dest)
 	local n = math.min(Storage.available(source.store, item), Storage.room(dest.store), ctx.config.villagers.carryLimit)
-	local v = takeNearest(free, source.x, source.y, ctx.config.tileSize)
+	local v = pick(free, haulTask(item, source, dest), source.x, source.y, ctx.config.tileSize, ctx.config.villagers.experience)
 	open(ctx, Haul.new(item, n, source, dest), v)
 end
 
@@ -192,7 +228,7 @@ local function staff(ctx, free)
 				return
 			end
 			if not b.dead and not fb.operator and FunctionBrick.hasWork(fb, b, ctx) then
-				local v = takeNearest(free, fb.tileX, fb.tileY, ctx.config.tileSize)
+				local v = pick(free, { kind = "operate", brick = fb }, fb.tileX, fb.tileY, ctx.config.tileSize, ctx.config.villagers.experience)
 				local job = Operate.new(b, fb)
 				table.insert(ctx.pools.jobs, job)
 				Operate.start(job, v, ctx)
@@ -230,7 +266,7 @@ local function buildSites(ctx, free)
 			return
 		end
 		if not site.dead and not site.builder and Site.supplied(site) and not Site.built(site, ctx.config) then
-			local v = takeNearest(free, site.tileX, site.tileY, ctx.config.tileSize)
+			local v = pick(free, { kind = "build" }, site.tileX, site.tileY, ctx.config.tileSize, ctx.config.villagers.experience)
 			local job = Build.new(site)
 			table.insert(ctx.pools.jobs, job)
 			Build.start(job, v, ctx)
@@ -253,9 +289,12 @@ local function supplySites(ctx, free)
 				if not source then
 					break
 				end
-				local tx, ty = nearestTile(site, source.x, source.y)
+				local tx, ty = World.tileBeside(ctx.world, site, source.x, source.y)
+				if not tx then
+					break
+				end
 				local dest = { building = site, store = site.delivered, x = tx, y = ty }
-				open(ctx, Haul.new(claim.item, n, source, dest), takeNearest(free, source.x, source.y, ctx.config.tileSize))
+				open(ctx, Haul.new(claim.item, n, source, dest), pick(free, haulTask(claim.item, source, dest), source.x, source.y, ctx.config.tileSize, ctx.config.villagers.experience))
 			end
 		end
 	end

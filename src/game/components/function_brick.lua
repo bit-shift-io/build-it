@@ -70,10 +70,12 @@ function FunctionBrick.cycle(traits, config, base)
 	return (base or p.harvestCycle) / math.max(p.minSpeed, 1 + traits.productivity * p.productivityStep)
 end
 
--- How many tiles from its footprint a building with `traits` reaches.
-function FunctionBrick.reach(traits, config)
+-- How many tiles from its footprint a building with `traits` reaches. An
+-- `ability` listed in config.production.abilityReach replaces reachBase.
+function FunctionBrick.reach(traits, config, ability)
 	local p = config.production
-	return p.reachBase + math.floor(traits.reach * p.reachPerPoint)
+	local base = ability and p.abilityReach[ability] or p.reachBase
+	return base + math.floor(traits.reach * p.reachPerPoint)
 end
 
 -- Whole tiles from tile (x, y) to the nearest footprint tile of `building`.
@@ -85,8 +87,8 @@ end
 
 -- The nearest free, harvestable node of `kind` within reach; ties go to
 -- the first in row order (north to south, west to east).
-function FunctionBrick.nearestFree(building, kind, ctx)
-	local r = FunctionBrick.reach(building.traits, ctx.config)
+function FunctionBrick.nearestFree(building, kind, ctx, ability)
+	local r = FunctionBrick.reach(building.traits, ctx.config, ability)
 	local best, bestD
 	for y = building.tileY - r, building.tileY + building.depth - 1 + r do
 		for x = building.tileX - r, building.tileX + building.width - 1 + r do
@@ -117,7 +119,7 @@ end
 -- reach. Others run by themselves, so never.
 function FunctionBrick.hasWork(fb, building, ctx)
 	if fb.kind then
-		local node = fb.node and Harvestable.canHarvest(fb.node) and fb.node or FunctionBrick.nearestFree(building, fb.kind, ctx)
+		local node = fb.node and Harvestable.canHarvest(fb.node) and fb.node or FunctionBrick.nearestFree(building, fb.kind, ctx, fb.ability)
 		if not node then
 			return false
 		end

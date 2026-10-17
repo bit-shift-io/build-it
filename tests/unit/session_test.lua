@@ -93,7 +93,7 @@ test("Session.newGame spawns config.villagers.count idle villagers on open tiles
 		assertTrue(x >= b.tileX - radius and x < b.tileX + b.width + radius, "villager " .. i .. " too far east-west")
 		assertTrue(y >= b.tileY - radius and y < b.tileY + b.depth + radius, "villager " .. i .. " too far north-south")
 		assertTrue(Walker.idle(v.walker))
-		assertTrue(v.mover.throughBuildings)
+		assertEqual(nil, v.mover.enter, "a free villager may enter no footprint")
 	end
 end)
 
@@ -106,12 +106,12 @@ test("Session.newGame spawns the same villagers for the same seed", function()
 	end
 end)
 
-test("Session.step walks a villager sent across the map to its target, through the facility", function()
+test("Session.step walks a villager sent across the map to its target, round the facility", function()
 	local ctx = Session.newGame(WorldGen.generate(Config, 1), Config, 1)
 	local b = ctx.pools.buildings[1]
 	local v = ctx.pools.villagers[1]
 	local tile = Config.tileSize
-	-- The facility's far side from the villager, so the straight line runs through it.
+	-- The facility's far side from the villager, so the straight line would run through it.
 	local tx = b.tileX + b.width + 1
 	local ty = b.tileY
 	assertTrue(Walker.goTo(v, ctx, b.tileX - 2, b.tileY), "route to the west side")
@@ -127,7 +127,7 @@ test("Session.step walks a villager sent across the map to its target, through t
 			break
 		end
 	end
-	assertTrue(crossed, "expected the villager to walk through the footprint")
+	assertFalse(crossed, "expected the villager to walk round the footprint")
 	assertNear((tx + 0.5) * tile, v.x)
 	assertNear((ty + 0.5) * tile, v.y)
 	assertEqual(1, v.animator.frame, "idle once there")
