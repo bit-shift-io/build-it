@@ -22,6 +22,7 @@ local defaultTestFiles = {
 	"tests/integration/eating_test.lua",
 	"tests/integration/sleep_test.lua",
 	"tests/integration/port_facing_test.lua",
+	"tests/integration/pause_test.lua",
 }
 
 local tests = {}

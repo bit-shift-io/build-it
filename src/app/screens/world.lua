@@ -55,6 +55,9 @@ function WorldScreen.new(ctx, library)
 		pendingPlace = nil,
 		-- Why the last placement was refused, or nil.
 		message = nil,
+		-- True while P has paused the session. Hover, placement and the
+		-- camera zoom keep working; only the simulation stops.
+		paused = false,
 	}
 end
 
@@ -149,7 +152,9 @@ local function stopPlacing(screen)
 end
 
 function WorldScreen.keypressed(screen, key)
-	if key == "1" then
+	if key == "p" and not screen.picker then
+		screen.paused = not screen.paused
+	elseif key == "1" then
 		openPicker(screen, key)
 	elseif screen.picker then
 		if key == "backspace" then
@@ -261,8 +266,12 @@ function WorldScreen.mousereleased(screen, _, _, button)
 	end
 end
 
--- One fixed step: read devices, step the session, follow the player.
+-- One fixed step: read devices, step the session, follow the player. Does
+-- nothing while paused.
 function WorldScreen.update(screen, dt)
+	if screen.paused then
+		return
+	end
 	Input.updateIntents(screen.ctx, pointerTile(screen), screen.pendingPlace, WorldScreen.modal(screen))
 	screen.pendingPlace = nil
 	screen.dropText = nil
