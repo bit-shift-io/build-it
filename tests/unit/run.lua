@@ -4,6 +4,7 @@
 -- Register every new test file below or it never runs.
 local defaultTestFiles = {
 	"tests/unit/rng_test.lua",
+	"tests/unit/picker_test.lua",
 	"tests/unit/vec2_test.lua",
 	"tests/unit/mover_test.lua",
 	"tests/unit/session_test.lua",
@@ -56,6 +57,8 @@ local defaultTestFiles = {
 	"tests/unit/eat_test.lua",
 	"tests/unit/feed_test.lua",
 	"tests/unit/sleep_test.lua",
+	"tests/unit/hud_test.lua",
+	"tests/unit/character_system_test.lua",
 }
 
 local tests = {}

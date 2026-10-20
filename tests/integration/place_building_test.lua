@@ -59,6 +59,7 @@ test("picking a design and clicking places a construction site, its cost reserve
 	local planks = stored(game, "plank")
 
 	Fake.tap(game, "1")
+	Fake.tap(game, "return")
 	local sx, sy = pointAt(game, c, 12, 9)
 	Fake.click(game, 1, sx, sy)
 
@@ -116,6 +117,7 @@ test("villagers haul a placed woodcutter's cost from storage and build it, then 
 
 	-- Footprint (12..13, 7); the ghost centres on the pointer.
 	Fake.tap(game, "1")
+	Fake.tap(game, "return")
 	Fake.click(game, 1, 640 + (13 * TILE - c.x), 360 + (7.5 * TILE - c.y))
 	assert(game.ctx.pools.sites[1], "a site")
 	local hauled, built = false, false
@@ -145,6 +147,7 @@ end)
 test("the character cannot walk into a placed building", function()
 	local game, input, c = launch()
 	Fake.tap(game, "1")
+	Fake.tap(game, "return")
 	Fake.click(game, 1, pointAt(game, c, 12, 9)) -- footprint 12..13 x 9..10
 
 	Fake.holdFor(game, input, "d", 1)
@@ -155,6 +158,7 @@ end)
 test("R turns the ghost to the next facing before placing", function()
 	local game, _, c, world = launch()
 	Fake.tap(game, "1")
+	Fake.tap(game, "return")
 	Fake.tap(game, "r")
 	Fake.tap(game, "r")
 	assertEqual("S", game.flow.world.placing.facing)
@@ -179,6 +183,7 @@ test("an invalid placement is refused, says why and costs nothing", function()
 	World.setTerrain(world, 13, 10, "water")
 	local planks = stored(game, "plank")
 	Fake.tap(game, "1")
+	Fake.tap(game, "return")
 	local sx, sy = pointAt(game, c, 12, 9)
 
 	local screen = game.flow.world
@@ -203,11 +208,13 @@ test("Esc or a right click leaves placement mode, and clicks harvest again", fun
 	local game, _, c, world = launch()
 	World.addNode(world, { id = 1, kind = "tree", tileX = 10, tileY = 9, variant = 1, stage = 1, amount = Config.nodes.tree.amount })
 	Fake.tap(game, "1")
+	Fake.tap(game, "return")
 	Fake.tap(game, "escape")
 	assertEqual(nil, game.flow.world.placing)
 	assertEqual("world", game.flow.screen)
 
 	Fake.tap(game, "1")
+	Fake.tap(game, "return")
 	local sx, sy = pointAt(game, c, 12, 9)
 	Fake.click(game, 2, sx, sy)
 	assertEqual(nil, game.flow.world.placing)
@@ -228,6 +235,7 @@ test("a click while placing never harvests", function()
 	local game, _, c, world = launch()
 	World.addNode(world, { id = 1, kind = "tree", tileX = 10, tileY = 9, variant = 1, stage = 1, amount = Config.nodes.tree.amount })
 	Fake.tap(game, "1")
+	Fake.tap(game, "return")
 	local tx, ty = screenOf(c, 10.5, 9.5)
 	game:mousemoved(tx, ty, 0, 0)
 	game:mousepressed(tx, ty, 1)
@@ -259,11 +267,12 @@ local function launchWith(designs)
 	return game, game.ctx.pools.characters[1]
 end
 
-test("key 1 places the first design with a live version", function()
+test("key 1 then Enter places the first design with a live version", function()
 	local game = launchWith({ design("d1", "A", 1), design("d2", "B", 1), design("d3", "C", 1) })
 	local lib = game.flow.library
 	Library.deleteVersion(lib, "d1", 1)
 	Fake.tap(game, "1")
+	Fake.tap(game, "return")
 	assertEqual("d2", game.flow.world.placing.design.id)
 end)
 
@@ -271,12 +280,14 @@ test("picking a design places its newest live version", function()
 	local game = launchWith({ design("d1", "A", 3) })
 	Library.deleteVersion(game.flow.library, "d1", 3)
 	Fake.tap(game, "1")
+	Fake.tap(game, "return")
 	assertEqual(2, game.flow.world.placing.version)
 end)
 
 test("a building placed from a deleted version survives save and load", function()
 	local game, c = launchWith({ design("d1", "A", 2) })
 	Fake.tap(game, "1")
+	Fake.tap(game, "return")
 	local sx, sy = pointAt(game, c, 12, 9)
 	Fake.click(game, 1, sx, sy)
 	GameHarness.completeSites(game)
@@ -288,4 +299,98 @@ test("a building placed from a deleted version survives save and load", function
 	assertEqual(2, #ctx.pools.buildings)
 	assertEqual(2, ctx.pools.buildings[2].version)
 	assertEqual(text, SaveCodec.encode(ctx))
+end)
+
+local PickerRender = require("src.app.render.picker")
+local Picker = require("src.app.picker")
+
+local function rowCentre(i)
+	local row = PickerRender.row(1280, 720, i)
+	return row.x + row.w / 2, row.y + row.h / 2
+end
+
+test("right-click, Build, type a name, click the row: placing that design", function()
+	local game = launchWith({ design("d1", "Hall", 1), design("d2", "Mill", 1), design("d3", "Hut", 1) })
+	local screen = game.flow.world
+	Fake.click(game, 2, 300, 200)
+	assertTrue(screen.menu ~= nil, "menu opened")
+	Fake.click(game, 1, 310, 210)
+	assertEqual(nil, screen.menu)
+	assertTrue(screen.picker ~= nil, "picker opened")
+	Fake.typeText(game, "MIL")
+	assertEqual(1, #Picker.matches(screen.picker))
+	Fake.click(game, 1, rowCentre(1))
+	assertEqual(nil, screen.picker)
+	assertEqual("d2", screen.placing.design.id)
+end)
+
+test("a right-click outside the menu closes it", function()
+	local game = launchWith({ design("d1", "Hall", 1) })
+	local screen = game.flow.world
+	Fake.click(game, 2, 300, 200)
+	Fake.click(game, 1, 900, 600)
+	assertEqual(nil, screen.menu)
+	assertEqual(nil, screen.picker)
+end)
+
+test("key 1 opens the picker without typing 1, and Esc or right-click closes it", function()
+	local game = launchWith({ design("d1", "Hall", 1) })
+	local screen = game.flow.world
+	game:keypressed("1")
+	game:textinput("1")
+	Fake.typeText(game, "1")
+	assertEqual("1", screen.picker.query, "only the second 1 is typed")
+	Fake.tap(game, "backspace")
+	assertEqual("", screen.picker.query)
+	Fake.tap(game, "escape")
+	assertEqual(nil, screen.picker)
+	Fake.tap(game, "1")
+	Fake.click(game, 2, 100, 100)
+	assertEqual(nil, screen.picker)
+	assertEqual(nil, screen.menu)
+end)
+
+test("typing e, w, a, s, d in the search moves no one and harvests nothing", function()
+	local game, c = launchWith({ design("d1", "Hall", 1) })
+	World.addNode(game.ctx.world, { id = 1, kind = "tree", tileX = 10, tileY = 10, variant = 1, stage = 1, amount = Config.nodes.tree.amount })
+	local screen = game.flow.world
+	local x, y = c.x, c.y
+	Fake.tap(game, "1")
+	local input = Fake.FakeInput.new()
+	for _, key in ipairs({ "e", "w", "a", "s", "d" }) do
+		input:press(key)
+		game:keypressed(key)
+		game:textinput(key)
+		Fake.holdFor(game, input, key, 0.5)
+	end
+	assertEqual("ewasd", screen.picker.query)
+	assertEqual(x, c.x)
+	assertEqual(y, c.y)
+	assertEqual(Config.nodes.tree.amount, game.ctx.pools.nodes[1].amount)
+	assertEqual("world", game.flow.screen, "b is typed, not the builder")
+end)
+
+test("the wheel scrolls the picker, not the camera, and reaches the 15th design", function()
+	local designs = {}
+	for i = 1, 15 do
+		designs[i] = design("d" .. i, "Design " .. i, 1)
+	end
+	local game = launchWith(designs)
+	local screen = game.flow.world
+	local zoom = screen.camera.zoom
+	Fake.tap(game, "1")
+	game:wheelmoved(0, -20)
+	assertEqual(zoom, screen.camera.zoom)
+	assertEqual(3, screen.picker.scroll)
+	Fake.click(game, 1, rowCentre(Picker.ROWS))
+	assertEqual("d15", screen.placing.design.id)
+end)
+
+test("the hover card hides while the menu or picker is open", function()
+	local game = launchWith({ design("d1", "Hall", 1) })
+	local screen = game.flow.world
+	local c = game.ctx.pools.characters[1]
+	game:mousemoved(640, 360, 0, 0)
+	Fake.click(game, 2, 640, 360)
+	assertEqual(nil, WorldScreen.hovered(screen))
 end)

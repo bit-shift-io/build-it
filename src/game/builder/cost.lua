@@ -27,4 +27,16 @@ function Cost.of(version, config)
 	return cost
 end
 
+-- The items of `cost` that `totals` ({ [item] = n }) can't cover:
+-- { [item] = true }.
+function Cost.short(cost, totals)
+	local short = {}
+	for item, n in pairs(cost) do
+		if (totals[item] or 0) < n then
+			short[item] = true
+		end
+	end
+	return short
+end
+
 return Cost

@@ -55,6 +55,7 @@ test("a woodcutter beside a forest is run by a villager and logs reach storage w
 
 	-- Footprint (12..13, 7); the ghost centres on the pointer.
 	Fake.tap(game, "1")
+	Fake.tap(game, "return")
 	Fake.click(game, 1, 640 + (13 * TILE - c.x), 360 + (7.5 * TILE - c.y))
 	GameHarness.completeSites(game)
 	local b = game.ctx.pools.buildings[2] -- after the storage facility
@@ -75,6 +76,7 @@ end)
 test("a woodcutter with no villager harvests nothing", function()
 	local game, _, c = launch()
 	Fake.tap(game, "1")
+	Fake.tap(game, "return")
 	Fake.click(game, 1, 640 + (13 * TILE - c.x), 360 + (7.5 * TILE - c.y))
 	GameHarness.completeSites(game)
 	local b = game.ctx.pools.buildings[2]

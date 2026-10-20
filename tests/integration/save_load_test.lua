@@ -54,6 +54,7 @@ local function play()
 	local input = Fake.FakeInput.new()
 	local c = game.ctx.pools.characters[1]
 	Fake.tap(game, "1")
+	Fake.tap(game, "return")
 	Fake.click(game, 1, 640 + (13 * TILE - c.x), 360 + (7.5 * TILE - c.y))
 	GameHarness.completeSites(game)
 	assert(game.ctx.pools.buildings[2], "fixture: the woodcutter was placed")

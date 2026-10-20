@@ -102,8 +102,12 @@ Domain terms for Build-it. Code, docs and conversation use these words with thes
 - **Boundary:** Productivity shortens cycles. Capacity grows buffers and storage. Reach sets the harvest radius and aura radius. Health has no effect yet.
 
 ## Aura
-- **Definition:** A building effect on the character or a villager while within the building's reach: walk speed, hand-harvest rate.
-- **Boundary:** Auras from several buildings stack additively. They never affect other buildings.
+- **Definition:** A building effect on the character or a villager while within the building's reach: walk speed and work rate.
+- **Boundary:** Auras from several buildings stack additively. Work rate speeds the player's hand-harvesting and fishing, and every villager work cycle: operator cycles and building. It never speeds eating or sleeping. Auras never affect other buildings.
+
+## Faced tile
+- **Definition:** The tile next to the character in its facing direction, diagonals included.
+- **Boundary:** E acts on it: a port tile delivers or collects, water catches fish. The tile underfoot wins over it.
 
 ## Design
 - **Definition:** A named, player-made building plan: a baseplate and its bricks.
@@ -120,6 +124,10 @@ Domain terms for Build-it. Code, docs and conversation use these words with thes
 ## Building
 - **Definition:** A placed instance of a design version in the world, with a facing, buffers and storage contents.
 - **Boundary:** It starts as a construction site and works once villagers build it. It can't be edited in place.
+
+## Building picker
+- **Definition:** The world-screen list of every live design, with thumbnail, name and cost, that starts placement.
+- **Boundary:** Opened from the context menu's Build entry or the 1 key. Scrolls and filters by name. It never edits designs; the builder does.
 
 ## Builder
 - **Definition:** The 3D screen where the player designs and saves designs.

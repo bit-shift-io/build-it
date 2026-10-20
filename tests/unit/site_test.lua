@@ -247,3 +247,23 @@ test("claimed items in a depot's buffers stay there: not stored, not collected",
 	assertEqual(0, Inventory.count(inv, "plank"), "the player can't take claimed stock")
 	assertEqual(1, output.buffer.counts.plank)
 end)
+
+test("a builder's work rate aura speeds up build progress; none leaves it unchanged", function()
+	local function gain(rate)
+		local ctx, f = newSession(COST.plank)
+		f.aura.harvestRate = rate
+		local site = assert(Placement.place(ctx, request(7, 10)))
+		addVillager(ctx, 8, 8)
+		assertTrue(stepUntil(ctx, function()
+			return site.progress > 0
+		end, 60 * 120), "building starts")
+		local v = jobOf(ctx, "build").villager
+		assertEqual(rate, v.aura.harvestRate, "the builder stands in the facility's reach")
+		local before = site.progress
+		Session.step(ctx)
+		return site.progress - before, v
+	end
+	local base = gain(0)
+	assertNear(1 / 60, base, 1e-9)
+	assertNear(2 / 60, gain(1), 1e-9)
+end)

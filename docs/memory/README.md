@@ -11,3 +11,4 @@ Situational facts: true only when touching a particular area. One fact per file.
 - [e2e-isolate-save-dir.md](e2e-isolate-save-dir.md) — e2e shares the player's real save dir; give designs/save/prop-cache test-only names and clear them first
 - [design-id-reuse.md](design-id-reuse.md) — losing the newest design file frees its id; caches keyed by design id+version can collide with world-save snapshots (unfixed)
 - [library-designs-shared-with-world.md](library-designs-shared-with-world.md) — buildings placed this session hold the library's design tables; never remove a version from `design.versions` mid-session
+- [world-screen-modal-input.md](world-screen-modal-input.md) — world-screen menus and text boxes must drop the opening key's textinput and suppress polled WASD/E/F intents

@@ -13,6 +13,7 @@ local Inventory = require("src.game.components.inventory")
 local Storage = require("src.game.components.storage")
 local StorageFacility = require("src.game.components.storage_facility")
 local Eat = require("src.game.jobs.eat")
+local Character = require("src.game.props.character")
 
 local CharacterSystem = {}
 
@@ -52,25 +53,32 @@ local function harvestTarget(c, intent, ctx)
 	return best
 end
 
--- The output port whose tile character `c` stands on, or nil.
-function CharacterSystem.outputPortUnder(c, ctx)
+-- The tile next to character `c` in its facing (8 directions, diagonals
+-- included): docs/CONTEXT.md "Faced tile".
+function CharacterSystem.facedTile(c, ctx)
 	local tile = ctx.config.tileSize
-	local port = World.portAt(ctx.world, math.floor(c.x / tile), math.floor(c.y / tile))
-	return port and port.kind == "output" and port or nil
+	local d = Character.DIRECTIONS[c.animator.facing]
+	return math.floor(c.x / tile) + d.x, math.floor(c.y / tile) + d.y
 end
 
--- The port (either kind) whose tile character `c` stands on, or nil.
-local function portUnder(c, ctx)
+-- The port (either kind) E works on: the one on the tile character `c`
+-- stands on, else the one on its faced tile, else nil.
+function CharacterSystem.portInUse(c, ctx)
 	local tile = ctx.config.tileSize
-	return World.portAt(ctx.world, math.floor(c.x / tile), math.floor(c.y / tile))
+	local under = World.portAt(ctx.world, math.floor(c.x / tile), math.floor(c.y / tile))
+	if under then
+		return under
+	end
+	return World.portAt(ctx.world, CharacterSystem.facedTile(c, ctx))
 end
 
--- While intent.harvest is set: on an output port tile, collects its buffer;
--- on an input port tile, delivers what the building consumes;
--- elsewhere hand-harvests, progress resetting when the work stops or the
+-- While intent.harvest is set: at an output port (underfoot, else faced),
+-- collects its buffer; at an input port, delivers what the building consumes;
+-- elsewhere fishes the faced water tile (unless a node was clicked) or
+-- hand-harvests, progress resetting when the work stops or the
 -- target changes.
 local function harvest(c, intent, ctx, aura)
-	local port = intent.harvest and portUnder(c, ctx)
+	local port = intent.harvest and CharacterSystem.portInUse(c, ctx)
 	if port and port.kind == "output" then
 		Ports.collect(port, c.inventory)
 	elseif port and port.kind == "input" then
@@ -78,17 +86,44 @@ local function harvest(c, intent, ctx, aura)
 	else
 		port = nil
 	end
-	local node = intent.harvest and not port and harvestTarget(c, intent, ctx)
-	if not node then
+	if not intent.harvest or port then
 		c.harvester.progress = 0
 		c.harvester.node = nil
 		return
 	end
-	if c.harvester.node ~= node then
-		c.harvester.progress = 0
-		c.harvester.node = node
+	local node, water
+	if intent.target then
+		node = harvestTarget(c, intent, ctx)
+	else
+		local fx, fy = CharacterSystem.facedTile(c, ctx)
+		if World.terrainAt(ctx.world, fx, fy) == "water" then
+			water = fx .. "," .. fy
+		else
+			node = harvestTarget(c, intent, ctx)
+		end
 	end
-	Harvestable.work(c.harvester, node, ctx.dt * (1 + aura.harvestRate), c.inventory, ctx.config)
+	local key = node or water
+	if not key then
+		c.harvester.progress = 0
+		c.harvester.node = nil
+		return
+	end
+	if c.harvester.node ~= key then
+		c.harvester.progress = 0
+		c.harvester.node = key
+	end
+	local dt = ctx.dt * (1 + aura.harvestRate)
+	if node then
+		Harvestable.work(c.harvester, node, dt, c.inventory, ctx.config)
+		return
+	end
+	-- Water never runs out: one catch per hand cycle.
+	local cycle = ctx.config.harvest.handCycle
+	c.harvester.progress = c.harvester.progress + dt
+	while c.harvester.progress >= cycle do
+		c.harvester.progress = c.harvester.progress - cycle
+		Inventory.add(c.inventory, ctx.config.production.fishers.fishing, 1)
+	end
 end
 
 -- Whole tiles from (x, y) in px to the footprint of building `b`.

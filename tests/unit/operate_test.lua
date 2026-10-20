@@ -284,7 +284,7 @@ local ANGLER = { id = "d9", name = "Angler", versions = { { width = 2, depth = 1
 } } } }
 
 local function angler(waterX, waterY)
-	local ctx = Session.new(World.new(20, 20), Config, 1)
+	local ctx = Session.new(World.new(40, 40), Config, 1)
 	ctx.dt = STEP
 	if waterX then
 		World.setTerrain(ctx.world, waterX, waterY, "water")
@@ -409,3 +409,62 @@ test("a reserved deer stops wandering; one that leaves reach is released and re-
 	assertTrue(first.hunter == nil, "old deer released")
 	assertEqual(was, first.x, "the far deer never wandered")
 end)
+
+-- Auras (docs/CONTEXT.md "Aura"): the operating villager's harvestRate scales
+-- every work cycle's progress. Walks to `stage`, then returns the brick's
+-- progress gained by one more step with the villager's aura at `rate`.
+local function progressGain(ctx, b, v, stage, rate)
+	local job = Operate.new(b, b.functionBricks[1])
+	assertTrue(Operate.start(job, v, ctx))
+	v.aura = { walkSpeed = 0, harvestRate = rate }
+	run(ctx, job, v, 60 * 60, function()
+		return job.stage == stage and Walker.idle(v.walker)
+	end)
+	assertEqual(stage, job.stage)
+	local fb = b.functionBricks[1]
+	local before = fb.progress
+	Walker.step(v, ctx)
+	Operate.step(job, ctx)
+	return fb.progress - before
+end
+
+local PLANTER = { id = "d11", name = "Forester", versions = { { width = 2, depth = 1, bricks = {
+	brick("planter", 0, 0, { width = 4, depth = 2, ability = "planter" }),
+} } } }
+
+local AURA_CASES = {
+	{ "convert", "working", function()
+		local ctx, b, v = setup()
+		return ctx, b, v
+	end },
+	{ "harvest", "harvesting", function()
+		local ctx, b, _, v = cutterWithTree()
+		return ctx, b, v
+	end },
+	{ "plant", "seeding", function()
+		local ctx = Session.new(World.new(20, 20), Config, 1)
+		ctx.dt = STEP
+		local b = Placement.build(ctx, { design = PLANTER, version = 1, facing = "N", tileX = 8, tileY = 8 })
+		return ctx, b, Session.newVillager(1, 3.5 * TILE, 3.5 * TILE, Config)
+	end },
+	{ "fish", "fishing", function()
+		local ctx, b = angler(13, 9)
+		return ctx, b, Session.newVillager(1, 3.5 * TILE, 3.5 * TILE, Config)
+	end },
+	{ "hunt", "killing", function()
+		local ctx, b = huntRange({ { 13, 9 } })
+		return ctx, b, Session.newVillager(1, 3.5 * TILE, 3.5 * TILE, Config)
+	end },
+}
+
+for _, case in ipairs(AURA_CASES) do
+	local name, stage, make = case[1], case[2], case[3]
+	test("a " .. name .. " operator's cycle progresses faster by the villager's work rate aura", function()
+		local ctx, b, v = make()
+		local base = progressGain(ctx, b, v, stage, 0)
+		assertNear(STEP, base, 1e-9)
+		local ctx2, b2, v2 = make()
+		local boosted = progressGain(ctx2, b2, v2, stage, 1)
+		assertNear(2 * STEP, boosted, 1e-9)
+	end)
+end

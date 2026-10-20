@@ -2,11 +2,12 @@
 -- counts, the storage totals across every storage facility below them
 -- (what placement may still spend, with what construction sites reserved
 -- beside it),
--- what E does on an output port tile, the aura the player stands in, and
+-- what E does on the port underfoot or faced, the aura the player stands in, and
 -- "Hungry" or "Starving" while it applies (F eats).
 local Inventory = require("src.game.components.inventory")
 local Aura = require("src.game.components.aura")
 local Storage = require("src.game.components.storage")
+local Ports = require("src.game.components.ports")
 
 local Hud = {}
 
@@ -24,45 +25,80 @@ local function panel(lines, top, width)
 	return top + #lines * LINE + 12
 end
 
+-- Pure line builders (no love.*): only non-zero items are listed.
+function Hud.inventoryLines(inventory)
+	local lines = {}
+	for _, item in ipairs(ITEMS) do
+		local n = Inventory.count(inventory, item)
+		if n > 0 then
+			table.insert(lines, item .. ": " .. n)
+		end
+	end
+	return lines
+end
+
+function Hud.storageLines(stock, reserved, fill)
+	local lines = { fill and ("Storage " .. fill .. "%") or "Storage" }
+	for _, item in ipairs(ITEMS) do
+		local n = stock[item] or 0
+		local held = reserved and reserved[item] or 0
+		if n > 0 or held > 0 then
+			local line = item .. ": " .. n
+			if held > 0 then
+				line = line .. " (" .. held .. " reserved)"
+			end
+			table.insert(lines, line)
+		end
+	end
+	return lines
+end
+
+-- The hint line for the port E works on. An input port offers delivery when
+-- the inventory holds something its building accepts (food: config.food).
+function Hud.portHint(port, inventory, food)
+	if port.kind == "input" then
+		for item, n in pairs(inventory.counts) do
+			if n > 0 and Ports.accepts(port.building, item, food) then
+				return "E: deliver"
+			end
+		end
+		return "Input port: nothing accepted"
+	end
+	local n = Storage.total(port.buffer)
+	return n > 0 and ("E: collect " .. n .. " items") or "Output port: empty"
+end
+
 -- inventory: the player's. stock: the storage totals ({ [item] = n },
--- StorageFacility.totals). port: the output port the player stands on, or
+-- StorageFacility.totals). port: the port E works on (CharacterSystem.portInUse), or
 -- nil. aura: the aura at the player. reserved: what construction sites
 -- claimed ({ [item] = n }, StorageFacility.claimed), or nil. fill: the
 -- colony-wide storage percent (StorageFacility.totalFill), or nil. hunger:
--- the player's warning (Status.hunger), or nil.
-function Hud.draw(inventory, stock, port, aura, reserved, fill, hunger)
-	local lines = {}
-	for _, item in ipairs(ITEMS) do
-		table.insert(lines, item .. ": " .. Inventory.count(inventory, item))
+-- the player's warning (Status.hunger), or nil. food: config.food.
+function Hud.draw(inventory, stock, port, aura, reserved, fill, hunger, food)
+	local lines = Hud.inventoryLines(inventory)
+	local top = MARGIN
+	if #lines > 0 then
+		top = panel(lines, top, 110)
 	end
-	local top = panel(lines, MARGIN, 110)
-	lines = { fill and ("Storage " .. fill .. "%") or "Storage" }
+	lines = Hud.storageLines(stock, reserved, fill)
 	local width = 110
-	for _, item in ipairs(ITEMS) do
-		local line = item .. ": " .. (stock[item] or 0)
-		local held = reserved and reserved[item] or 0
-		if held > 0 then
-			line = line .. " (" .. held .. " reserved)"
+	for _, line in ipairs(lines) do
+		if line:find("reserved", 1, true) then
 			width = 200
 		end
-		table.insert(lines, line)
 	end
 	top = panel(lines, top, width)
 	if hunger then
 		top = panel({ hunger .. " (F: eat)" }, top, 130)
 	end
 	if port then
-		local n = Storage.total(port.buffer)
-		top = panel({ n > 0 and ("E: collect " .. n .. " items") or "Output port: empty" }, top, 160)
+		top = panel({ Hud.portHint(port, inventory, food) }, top, 160)
 	end
-	if aura and (aura.walkSpeed > 0 or aura.harvestRate > 0) then
-		lines = {}
-		for _, name in ipairs(Aura.NAMES) do
-			if aura[name] > 0 then
-				table.insert(lines, string.format("%s +%d%%", Aura.LABELS[name], math.floor(aura[name] * 100 + 0.5)))
-			end
+	if aura then
+		lines = Aura.lines(aura)
+		if #lines > 0 then
+			panel(lines, top, 160)
 		end
-		panel(lines, top, 160)
 	end
 end
 

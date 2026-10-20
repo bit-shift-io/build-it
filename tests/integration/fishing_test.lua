@@ -54,6 +54,7 @@ test("a fishing brick's operator fishes from the shore and hauls fish to storage
 	table.insert(game.ctx.pools.villagers, v)
 
 	Fake.tap(game, "1")
+	Fake.tap(game, "return")
 	Fake.click(game, 1, 640 + (13 * TILE - c.x), 360 + (7.5 * TILE - c.y))
 	GameHarness.completeSites(game)
 	assert(game.ctx.pools.buildings[2], "the fishing brick was placed")
@@ -72,4 +73,15 @@ test("a fishing brick's operator fishes from the shore and hauls fish to storage
 	end, 60 * 600)
 	assertTrue((facility.storage.counts.fish or 0) >= target, "fish reached storage")
 	assertEqual(0, Inventory.count(c.inventory, "fish"), "the player did nothing")
+end)
+
+test("the player holding E facing water catches fish at the hand-harvest rate", function()
+	local game, c, world = launch()
+	local controller = Fake.FakeInput.new()
+	World.setTerrain(world, 11, 10, "water")
+	c.x, c.y = 10.5 * TILE, 10.5 * TILE
+	Fake.holdFor(game, controller, "d", 0.05)
+	c.x = 10.5 * TILE
+	Fake.holdFor(game, controller, "e", Config.harvest.handCycle * 3 + 0.1)
+	assertEqual(3, Inventory.count(c.inventory, "fish"))
 end)

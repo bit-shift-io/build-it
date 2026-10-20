@@ -46,3 +46,11 @@ test("function, port and storage bricks add their own cost", function()
 		end
 	end
 end)
+
+test("Cost.short flags missing and under-count items only", function()
+	local short = Cost.short({ plank = 10, stone = 2, glass = 1 }, { plank = 3, stone = 2 })
+	assertEqual(true, short.plank)
+	assertEqual(true, short.glass)
+	assertEqual(nil, short.stone)
+	assertEqual(nil, next(Cost.short({}, { plank = 1 })))
+end)

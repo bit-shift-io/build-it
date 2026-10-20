@@ -59,8 +59,11 @@ test("a forester replants and a woodcutter harvests the grown trees", function()
 	end
 
 	Fake.tap(game, "1")
+	Fake.tap(game, "return")
 	Fake.click(game, 1, 640 + (13 * TILE - c.x), 360 + (7.5 * TILE - c.y))
-	Fake.tap(game, "2")
+	Fake.tap(game, "1")
+	Fake.typeText(game, "wood")
+	Fake.tap(game, "return")
 	Fake.click(game, 1, 640 + (13 * TILE - c.x), 360 + (10.5 * TILE - c.y))
 	GameHarness.completeSites(game)
 	local forester, cutter = game.ctx.pools.buildings[2], game.ctx.pools.buildings[3] -- after the storage facility

@@ -51,6 +51,7 @@ test("a forager's operator brings berries to storage, and its bushes stay and re
 	table.insert(game.ctx.pools.villagers, v)
 
 	Fake.tap(game, "1")
+	Fake.tap(game, "return")
 	Fake.click(game, 1, 640 + (13 * TILE - c.x), 360 + (7.5 * TILE - c.y))
 	GameHarness.completeSites(game)
 	local b = game.ctx.pools.buildings[2]

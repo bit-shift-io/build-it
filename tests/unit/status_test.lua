@@ -132,3 +132,14 @@ test("the hunger warning reads only while it applies", function()
 	needs.hunger = Config.needs.starvingAt
 	assertEqual("Starving", Status.hunger(needs, Config.needs))
 end)
+
+test("the card appends aura lines after experience; none for a zero aura", function()
+	local v = villager()
+	v.xp = { saw = 3 }
+	local lines = Status.lines(v, { walkSpeed = 0.05, harvestRate = 0 })
+	assertEqual("saw: 3", lines[4])
+	assertEqual("Walk speed +5.0%", lines[5])
+	assertEqual(5, #lines)
+	assertEqual(4, #Status.lines(v, { walkSpeed = 0, harvestRate = 0 }))
+	assertEqual(4, #Status.lines(v))
+end)

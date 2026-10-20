@@ -2,6 +2,7 @@
 -- "Load"): pure functions from a character or villager record. Drawing the
 -- card is src/app/render/card.lua's job. Pure -- no `love.*`.
 local Needs = require("src.game.components.needs")
+local Aura = require("src.game.components.aura")
 
 local Status = {}
 
@@ -58,12 +59,22 @@ function Status.bars(r)
 end
 
 -- The card's lines: name, activity, and for a villager its load and its
--- experience per role (sorted by role). The player has neither.
-function Status.lines(r)
+-- experience per role (sorted by role). The player has neither. `aura`
+-- (optional, { walkSpeed, harvestRate }) adds its non-zero lines last.
+function Status.lines(r, aura)
 	local lines = { r.name or "Villager", Status.activity(r) }
-	if not r.load then
-		return lines
+	if r.load then
+		Status.loadAndExperience(r, lines)
 	end
+	if aura then
+		for _, line in ipairs(Aura.lines(aura)) do
+			lines[#lines + 1] = line
+		end
+	end
+	return lines
+end
+
+function Status.loadAndExperience(r, lines)
 	lines[#lines + 1] = r.load.count > 0 and ("Load: " .. r.load.count .. " " .. r.load.item) or "Load: empty"
 	local roles = {}
 	for role in pairs(r.xp) do
@@ -76,7 +87,6 @@ function Status.lines(r)
 	for _, role in ipairs(roles) do
 		lines[#lines + 1] = role .. ": " .. r.xp[role]
 	end
-	return lines
 end
 
 return Status

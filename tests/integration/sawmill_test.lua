@@ -41,6 +41,7 @@ test("delivered logs become planks a villager makes and haulers store", function
 	Inventory.add(c.inventory, "log", 4)
 
 	Fake.tap(game, "1")
+	Fake.tap(game, "return")
 	Fake.click(game, 1, 640 + (13 * TILE - c.x), 360 + (7.5 * TILE - c.y))
 	GameHarness.completeSites(game)
 	local facility, building = game.ctx.pools.buildings[1], game.ctx.pools.buildings[2]

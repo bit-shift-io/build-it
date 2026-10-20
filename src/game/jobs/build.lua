@@ -14,6 +14,7 @@
 local Walker = require("src.game.components.walker")
 local Site = require("src.game.buildings.site")
 local World = require("src.game.world")
+local Aura = require("src.game.components.aura")
 
 local Build = {}
 
@@ -66,7 +67,7 @@ function Build.step(job, ctx)
 		return
 	end
 	job.stage = "building"
-	site.progress = math.min(site.progress + ctx.dt, Site.buildTime(site, ctx.config))
+	site.progress = math.min(site.progress + Aura.work(job.villager, ctx.dt), Site.buildTime(site, ctx.config))
 	if Site.built(site, ctx.config) then
 		Build.finish(job)
 		local xp = job.villager.xp

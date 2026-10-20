@@ -109,6 +109,7 @@ end)
 test("Session.step walks a villager sent across the map to its target, round the facility", function()
 	local ctx = Session.newGame(WorldGen.generate(Config, 1), Config, 1)
 	local b = ctx.pools.buildings[1]
+	b.aura.walkSpeed = 0
 	local v = ctx.pools.villagers[1]
 	local tile = Config.tileSize
 	-- The facility's far side from the villager, so the straight line would run through it.

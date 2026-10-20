@@ -112,7 +112,9 @@ function Flow.draw(flow)
 end
 
 function Flow.keypressed(flow, key)
-	if flow.screen == "world" and key == "b" then
+	if flow.screen == "world" and WorldScreen.modal(flow.world) then
+		dispatch(flow, "keypressed", key)
+	elseif flow.screen == "world" and key == "b" then
 		flow.screen = "builder"
 	elseif flow.screen == "world" and key == "f5" then
 		local ok, err = Flow.save(flow)

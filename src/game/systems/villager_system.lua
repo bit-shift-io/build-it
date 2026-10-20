@@ -7,6 +7,7 @@ local Walker = require("src.game.components.walker")
 local Animator = require("src.game.components.animator")
 local Idle = require("src.game.components.idle")
 local Needs = require("src.game.components.needs")
+local Aura = require("src.game.components.aura")
 local Sleep = require("src.game.jobs.sleep")
 
 local VillagerSystem = {}
@@ -14,6 +15,11 @@ local VillagerSystem = {}
 -- One villager's movement for the step: idle life, then its walk.
 local function move(v, ctx)
 	local fromX, fromY = v.x, v.y
+	-- The aura is computed once per step and kept on the record (never
+	-- saved); it scales the walk and the idle drift alike.
+	v.aura = Aura.at(ctx, v)
+	local baseSpeed = v.mover.speed
+	v.mover.speed = baseSpeed * (1 + v.aura.walkSpeed)
 	Idle.update(v, ctx)
 	Walker.step(v, ctx)
 	local ix, iy = Idle.steer(v, ctx)
@@ -23,6 +29,7 @@ local function move(v, ctx)
 		Mover.apply(v, { x = ix, y = iy }, ctx)
 		v.mover.speed = speed
 	end
+	v.mover.speed = baseSpeed
 	Animator.update(v.animator, v.x - fromX, v.y - fromY, ctx.config.character)
 	-- Animator.update faces the movement, so a turn counts only on a
 	-- step with none.

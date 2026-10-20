@@ -6,8 +6,14 @@ local Input = {}
 -- WASD, E and F. `target` is the tile {x, y} of a held click, which harvests
 -- too; nil otherwise. `place` is a placement request the world screen
 -- clicked this step (src/game/buildings/placement.lua), or nil. Call once
--- per fixed step, before Session.advance reads it.
-function Input.updateIntents(ctx, target, place)
+-- per fixed step, before Session.advance reads it. `blocked` is true while a
+-- menu or the picker is open: the keys type into it, so no intent is sent
+-- (docs/memory/world-screen-modal-input.md).
+function Input.updateIntents(ctx, target, place, blocked)
+	if blocked then
+		ctx.intents[1] = { x = 0, y = 0, harvest = false, eat = false, place = place }
+		return
+	end
 	local isDown = love.keyboard.isDown
 	local x, y = 0, 0
 	if isDown("a") then

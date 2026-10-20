@@ -130,12 +130,12 @@ return {
 	},
 
 	-- Auras (docs/CONTEXT.md "Aura"): what each brick of a material adds to
-	-- its building's aura. Fractions: 0.1 is +10%. walkSpeed scales the
+	-- its building's aura. Fractions: 0.001 is +0.1%. walkSpeed scales the
 	-- character's walk speed, harvestRate its hand-harvest speed, while it
 	-- is within the building's reach. Auras of several buildings add up.
 	auras = {
-		plank = { walkSpeed = 0.05, harvestRate = 0 },
-		stone = { walkSpeed = 0, harvestRate = 0.1 },
+		plank = { walkSpeed = 0.0005, harvestRate = 0 },
+		stone = { walkSpeed = 0, harvestRate = 0.001 },
 	},
 
 	-- Building production (src/game/components/{function_brick,ports,storage}.lua).
@@ -165,8 +165,8 @@ return {
 		recipes = { sawbench = { input = { log = 2 }, output = "plank", cycle = 4 } },
 		productivityStep = 0.02,
 		minSpeed = 0.25,
-		reachBase = 2,
-		abilityReach = { saw = 10, fishing = 4, hunter = 8 },
+		reachBase = 10,
+		abilityReach = { saw = 10, fishing = 10, hunter = 10 },
 		-- fishers: the item each fishing ability catches, one per fishCycle
 		-- seconds (scaled like harvestCycle) from any water tile in reach,
 		-- without limit.

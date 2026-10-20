@@ -4,7 +4,7 @@
 -- placement panel, in screen space.
 local Projection = require("src.game.projection")
 local Placement = require("src.game.buildings.placement")
-local Library = require("src.game.designs.library")
+local Cost = require("src.game.builder.cost")
 local BuildingsRender = require("src.app.render.buildings")
 
 local GhostRender = {}
@@ -48,30 +48,29 @@ function GhostRender.draw(ctx, ghost, zoom)
 end
 
 local MARGIN, LINE = 8, 18
+local WHITE, RED = { 1, 1, 1, 1 }, { 1, 0.45, 0.4, 1 }
 
--- The placement panel, bottom-left in screen space: the library's designs
--- by number key, or while placing, what is placed and how, and `status`
--- (why the ghost or the last click is refused), in red.
+-- The placement panel, bottom-left in screen space: while placing, what is
+-- placed and how, and `status` (why the ghost or the last click is
+-- refused), in red.
 --   placing: { design, version, facing } or nil; cost: { [item] = n } or nil
-function GhostRender.drawPanel(library, placing, cost, status)
+function GhostRender.drawPanel(placing, cost, status, totals)
 	local lines = {}
 	if placing then
-		local parts = {}
-		for item, n in pairs(cost or {}) do
-			table.insert(parts, n .. " " .. item)
+		local short = Cost.short(cost or {}, totals or {})
+		local items = {}
+		for item in pairs(cost or {}) do
+			table.insert(items, item)
 		end
-		table.sort(parts)
-		table.insert(lines, string.format("Placing %s v%d, facing %s. Cost: %s", placing.design.name, placing.version, placing.facing, table.concat(parts, ", ")))
+		table.sort(items)
+		-- Coloured text: { colour, text, colour, text, ... }
+		local text = { WHITE, string.format("Placing %s v%d, facing %s. Cost: ", placing.design.name, placing.version, placing.facing) }
+		for i, item in ipairs(items) do
+			table.insert(text, short[item] and RED or WHITE)
+			table.insert(text, cost[item] .. " " .. item .. (i < #items and ", " or ""))
+		end
+		table.insert(lines, text)
 		table.insert(lines, "R turn, click place, Esc or right-click cancel")
-	elseif #Library.liveDesigns(library) > 0 then
-		local parts = {}
-		for i, design in ipairs(Library.liveDesigns(library)) do
-			if i > 9 then
-				break
-			end
-			table.insert(parts, i .. " " .. design.name)
-		end
-		table.insert(lines, "Place a design: " .. table.concat(parts, "   "))
 	end
 	if #lines == 0 and not status then
 		return
@@ -88,7 +87,7 @@ function GhostRender.drawPanel(library, placing, cost, status)
 		love.graphics.print(line, MARGIN, top + (i - 1) * LINE)
 	end
 	if status then
-		love.graphics.setColor(1, 0.45, 0.4, 1)
+		love.graphics.setColor(RED)
 		love.graphics.print(status, MARGIN, top + #lines * LINE)
 	end
 	love.graphics.pop()

@@ -76,6 +76,7 @@ test("a design places in all 4 facings with its port tiles marked, and the ghost
 	local screen = game.flow.world
 
 	Fake.tap(game, "1")
+	Fake.tap(game, "return")
 	-- One building per facing in a row south of the character,
 	-- footprints 3x2 or 2x3.
 	local spots = { N = { 3, 12 }, E = { 9, 12 }, S = { 15, 12 }, W = { 21, 12 } }
@@ -127,6 +128,7 @@ test("a design places in all 4 facings with its port tiles marked, and the ghost
 	Capture.capture("placed_all_facings")
 
 	Fake.tap(game, "1")
+	Fake.tap(game, "return")
 	game:mousemoved(screenOf(game, c, 12.5, 18))
 	assertTrue(WorldScreen.ghost(screen).ok, "expected a valid ghost on grass")
 	Capture.capture("ghost_valid")

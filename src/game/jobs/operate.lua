@@ -28,6 +28,7 @@ local Harvestable = require("src.game.components.harvestable")
 local NodeSystem = require("src.game.systems.node_system")
 local World = require("src.game.world")
 local Needs = require("src.game.components.needs")
+local Aura = require("src.game.components.aura")
 local AnimalSystem = require("src.game.systems.animal_system")
 
 local Operate = {}
@@ -168,7 +169,7 @@ end
 function Convert.working(job, ctx)
 	local fb, building = job.brick, job.building
 	local cycle = FunctionBrick.cycle(building.traits, ctx.config, fb.recipe.cycle)
-	fb.progress = math.min(fb.progress + ctx.dt, cycle)
+	fb.progress = math.min(fb.progress + Aura.work(job.villager, ctx.dt), cycle)
 	if fb.progress < cycle then
 		fb.state = "working"
 		return
@@ -298,7 +299,7 @@ function Harvest.harvesting(job, ctx)
 	end
 	fb.state = "working"
 	local cycle = FunctionBrick.cycle(job.building.traits, ctx.config)
-	fb.progress = fb.progress + ctx.dt
+	fb.progress = fb.progress + Aura.work(job.villager, ctx.dt)
 	while fb.progress >= cycle do
 		fb.progress = fb.progress - cycle
 		if not hasSlot(job) then
@@ -364,7 +365,7 @@ end
 function Plant.seeding(job, ctx)
 	local fb = job.brick
 	local cycle = FunctionBrick.cycle(job.building.traits, ctx.config, ctx.config.production.plantCycle)
-	fb.progress = math.min(fb.progress + ctx.dt, cycle)
+	fb.progress = math.min(fb.progress + Aura.work(job.villager, ctx.dt), cycle)
 	fb.state = "working"
 	if fb.progress < cycle then
 		return
@@ -453,7 +454,7 @@ end
 function Fish.fishing(job, ctx)
 	local fb = job.brick
 	local cycle = FunctionBrick.cycle(job.building.traits, ctx.config, ctx.config.production.fishCycle)
-	fb.progress = math.min(fb.progress + ctx.dt, cycle)
+	fb.progress = math.min(fb.progress + Aura.work(job.villager, ctx.dt), cycle)
 	fb.state = "working"
 	if fb.progress < cycle then
 		return
@@ -544,7 +545,7 @@ function Hunt.killing(job, ctx)
 		return retarget(job, ctx)
 	end
 	local cycle = FunctionBrick.cycle(job.building.traits, ctx.config, ctx.config.production.huntCycle)
-	fb.progress = math.min(fb.progress + ctx.dt, cycle)
+	fb.progress = math.min(fb.progress + Aura.work(job.villager, ctx.dt), cycle)
 	fb.state = "working"
 	if fb.progress < cycle then
 		return

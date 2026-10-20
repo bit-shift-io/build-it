@@ -48,6 +48,7 @@ test("a design with a bed, built in the builder, sleeps a tired villager", funct
 
 	-- Place it, paying from the stockpile, and finish the site.
 	Fake.tap(game, "1")
+	Fake.tap(game, "return")
 	local sx, sy = 640 + (13 * TILE - c.x), 360 + (9 * TILE - c.y)
 	game:mousemoved(sx, sy, 0, 0)
 	Fake.click(game, 1, sx, sy)

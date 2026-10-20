@@ -63,6 +63,16 @@ test("hovering a villager's sprite shows its card; bare ground shows none", func
 	assertTrue(WorldScreen.hovered(screen) ~= nil, "a record under the pointer")
 	Capture.capture("over_villager")
 
+	-- A building whose reach covers the villager adds an aura line.
+	local Aura = require("src.game.components.aura")
+	for _, b in ipairs(game.ctx.pools.buildings) do
+		b.aura = { walkSpeed = 0.05, harvestRate = 0 }
+	end
+	if Aura.at(game.ctx, v).walkSpeed > 0 then
+		FrameStepper.step(game, 1)
+		Capture.capture("over_villager_aura")
+	end
+
 	game:mousemoved(2, 2, 0, 0)
 	FrameStepper.step(game, 1)
 	assertEqual(nil, WorldScreen.hovered(screen))

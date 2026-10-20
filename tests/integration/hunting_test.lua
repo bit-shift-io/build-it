@@ -42,6 +42,7 @@ test("a hunter building kills deer in reach and delivers meat to storage; the he
 	end
 
 	Fake.tap(game, "1")
+	Fake.tap(game, "return")
 	Fake.click(game, 1, 640 + (13 * TILE - c.x), 360 + (7.5 * TILE - c.y))
 	GameHarness.completeSites(game)
 	assert(ctx.pools.buildings[2], "the hunter building was placed")
