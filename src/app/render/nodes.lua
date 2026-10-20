@@ -16,12 +16,12 @@ local function cacheFor(config)
 end
 
 -- Appends { sprite, tileX, tileY } per node to `draws`, sprites baked at
--- whole bake `scale`.
-function NodesRender.addDraws(draws, ctx, scale)
+-- whole bake `scale`, in view `viewName`.
+function NodesRender.addDraws(draws, ctx, scale, viewName)
 	local cache = cacheFor(ctx.config)
 	for _, n in ipairs(ctx.pools.nodes) do
 		table.insert(draws, {
-			sprite = PropCache.sprite(cache, n.kind, n.variant, n.stage, scale),
+			sprite = PropCache.sprite(cache, n.kind, n.variant, n.stage, scale, viewName),
 			tileX = n.tileX,
 			tileY = n.tileY,
 		})

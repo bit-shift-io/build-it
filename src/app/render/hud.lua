@@ -102,4 +102,30 @@ function Hud.draw(inventory, stock, port, aura, reserved, fill, hunger, food)
 	end
 end
 
+-- The "Settings (O)" button, top-right of a window `w` px wide:
+-- { x, y, width, height }. Clicking it opens the in-world settings overlay.
+function Hud.settingsButton(w)
+	return { x = w - 118, y = MARGIN, width = 110, height = 26 }
+end
+
+function Hud.drawSettingsButton(w, mouse)
+	local b = Hud.settingsButton(w)
+	local hot = mouse and mouse.x >= b.x and mouse.x < b.x + b.width and mouse.y >= b.y and mouse.y < b.y + b.height
+	love.graphics.push("all")
+	love.graphics.setColor(hot and 0.35 or 0.22, hot and 0.55 or 0.24, hot and 0.8 or 0.27, 0.9)
+	love.graphics.rectangle("fill", b.x, b.y, b.width, b.height, 4, 4)
+	love.graphics.setColor(1, 1, 1, 1)
+	love.graphics.printf("Settings (O)", b.x, b.y + (b.height - love.graphics.getFont():getHeight()) / 2, b.width, "center")
+	love.graphics.pop()
+end
+
+-- The frame shown before a view's first bake: the bake runs on the next
+-- draw, so this message is on screen while it works.
+function Hud.drawBaking(w, h)
+	love.graphics.push("all")
+	love.graphics.setColor(1, 1, 1, 1)
+	love.graphics.printf("Baking\226\128\166", 0, h / 2 - love.graphics.getFont():getHeight() / 2, w, "center")
+	love.graphics.pop()
+end
+
 return Hud

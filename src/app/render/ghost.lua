@@ -15,23 +15,23 @@ local SPRITE_ALPHA = 0.75
 
 -- ghost: WorldScreen.ghost's { request, ok, reason }. Draws in world space,
 -- inside the camera.
-function GhostRender.draw(ctx, ghost, zoom)
-	local p = Projection.new(ctx.config)
+function GhostRender.draw(ctx, ghost, zoom, viewName)
+	viewName = viewName or "topdown"
+	local p = Projection.new(ctx.config, 1, ctx.config.views[viewName])
 	local req = ghost.request
 	local version = req.design.versions[req.version]
 	local width, depth = Placement.footprint(version, req.facing)
 	local color = ghost.ok and VALID or INVALID
-	local t = p.pixelsPerTile
-	local x, y = Projection.worldToScreen(p, req.tileX, req.tileY, 0)
+	local outline = BuildingsRender.groundRect(p, req.tileX, req.tileY, 0, 0, width, depth)
 
 	love.graphics.push("all")
 	love.graphics.setColor(color[1], color[2], color[3], 0.35)
-	love.graphics.rectangle("fill", x, y, width * t, depth * t)
+	love.graphics.polygon("fill", outline)
 	for _, port in ipairs(Placement.ports(version, req.facing, req.tileX, req.tileY, ctx.config.builder)) do
 		BuildingsRender.drawPort(p, port)
 	end
 
-	local sprite = BuildingsRender.sprite(ctx.config, req.design, req.version, req.facing, Projection.bakeScale(zoom or 1))
+	local sprite = BuildingsRender.sprite(ctx.config, req.design, req.version, req.facing, Projection.bakeScale(zoom or 1), viewName)
 	local left, top, s = Projection.placeSprite(p, sprite.frame, req.tileX, req.tileY)
 	-- Premultiplied, like every baked sprite: the tint carries the alpha.
 	local a = SPRITE_ALPHA
@@ -43,7 +43,7 @@ function GhostRender.draw(ctx, ghost, zoom)
 	love.graphics.setBlendMode("alpha")
 	love.graphics.setColor(color[1], color[2], color[3], 1)
 	love.graphics.setLineWidth(2)
-	love.graphics.rectangle("line", x, y, width * t, depth * t)
+	love.graphics.polygon("line", outline)
 	love.graphics.pop()
 end
 

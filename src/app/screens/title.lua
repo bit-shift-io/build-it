@@ -1,5 +1,5 @@
 -- The title screen shown at launch: Continue (only when the save slot holds
--- a world) and New game. Up/Down (or W/S) move the selection, Return or
+-- a world), New game and Settings. Up/Down (or W/S) move the selection, Return or
 -- Space picks it, a click picks the option under the pointer. Picking only
 -- sets screen.choice; src/app/flow.lua starts the session.
 local Screen = require("src.app.screen")
@@ -16,10 +16,11 @@ function TitleScreen.new(hasSave)
 		options[#options + 1] = { id = "continue", label = "Continue" }
 	end
 	options[#options + 1] = { id = "new", label = "New game" }
+	options[#options + 1] = { id = "settings", label = "Settings" }
 	return {
 		options = options,
 		selected = 1,
-		-- The picked option's id ("continue" | "new"), until the flow acts.
+		-- The picked option's id ("continue" | "new" | "settings"), until the flow acts.
 		choice = nil,
 		-- Why the last pick failed (e.g. an unreadable save), or nil.
 		message = nil,

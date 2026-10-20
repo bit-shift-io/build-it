@@ -11,5 +11,6 @@ metadata:
 - Give the test its own config table and set `config.designs.dir`, `config.save.file` and `config.props.cacheDir` to test-only names, such as `e2e_place_designs`.
 - Clear those folders before the test runs, and clear the world save afterwards.
 - Use a fresh config table when a test needs a cold design cache, because `BuildingsRender` keeps one `DesignCache` per config.
+- Settings are covered for you: `GameHarness.startSession` and `launch` swap in `settings.file = "test_settings.cfg"` unless the config sets its own `settings` table. Without that, a session reads the player's real `settings.cfg`, and a saved `view=iso` fails the topdown e2e tests.
 - The integration tier doesn't need this: `tests/support/love_mock.lua` backs `love.filesystem` with a temporary directory.
 - Examples: `tests/e2e/world_save_test.lua`, `tests/e2e/place_building_test.lua`.

@@ -14,6 +14,49 @@ return {
 	-- on whole pixels.
 	projection = { heightScale = 1 },
 
+	-- Views: plain data Projection.new turns into world<->screen math. A view
+	-- is { ground = { a, b, c, d }, lift, depth = { x, y } }, in tiles:
+	--   screen x = a*x + b*y            (times pixels per tile)
+	--   screen y = c*x + d*y - lift*z
+	--   depth    = depth.x*x + depth.y*y + z   (larger is nearer the viewer)
+	-- The depth coefficients are the view ray (dx, dy, 1): points a ray apart
+	-- share a pixel. Solving ground * (dx, dy) = (0, lift) gives them.
+	-- Keep lift * tileSize / 16 whole in every view so voxel heights stay on
+	-- whole pixels.
+	--
+	-- Isometric views turn the ground 45 degrees (x east runs down-right, y
+	-- south down-left; the viewer is at the south-east corner). With pitch p
+	-- above the horizon a ground unit of length s draws cos45*s wide and
+	-- cos45*sin(p)*s tall, and a unit of height draws cos(p)*s tall. Taking
+	-- the tile edge to draw one tile wide fixes s = sqrt(2), so
+	--   ground y per tile = sin(p),  lift = sqrt(2) * cos(p).
+	-- Lift is then rounded to the nearest 0.5 to keep tileSize / 16 whole.
+	views = {
+		-- Identical to the original 3/4 top-down projection.
+		topdown = {
+			ground = { 1, 0, 0, 1 },
+			lift = 1,
+			depth = { 0, 1 },
+		},
+		-- 2:1 dimetric: ground diamond half-width tileSize, half-height
+		-- tileSize / 2. Pitch atan(1/2) = 26.57 degrees, the pixel-art
+		-- pitch; ground y per tile 1/2. Exact lift sqrt(2)*cos(26.57) = 1.265,
+		-- rounded to 1.5. Depth: dx = dy = lift / (c + d) = 1.5.
+		iso2to1 = {
+			ground = { 1, -1, 0.5, 0.5 },
+			lift = 1.5,
+			depth = { 1.5, 1.5 },
+		},
+		-- True isometric: pitch atan(1/sqrt(2)) = 35.26 degrees; ground y
+		-- per tile sin(p) = 1/sqrt(3) = 0.5774. Exact lift sqrt(2)*cos(35.26)
+		-- = 1.155, rounded to 1.0. Depth: dx = dy = 1 / (2/sqrt(3)) = 0.866.
+		iso = {
+			ground = { 1, -1, 0.5773502691896258, 0.5773502691896258 },
+			lift = 1,
+			depth = { 0.8660254037844386, 0.8660254037844386 },
+		},
+	},
+
 	-- Baked sprite lighting (src/app/bake/block_shader.glsl). lightDirection
 	-- points from a surface toward the light, in model space (x east, y south,
 	-- z up); it need not be unit length. ambient is the light on faces the
@@ -199,6 +242,10 @@ return {
 	-- src/app/save_store.lua): a file in the save directory. seed is the
 	-- world seed a new game starts from.
 	save = { file = "world.save", seed = 1 },
+
+	-- Player settings (src/game/settings.lua, src/app/settings_store.lua): a
+	-- file in the save directory, shared by every world.
+	settings = { file = "settings.cfg" },
 
 	character = {
 		size = 16, -- placeholder square side, px

@@ -88,7 +88,7 @@ test("F5 saves; relaunch offers Continue, which restores the session exactly", f
 
 	local again = relaunch()
 	assertEqual("title", again.flow.screen)
-	assertEqual("continue,new", optionIds(again.flow.title))
+	assertEqual("continue,new,settings", optionIds(again.flow.title))
 	again:keypressed("return") -- Continue is the first option; no frame runs yet
 	assertEqual("world", again.flow.screen)
 	local ctx = again.flow.ctx
@@ -137,7 +137,7 @@ end)
 test("with no save the title offers only New game, which starts the seeded world", function()
 	_G.love = LoveMock.new()
 	local game = GameHarness.launch()
-	assertEqual("new", optionIds(game.flow.title))
+	assertEqual("new,settings", optionIds(game.flow.title))
 	assertEqual(nil, game.ctx)
 	Fake.tap(game, "return")
 	assertEqual("world", game.flow.screen)
@@ -151,7 +151,7 @@ test("an unreadable save keeps the title up with the reason; New game still work
 	_G.love = LoveMock.new()
 	assert(love.filesystem.write(Config.save.file, "build-it-save 2\nmystery a=n:1\n"))
 	local game = GameHarness.launch()
-	assertEqual("continue,new", optionIds(game.flow.title))
+	assertEqual("continue,new,settings", optionIds(game.flow.title))
 	Fake.tap(game, "return")
 	assertEqual("title", game.flow.screen)
 	assertTrue(game.flow.title.message ~= nil, "expected the reason on screen")

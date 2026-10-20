@@ -103,3 +103,108 @@ test("Projection.bakeScale is the smallest whole scale at or above the zoom", fu
 	assertEqual(2, Projection.bakeScale(2))
 	assertEqual(4, Projection.bakeScale(3.5))
 end)
+
+local Config = require("src.game.config")
+local VIEW_NAMES = { "topdown", "iso2to1", "iso" }
+
+local function viewProjection(name, scale)
+	return Projection.new(Config, scale, Config.views[name])
+end
+
+test("Projection topdown view matches the old formulas, frames and placement", function()
+	local p = viewProjection("topdown", 2)
+	local old = Projection.new({ tileSize = Config.tileSize, projection = { heightScale = Config.projection.heightScale } }, 2)
+	for _, pt in ipairs({ { 0, 0, 0 }, { 1.25, 7.5, 0.3 }, { -2, 3, 1.5 } }) do
+		local sx, sy = Projection.worldToScreen(p, pt[1], pt[2], pt[3])
+		assertEqual(pt[1] * 64, sx)
+		assertEqual((pt[2] - Config.projection.heightScale * pt[3]) * 64, sy)
+		assertEqual(Config.projection.heightScale * pt[2] + pt[3], Projection.depth(p, pt[1], pt[2], pt[3]))
+	end
+	local b = boundsOf(0.5, 0.25, 0, 2.5, 1.75, 1.1)
+	local frame, want = Projection.spriteFrame(p, b), Projection.spriteFrame(old, b)
+	for _, k in ipairs({ "width", "height", "anchorX", "anchorY", "pixelsPerTile" }) do
+		assertEqual(want[k], frame[k], 0, k)
+	end
+	local l1, t1, s1 = Projection.placeSprite(p, frame, 7, 5)
+	local l2, t2, s2 = Projection.placeSprite(old, want, 7, 5)
+	assertEqual(l2, l1)
+	assertEqual(t2, t1)
+	assertEqual(s2, s1)
+end)
+
+test("Projection round-trips screenToWorld(worldToScreen) in every view at several heights", function()
+	for _, name in ipairs(VIEW_NAMES) do
+		local p = viewProjection(name, 3)
+		for _, pt in ipairs({ { 0, 0, 0 }, { 1.25, 7.5, 0 }, { 4, 2, 1.5 }, { -2, 3, 0.25 } }) do
+			local sx, sy = Projection.worldToScreen(p, pt[1], pt[2], pt[3])
+			local x, y = Projection.screenToWorld(p, sx, sy, pt[3])
+			assertNear(pt[1], x, 1e-9, name)
+			assertNear(pt[2], y, 1e-9, name)
+		end
+	end
+end)
+
+test("Projection iso2to1 ground diamond is 2:1", function()
+	local p = viewProjection("iso2to1")
+	local ts = Config.tileSize
+	local rx, ry = Projection.worldToScreen(p, 1, 0, 0)
+	assertNear(ts, rx)
+	assertNear(ts / 2, ry)
+	local lx, ly = Projection.worldToScreen(p, 0, 1, 0)
+	assertNear(-ts, lx)
+	assertNear(ts / 2, ly)
+	local bx, by = Projection.worldToScreen(p, 1, 1, 0)
+	assertNear(0, bx)
+	assertNear(ts, by)
+end)
+
+test("Projection views lift voxel heights onto whole pixels and lift up the screen", function()
+	for _, name in ipairs(VIEW_NAMES) do
+		local lift = Config.views[name].lift
+		local px = lift * Config.tileSize / 16
+		assertNear(math.floor(px + 0.5), px, 1e-9, name)
+		local p = viewProjection(name)
+		local _, y0 = Projection.worldToScreen(p, 2, 3, 0)
+		local _, y1 = Projection.worldToScreen(p, 2, 3, 1)
+		assertNear(lift * Config.tileSize, y0 - y1, 1e-9, name)
+	end
+end)
+
+test("Projection depth orders nearer points higher in every view", function()
+	local nearer = {
+		topdown = { { 0, 1, 0 } },
+		iso2to1 = { { 1, 0, 0 }, { 0, 1, 0 } },
+		iso = { { 1, 0, 0 }, { 0, 1, 0 } },
+	}
+	for _, name in ipairs(VIEW_NAMES) do
+		local p = viewProjection(name)
+		local base = Projection.depth(p, 3, 3, 0)
+		for _, d in ipairs(nearer[name]) do
+			assertTrue(Projection.depth(p, 3 + d[1], 3 + d[2], 0) > base, name .. " nearer ground")
+		end
+		assertTrue(Projection.depth(p, 3, 3, 1) > base, name .. " higher")
+		-- Same pixel: the raised point is in front of the ground point under it.
+		local sx, sy = Projection.worldToScreen(p, 2, 3, 1)
+		local gx, gy = Projection.screenToWorld(p, sx, sy, 0)
+		assertTrue(Projection.depth(p, 2, 3, 1) > Projection.depth(p, gx, gy, 0), name .. " same pixel")
+	end
+end)
+
+test("Projection.spriteFrame covers all 8 box corners in every view", function()
+	local b = boundsOf(0.5, 0.25, 0, 2.5, 1.75, 1.1)
+	for _, name in ipairs(VIEW_NAMES) do
+		local p = viewProjection(name, 2)
+		local frame = Projection.spriteFrame(p, b)
+		for _, x in ipairs({ b.minX, b.maxX }) do
+			for _, y in ipairs({ b.minY, b.maxY }) do
+				for _, z in ipairs({ b.minZ, b.maxZ }) do
+					local px, py = Projection.modelToSprite(p, frame, x, y, z)
+					assertTrue(px >= -1e-6 and px <= frame.width + 1e-6, name .. " x in frame")
+					assertTrue(py >= -1e-6 and py <= frame.height + 1e-6, name .. " y in frame")
+				end
+			end
+		end
+		assertEqual(math.floor(frame.anchorX), frame.anchorX)
+		assertEqual(math.floor(frame.anchorY), frame.anchorY)
+	end
+end)

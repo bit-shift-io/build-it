@@ -142,3 +142,123 @@ test("the starter house draws with its footprint exactly on its tiles at every z
 		Capture.capture(string.format("world_zoom_%.1f", zoom))
 	end
 end)
+
+-- A tall red column at the north-west with a low blue cube in front of it
+-- (nearer the viewer in every view). Where the cube's top face draws, the
+-- column's walls are behind it on screen; a correct depth test shows blue.
+local RED, BLUE = { 0.9, 0.1, 0.1 }, { 0.1, 0.1, 0.9 }
+
+local function occludingModel(nearX)
+	local m = Model.new(1, 2, 2)
+	for z = 0, 2 do
+		Model.addCell(m, { x = 0, y = 0, z = z, color = RED })
+	end
+	Model.addCell(m, { x = nearX, y = 1, z = 0, color = BLUE })
+	return m
+end
+
+local VIEW_NAMES = { "topdown", "iso2to1", "iso" }
+
+for _, name in ipairs(VIEW_NAMES) do
+	test("bakes through the " .. name .. " view: frame matches the projection, nearer face covers farther", function()
+		local view = Config.views[name]
+		local nearX = name == "topdown" and 0 or 1
+		local model = occludingModel(nearX)
+		local sprite = Baker.bake(model, "N", Config, 2, view)
+		Capture.captureTexture("occluding_" .. name .. "_x2", sprite.image)
+
+		local p = Projection.new(Config, 2, view)
+		local frame = Projection.spriteFrame(p, { minX = 0, minY = 0, minZ = 0, maxX = nearX + 1, maxY = 2, maxZ = 3 })
+		assertEqual(frame.width, sprite.image:getWidth(), "sprite width")
+		assertEqual(frame.height, sprite.image:getHeight(), "sprite height")
+		assertEqual(frame.anchorX, sprite.frame.anchorX, "anchor x")
+		assertEqual(frame.anchorY, sprite.frame.anchorY, "anchor y")
+
+		local pixels = love.graphics.readbackTexture(sprite.image)
+		local px, py = Projection.modelToSprite(p, sprite.frame, nearX + 0.5, 1.5, 1)
+		local r, _, b, a = pixels:getPixel(math.floor(px), math.floor(py))
+		assertEqual(1, a, "expected an opaque near top face")
+		assertTrue(b > r, string.format("expected the near blue cube over the red column (r %.2f b %.2f)", r, b))
+
+		-- The column's own top, the farthest-highest point, is not clipped away.
+		local tx, ty = Projection.modelToSprite(p, sprite.frame, 0.5, 0.5, 3)
+		local cr, _, cb, ca = pixels:getPixel(math.floor(tx), math.floor(ty) + 1)
+		assertEqual(1, ca, "expected the column top to be present")
+		assertTrue(cr > cb, "expected the column top red")
+	end)
+end
+
+test("the default view bakes the same pixels as passing topdown explicitly", function()
+	local model = stepModel()
+	local a = love.graphics.readbackTexture(Baker.bake(model, "N", Config, 2).image)
+	local b = love.graphics.readbackTexture(Baker.bake(model, "N", Config, 2, Config.views.topdown).image)
+	assertEqual(a:getString(), b:getString(), "pixels differ")
+end)
+
+local DesignCache = require("src.app.bake.design_cache")
+local PropCache = require("src.app.bake.prop_cache")
+
+test("design sprites of two views coexist in memory, each baked once", function()
+	local design = Starter.design(Config)
+	local cache = DesignCache.new(Config)
+	local top = DesignCache.sprite(cache, design, 1, "N", 1)
+	local iso = DesignCache.sprite(cache, design, 1, "N", 1, "iso")
+	assertTrue(top ~= iso and top.frame.height ~= iso.frame.height, "views bake different sprites")
+	assertEqual(2, #cache.baked, "one bake per view")
+	assertTrue(top == DesignCache.sprite(cache, design, 1, "N", 1, "topdown"), "topdown reused")
+	assertTrue(iso == DesignCache.sprite(cache, design, 1, "N", 1, "iso"), "iso reused")
+	assertEqual(2, #cache.baked, "no rebake when switching back")
+end)
+
+local function exists(path)
+	return love.filesystem.getInfo(path) ~= nil
+end
+
+local function clearDir(dir)
+	for _, name in ipairs(love.filesystem.getDirectoryItems(dir)) do
+		love.filesystem.remove(dir .. "/" .. name)
+	end
+end
+
+test("prop atlases of two views coexist on disk; a version bump removes only that view's stale files", function()
+	local config = {}
+	for k, v in pairs(Config) do
+		config[k] = v
+	end
+	config.props = { variants = Config.props.variants, seed = Config.props.seed, cacheDir = "e2e_baker_views" }
+	clearDir(config.props.cacheDir)
+	local Registry = require("src.game.props.registry")
+	local def = Registry.KINDS.rock
+	local dir = config.props.cacheDir
+
+	local cache = PropCache.new({ rock = def }, config)
+	local top = PropCache.sprite(cache, "rock", 1, 1, 1)
+	local iso = PropCache.sprite(cache, "rock", 1, 1, 1, "iso")
+	assertEqual("rock@1,rock@1@iso", table.concat(cache.baked, ","))
+	assertTrue(top.frame.width ~= iso.frame.width or top.frame.height ~= iso.frame.height, "views bake different sprites")
+	local topName = "rock_v" .. def.version .. "_x1"
+	assertTrue(exists(dir .. "/" .. topName .. ".png"), "topdown file name unchanged")
+	assertTrue(exists(dir .. "/" .. topName .. "_iso.png"), "iso file has a view suffix")
+	assertTrue(exists(dir .. "/" .. topName .. "_iso.txt"), "iso entries written")
+
+	-- A later launch loads both from disk and bakes nothing.
+	local again = PropCache.new({ rock = def }, config)
+	local reloaded = PropCache.sprite(again, "rock", 1, 1, 1, "iso")
+	PropCache.sprite(again, "rock", 1, 1, 1)
+	assertEqual("", table.concat(again.baked, ","), "expected both atlases to load from disk")
+	assertEqual(iso.frame.width, reloaded.frame.width)
+	assertEqual(iso.frame.height, reloaded.frame.height)
+
+	-- Bumping the version for iso removes only the stale iso files.
+	local bumped = {}
+	for k, v in pairs(def) do
+		bumped[k] = v
+	end
+	bumped.version = def.version + 1
+	local third = PropCache.new({ rock = bumped }, config)
+	PropCache.sprite(third, "rock", 1, 1, 1, "iso")
+	assertTrue(exists(dir .. "/rock_v" .. bumped.version .. "_x1_iso.png"), "new iso atlas cached")
+	assertFalse(exists(dir .. "/" .. topName .. "_iso.png"), "stale iso atlas removed")
+	assertTrue(exists(dir .. "/" .. topName .. ".png"), "topdown atlas untouched")
+	clearDir(dir)
+end)

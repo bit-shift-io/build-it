@@ -12,3 +12,4 @@ Situational facts: true only when touching a particular area. One fact per file.
 - [design-id-reuse.md](design-id-reuse.md) — losing the newest design file frees its id; caches keyed by design id+version can collide with world-save snapshots (unfixed)
 - [library-designs-shared-with-world.md](library-designs-shared-with-world.md) — buildings placed this session hold the library's design tables; never remove a version from `design.versions` mid-session
 - [world-screen-modal-input.md](world-screen-modal-input.md) — world-screen menus and text boxes must drop the opening key's textinput and suppress polled WASD/E/F intents
+- [projection-single-source.md](projection-single-source.md) — world/screen pixel math goes through `Projection` with the active view; no inline `tileSize` math

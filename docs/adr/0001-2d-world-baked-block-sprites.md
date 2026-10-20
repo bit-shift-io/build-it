@@ -1,6 +1,6 @@
 # ADR 0001: 2D world with baked block-model sprites
 
-**Status:** Accepted
+**Status:** Accepted (the fixed-angle consequence is relaxed by [ADR 0005](0005-views-are-data-baked-per-view.md))
 **Date:** 2026-10-13
 
 ## Context

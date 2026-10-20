@@ -16,6 +16,22 @@ local GameHarness = {}
 
 local DEFAULT_SEED = 1
 
+-- `config` (default: the tuning table) with a test-only settings file unless
+-- it sets its own, so a session never reads or writes the player's real
+-- settings (docs/memory/e2e-isolate-save-dir.md).
+local function testConfig(config)
+	config = config or Config
+	if config.settings ~= Config.settings then
+		return config
+	end
+	local copy = {}
+	for k, v in pairs(config) do
+		copy[k] = v
+	end
+	copy.settings = { file = "test_settings.cfg" }
+	return copy
+end
+
 -- opts.config overrides the tuning table (defaults to src/game/config.lua).
 -- opts.seed fixes the session seed (defaults to DEFAULT_SEED, so runs are
 -- reproducible).
@@ -26,7 +42,7 @@ local DEFAULT_SEED = 1
 function GameHarness.startSession(world, opts)
 	opts = opts or {}
 
-	local config = opts.config or Config
+	local config = testConfig(opts.config)
 	local ctx = Session.new(world, config, opts.seed or DEFAULT_SEED)
 	if opts.storage then
 		GameHarness.addStorage(ctx, opts.storage)
@@ -113,7 +129,7 @@ end
 -- as for startSession.
 function GameHarness.launch(opts)
 	opts = opts or {}
-	return GameHarness.wrap(Flow.launch(opts.config or Config), opts)
+	return GameHarness.wrap(Flow.launch(testConfig(opts.config)), opts)
 end
 
 -- The game object over `flow`: callbacks routed through Flow.

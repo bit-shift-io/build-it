@@ -1,10 +1,11 @@
 -- Baked prop sprites (docs/CONTEXT.md "Prop"), one atlas per (kind, bake
--- scale), cached in the save directory so later launches skip baking.
+-- scale, view), cached in the save directory so later launches skip baking.
 --
 -- Files, under config.props.cacheDir in the save directory:
 --   <kind>_v<version>_x<scale>.png   the atlas
 --   <kind>_v<version>_x<scale>.txt   one line per sprite:
 --     variant stage x y w h anchorX anchorY pixelsPerTile width depth
+-- Views other than 3/4 top-down add a suffix: <kind>_v<version>_x<scale>_<view>.*
 -- The generator version is in the name, so bumping one kind's version
 -- misses its cache (and removes the stale files) without touching others.
 --
@@ -15,19 +16,26 @@ local Baker = require("src.app.bake.baker")
 
 local PropCache = {}
 
+local DEFAULT_VIEW = "topdown"
+
 local PADDING = 2 -- clear pixels around each sprite, so filtering never bleeds
 
 -- kinds: { [name] = <Registry kind> } (normally Registry.KINDS, or
 -- { character = Registry.CHARACTER, villager = Registry.villager(config) }
 -- for the character's and villagers' frames, which share the cache
 -- directory; the villager's shirt colour is hashed into its version). A kind's variant count is Registry.variants.
--- cache.baked lists every "<kind>@<scale>" atlas this cache had to bake.
+-- cache.baked lists every "<kind>@<scale>" atlas this cache had to bake, with
+-- "@<view>" appended for views other than 3/4 top-down.
 function PropCache.new(kinds, config)
 	return { kinds = kinds, config = config, dir = config.props.cacheDir, atlases = {}, baked = {} }
 end
 
-local function baseName(def, scale)
-	return def.kind .. "_v" .. def.version .. "_x" .. scale
+local function viewSuffix(viewName)
+	return viewName == DEFAULT_VIEW and "" or "_" .. viewName
+end
+
+local function baseName(def, scale, viewName)
+	return def.kind .. "_v" .. def.version .. "_x" .. scale .. viewSuffix(viewName)
 end
 
 local function spriteCount(cache, def)
@@ -89,8 +97,8 @@ local function writeEntries(path, entries)
 	assert(love.filesystem.write(path, table.concat(lines, "\n") .. "\n"))
 end
 
-local function load(cache, def, scale)
-	local base = cache.dir .. "/" .. baseName(def, scale)
+local function load(cache, def, scale, viewName)
+	local base = cache.dir .. "/" .. baseName(def, scale, viewName)
 	if not love.filesystem.getInfo(base .. ".png") then
 		return nil
 	end
@@ -101,9 +109,10 @@ local function load(cache, def, scale)
 	return atlasOf(love.graphics.newImage(base .. ".png"), entries)
 end
 
--- Removes this kind's atlases at this scale from other generator versions.
-local function removeStale(cache, def, scale)
-	local pattern = "^" .. def.kind .. "_v(%d+)_x" .. scale .. "%.%a+$"
+-- Removes this kind's atlases at this scale and view from other generator
+-- versions.
+local function removeStale(cache, def, scale, viewName)
+	local pattern = "^" .. def.kind .. "_v(%d+)_x" .. scale .. viewSuffix(viewName) .. "%.%a+$"
 	for _, name in ipairs(love.filesystem.getDirectoryItems(cache.dir)) do
 		local version = name:match(pattern)
 		if version and tonumber(version) ~= def.version then
@@ -114,13 +123,14 @@ end
 
 -- Bakes every variant and stage, packs them one shelf per stage, writes the
 -- atlas and its entries to the cache, and returns the atlas.
-local function bake(cache, def, scale)
+local function bake(cache, def, scale, viewName)
 	local config = cache.config
+	local view = config.views[viewName]
 	local entries, baked = {}, {}
 	local x, y, shelfHeight, atlasW = PADDING, PADDING, 0, 0
 	for stage = 1, def.stages do
 		for variant = 1, Registry.variants(def, config) do
-			local sprite = Baker.bake(Registry.model(def, variant, stage, config), "N", config, scale)
+			local sprite = Baker.bake(Registry.model(def, variant, stage, config), "N", config, scale, view)
 			local f = sprite.frame
 			entries[#entries + 1] = {
 				variant = variant,
@@ -159,26 +169,28 @@ local function bake(cache, def, scale)
 		sprite.image:release()
 	end
 
-	local base = cache.dir .. "/" .. baseName(def, scale)
+	local base = cache.dir .. "/" .. baseName(def, scale, viewName)
 	love.filesystem.createDirectory(cache.dir)
-	removeStale(cache, def, scale)
+	removeStale(cache, def, scale, viewName)
 	assert(love.filesystem.write(base .. ".png", love.graphics.readbackTexture(atlas):encode("png")))
 	writeEntries(base .. ".txt", entries)
-	table.insert(cache.baked, def.kind .. "@" .. scale)
+	table.insert(cache.baked, def.kind .. "@" .. scale .. (viewName == DEFAULT_VIEW and "" or "@" .. viewName))
 	return atlasOf(atlas, entries)
 end
 
 -- The baked sprite of a kind's variant at a stage and whole bake scale
 -- (Projection.bakeScale):
 --   { image = <atlas>, quad, frame = <Projection.spriteFrame>, width, depth }
--- Loads the kind's atlas at that scale from the cache, baking it first on
--- a miss.
-function PropCache.sprite(cache, kind, variant, stage, scale)
-	local key = kind .. "@" .. scale
+-- Loads the kind's atlas at that scale and view (a config.views key, default
+-- "topdown") from the cache, baking it first on a miss.
+function PropCache.sprite(cache, kind, variant, stage, scale, viewName)
+	viewName = viewName or DEFAULT_VIEW
+	assert(cache.config.views[viewName], "unknown view " .. tostring(viewName))
+	local key = kind .. "@" .. scale .. viewSuffix(viewName)
 	local atlas = cache.atlases[key]
 	if not atlas then
 		local def = assert(cache.kinds[kind], "unknown prop kind " .. tostring(kind))
-		atlas = load(cache, def, scale) or bake(cache, def, scale)
+		atlas = load(cache, def, scale, viewName) or bake(cache, def, scale, viewName)
 		cache.atlases[key] = atlas
 	end
 	return atlas.sprites[variant][stage]

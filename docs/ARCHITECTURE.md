@@ -78,6 +78,7 @@ end
 - `src/app/render/` holds one draw module per pool, plus the world.
 - Draw modules read record data. They never mutate it.
 - Components never draw themselves.
+- Projection is per view. `src/game/projection.lua` is the only world<->screen math; `Projection.new(config, bakeScale, view)` takes a view from `config.views` (plain data: ground matrix, lift per unit z, affine depth). 3/4 top-down is the default. Adding a view needs config data only.
 - `src/app/camera.lua` follows the player and zooms with the mouse wheel. Its follow and zoom math is pure; only `attach`/`detach` touch `love.graphics`.
 
 ## Adding things

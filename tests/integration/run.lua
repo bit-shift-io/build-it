@@ -23,6 +23,9 @@ local defaultTestFiles = {
 	"tests/integration/sleep_test.lua",
 	"tests/integration/port_facing_test.lua",
 	"tests/integration/pause_test.lua",
+	"tests/integration/settings_test.lua",
+	"tests/integration/view_input_test.lua",
+	"tests/integration/view_switch_test.lua",
 }
 
 local tests = {}

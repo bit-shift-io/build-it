@@ -1,15 +1,17 @@
 -- World camera: a centre point and a zoom. Follow and zoom are pure math;
 -- only attach/detach touch love.graphics.
+local Projection = require("src.game.projection")
+
 local Camera = {}
 
 function Camera.new(x, y)
 	return { x = x or 0, y = y or 0, zoom = 1 }
 end
 
--- Centres the camera on a world position.
-function Camera.follow(camera, x, y)
-	camera.x = x
-	camera.y = y
+-- Centres the camera on a world position (tiles, at ground level): where
+-- projection `p` (src/game/projection.lua, the active view) draws it.
+function Camera.follow(camera, p, tileX, tileY)
+	camera.x, camera.y = Projection.worldToScreen(p, tileX, tileY, 0)
 end
 
 -- Zooms by `notches` wheel steps (positive zooms in), clamped to

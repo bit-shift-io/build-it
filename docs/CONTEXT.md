@@ -58,6 +58,14 @@ Domain terms for Build-it. Code, docs and conversation use these words with thes
 - **Definition:** The `app` module that renders a block model to a sprite through the world's 3/4 projection.
 - **Boundary:** The only place block models become pixels in the world. The builder renders live, without baking.
 
+## View
+- **Definition:** The fixed perspective the world is drawn and baked in: 3/4 top-down, 2:1 isometric or true isometric.
+- **Boundary:** Data in `config`, applied through the one projection. A sprite is baked per view. Changes drawing and picking only, never the simulation, saves or the builder.
+
+## Settings
+- **Definition:** Player-level preferences, saved in one file and shared by every world. Today only the view.
+- **Boundary:** Never part of a world save.
+
 ## Facing
 - **Definition:** One of 4 rotations of a building (N, E, S, W), or one of 8 directions of the character.
 - **Boundary:** Each facing has its own baked sprite.

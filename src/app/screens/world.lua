@@ -28,17 +28,34 @@ local Status = require("src.game.components.status")
 local Card = require("src.app.render.card")
 local Picker = require("src.app.picker")
 local PickerRender = require("src.app.render.picker")
+local SettingsScreen = require("src.app.screens.settings")
 
 local WorldScreen = {}
 
+-- The projection of the screen's active view, at the world's base scale.
+local function projectionOf(screen)
+	return Projection.new(screen.ctx.config, 1, screen.ctx.config.views[screen.view])
+end
+
+-- Centres `camera` on a record at world px (x, y), through the active view.
+local function follow(camera, ctx, viewName, x, y)
+	local tile = ctx.config.tileSize
+	Camera.follow(camera, Projection.new(ctx.config, 1, ctx.config.views[viewName]), x / tile, y / tile)
+end
+
 -- library: the design library (src/game/designs/library.lua), shared with
--- the builder.
-function WorldScreen.new(ctx, library)
+-- the builder. viewName: a config.views key (default "topdown"), the view the
+-- world draws in.
+function WorldScreen.new(ctx, library, viewName)
 	local player = ctx.pools.characters[1]
+	viewName = viewName or "topdown"
+	local camera = Camera.new()
+	follow(camera, ctx, viewName, player.x, player.y)
 	return {
 		ctx = ctx,
+		view = viewName,
 		player = player,
-		camera = Camera.new(player.x, player.y),
+		camera = camera,
 		library = library,
 		-- The pointer's last screen position, once it has moved.
 		mouse = nil,
@@ -58,16 +75,29 @@ function WorldScreen.new(ctx, library)
 		-- True while P has paused the session. Hover, placement and the
 		-- camera zoom keep working; only the simulation stops.
 		paused = false,
+		-- The settings overlay (SettingsScreen state) while open, or nil.
+		settings = nil,
+		-- The view name picked in the overlay, until the flow saves it.
+		viewChoice = nil,
+		-- Views drawn at least once (their bakes are done).
+		drawn = {},
+		-- True for the one draw after a switch to an unbaked view: it shows
+		-- "Baking..." so the bake on the following draw has a message up.
+		baking = false,
 	}
 end
 
--- The world point (tiles, at ground level) under screen pixel (x, y).
-local function worldAt(screen, x, y)
+-- The view-space pixel (world drawing coordinates) under window pixel (x, y).
+local function viewPoint(screen, x, y)
 	local w, h = Screen.dimensions()
 	local cam = screen.camera
-	local px = cam.x + (x - w / 2) / cam.zoom
-	local py = cam.y + (y - h / 2) / cam.zoom
-	return Projection.screenToWorld(Projection.new(screen.ctx.config), px, py, 0)
+	return cam.x + (x - w / 2) / cam.zoom, cam.y + (y - h / 2) / cam.zoom
+end
+
+-- The world point (tiles, at ground level) under window pixel (x, y).
+local function worldAt(screen, x, y)
+	local px, py = viewPoint(screen, x, y)
+	return Projection.screenToWorld(projectionOf(screen), px, py, 0)
 end
 
 -- The villager or player whose sprite is under the pointer, or nil. Tests
@@ -76,11 +106,8 @@ function WorldScreen.hovered(screen)
 	if not screen.mouse or screen.placing or screen.menu or screen.picker then
 		return nil
 	end
-	local w, h = Screen.dimensions()
-	local cam = screen.camera
-	local px = cam.x + (screen.mouse.x - w / 2) / cam.zoom
-	local py = cam.y + (screen.mouse.y - h / 2) / cam.zoom
-	return CharacterRender.at(screen.ctx, px, py)
+	local px, py = viewPoint(screen, screen.mouse.x, screen.mouse.y)
+	return CharacterRender.at(screen.ctx, px, py, screen.view)
 end
 
 -- The tile under the held left-click pointer, or nil when not held.
@@ -123,12 +150,33 @@ end
 
 -- Whether a menu or the picker has the keyboard and pointer.
 function WorldScreen.modal(screen)
-	return screen.menu ~= nil or screen.picker ~= nil
+	return screen.menu ~= nil or screen.picker ~= nil or screen.settings ~= nil
 end
 
--- Closes the menu and the picker.
+-- Closes the menu, the picker and the settings overlay.
 local function closeModal(screen)
-	screen.menu, screen.picker, screen.dropText = nil, nil, nil
+	screen.menu, screen.picker, screen.dropText, screen.settings = nil, nil, nil, nil
+end
+
+-- Opens the settings overlay, over the paused or running world.
+local function openSettings(screen)
+	closeModal(screen)
+	screen.pointer = nil
+	screen.settings = SettingsScreen.new(screen.ctx.config, screen.view)
+end
+
+-- Shows the world in view `name`, live: the camera re-centres on the player
+-- and keeps its zoom. A view not yet drawn gets a "Baking..." frame first.
+-- The flow saves screen.viewChoice.
+local function switchView(screen, name)
+	closeModal(screen)
+	if name == screen.view then
+		return
+	end
+	screen.view = name
+	screen.viewChoice = name
+	screen.baking = not screen.drawn[name]
+	follow(screen.camera, screen.ctx, name, screen.player.x, screen.player.y)
 end
 
 -- Opens the building picker; `key` is the key that opened it, if any.
@@ -152,7 +200,18 @@ local function stopPlacing(screen)
 end
 
 function WorldScreen.keypressed(screen, key)
-	if key == "p" and not screen.picker then
+	if screen.settings then
+		if key == "o" or key == "escape" then
+			closeModal(screen)
+		else
+			SettingsScreen.keypressed(screen.settings, key)
+			if screen.settings.choice then
+				switchView(screen, screen.settings.choice)
+			end
+		end
+	elseif key == "o" and not screen.picker and not screen.menu then
+		openSettings(screen)
+	elseif key == "p" and not screen.picker then
 		screen.paused = not screen.paused
 	elseif key == "1" then
 		openPicker(screen, key)
@@ -207,11 +266,28 @@ local function placeGhost(screen)
 	end
 end
 
+-- Whether window pixel (x, y) is on the Settings button.
+local function overSettingsButton(x, y)
+	local b = Hud.settingsButton((Screen.dimensions()))
+	return x >= b.x and x < b.x + b.width and y >= b.y and y < b.y + b.height
+end
+
 -- Holding the left button on a tile harvests the node there, unless
 -- placing.
 function WorldScreen.mousepressed(screen, x, y, button)
 	screen.mouse = { x = x, y = y }
-	if screen.picker then
+	if screen.settings then
+		if button == 1 then
+			SettingsScreen.mousepressed(screen.settings, x, y, button)
+			if screen.settings.choice then
+				switchView(screen, screen.settings.choice)
+			else
+				closeModal(screen)
+			end
+		else
+			closeModal(screen)
+		end
+	elseif screen.picker then
 		if button == 2 then
 			closeModal(screen)
 		elseif button == 1 then
@@ -227,6 +303,8 @@ function WorldScreen.mousepressed(screen, x, y, button)
 		else
 			closeModal(screen)
 		end
+	elseif button == 1 and overSettingsButton(x, y) then
+		openSettings(screen)
 	elseif screen.placing then
 		if button == 1 then
 			placeGhost(screen)
@@ -272,15 +350,17 @@ function WorldScreen.update(screen, dt)
 	if screen.paused then
 		return
 	end
-	Input.updateIntents(screen.ctx, pointerTile(screen), screen.pendingPlace, WorldScreen.modal(screen))
+	Input.updateIntents(screen.ctx, pointerTile(screen), screen.pendingPlace, WorldScreen.modal(screen), screen.ctx.config.views[screen.view])
 	screen.pendingPlace = nil
 	screen.dropText = nil
 	Session.advance(screen.ctx, dt)
-	Camera.follow(screen.camera, screen.player.x, screen.player.y)
+	follow(screen.camera, screen.ctx, screen.view, screen.player.x, screen.player.y)
 end
 
 function WorldScreen.wheelmoved(screen, _, y)
-	if screen.picker then
+	if screen.settings then
+		return
+	elseif screen.picker then
 		Picker.scrollBy(screen.picker, -y)
 		return
 	end
@@ -288,12 +368,20 @@ function WorldScreen.wheelmoved(screen, _, y)
 end
 
 function WorldScreen.draw(screen)
+	if screen.baking then
+		-- The "Baking..." frame; the next draw bakes the new view.
+		screen.baking = false
+		local w, h = Screen.dimensions()
+		Hud.drawBaking(w, h)
+		return
+	end
+	screen.drawn[screen.view] = true
 	local ghost = WorldScreen.ghost(screen)
 	Camera.attach(screen.camera, Screen.dimensions())
-	WorldRender.draw(screen.ctx, screen.camera.zoom)
-	CharacterRender.draw(screen.ctx, screen.camera.zoom)
+	WorldRender.draw(screen.ctx, screen.camera.zoom, screen.view)
+	CharacterRender.draw(screen.ctx, screen.camera.zoom, screen.view)
 	if ghost then
-		GhostRender.draw(screen.ctx, ghost, screen.camera.zoom)
+		GhostRender.draw(screen.ctx, ghost, screen.camera.zoom, screen.view)
 	end
 	Camera.detach()
 	Hud.draw(screen.player.inventory, StorageFacility.totals(screen.ctx), CharacterSystem.portInUse(screen.player, screen.ctx), Aura.at(screen.ctx, screen.player), StorageFacility.claimed(screen.ctx), StorageFacility.totalFill(screen.ctx), Status.hunger(screen.player.needs, screen.ctx.config.needs), screen.ctx.config.food)
@@ -301,8 +389,15 @@ function WorldScreen.draw(screen)
 	if hovered then
 		Card.draw(Status.lines(hovered, Aura.at(screen.ctx, hovered)), screen.mouse.x, screen.mouse.y, Status.bars(hovered))
 	end
+	Hud.drawSettingsButton((Screen.dimensions()), screen.mouse)
 	GhostRender.drawPanel(screen.placing, WorldScreen.cost(screen), WorldScreen.status(screen), StorageFacility.totals(screen.ctx))
-	if screen.menu then
+	if screen.settings then
+		local w, h = Screen.dimensions()
+		love.graphics.setColor(0, 0, 0, 0.6)
+		love.graphics.rectangle("fill", 0, 0, w, h)
+		love.graphics.setColor(1, 1, 1, 1)
+		SettingsScreen.draw(screen.settings)
+	elseif screen.menu then
 		PickerRender.drawMenu(screen.menu, screen.mouse)
 	elseif screen.picker then
 		PickerRender.drawPicker(screen.picker, screen.mouse, { config = screen.ctx.config, totals = StorageFacility.totals(screen.ctx) })

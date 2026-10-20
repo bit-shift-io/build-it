@@ -1,6 +1,6 @@
 -- The baker (docs/CONTEXT.md "Baker"): renders a block model through the
--- world's 3/4 projection into a transparent sprite, once per facing and bake
--- scale. The only place block models become pixels in the world.
+-- world's projection for a view into a transparent sprite, once per facing,
+-- view and bake scale. The only place block models become pixels in the world.
 --
 -- The CPU projects every vertex with src/game/projection.lua; the GPU only
 -- depth-tests and lights (block_shader.glsl). Same projection as the world
@@ -72,10 +72,24 @@ local function tileBounds(model)
 	}
 end
 
+-- The nearest and farthest view depth over the bounds' 8 corners. Depth is
+-- affine, so a box's extremes are at its corners.
+local function depthRange(p, bounds)
+	local nearest, farthest = -math.huge, math.huge
+	for _, x in ipairs({ bounds.minX, bounds.maxX }) do
+		for _, y in ipairs({ bounds.minY, bounds.maxY }) do
+			for _, z in ipairs({ bounds.minZ, bounds.maxZ }) do
+				local d = Projection.depth(p, x, y, z)
+				nearest, farthest = math.max(nearest, d), math.min(farthest, d)
+			end
+		end
+	end
+	return nearest, farthest
+end
+
 local function meshVertices(model, p, frame, bounds)
 	local cpt = model.cellsPerTile
-	local farthest = Projection.depth(p, 0, bounds.minY, bounds.minZ)
-	local nearest = Projection.depth(p, 0, bounds.maxY, bounds.maxZ)
+	local nearest, farthest = depthRange(p, bounds)
 	local span = math.max(nearest - farthest, 1e-9)
 
 	local out = {}
@@ -90,14 +104,15 @@ local function meshVertices(model, p, frame, bounds)
 end
 
 -- Bakes `model` turned to `facing` (Model.FACINGS) at whole bake `scale`
--- (Projection.bakeScale). Returns a sprite:
+-- (Projection.bakeScale) through `view` (a config.views entry; default 3/4
+-- top-down). Returns a sprite:
 --   { image = <Canvas>, frame = <Projection.spriteFrame>, width, depth }
 -- width/depth are the turned footprint in tiles. Draw it with
 -- Projection.placeSprite.
-function Baker.bake(model, facing, config, scale)
+function Baker.bake(model, facing, config, scale, view)
 	local turned = Model.rotate(model, facing)
 	assert(#turned.cells > 0, "cannot bake an empty block model")
-	local p = Projection.new(config, scale)
+	local p = Projection.new(config, scale, view)
 	local bounds = tileBounds(turned)
 	local frame = Projection.spriteFrame(p, bounds)
 	local mesh = love.graphics.newMesh(VERTEX_FORMAT, meshVertices(turned, p, frame, bounds), "triangles", "static")

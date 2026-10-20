@@ -36,29 +36,41 @@ end
 
 function Terrain.draw(ctx, p)
 	local world = ctx.world
-	local w, h = World.pixelSize(world, ctx.config)
+	-- The world's ground outline: a rectangle, or a diamond in an iso view.
+	local x0, y0 = Projection.worldToScreen(p, 0, 0, 0)
+	local x1, y1 = Projection.worldToScreen(p, world.width, 0, 0)
+	local x2, y2 = Projection.worldToScreen(p, world.width, world.height, 0)
+	local x3, y3 = Projection.worldToScreen(p, 0, world.height, 0)
 
 	love.graphics.setColor(COLORS.grass)
-	love.graphics.rectangle("fill", 0, 0, w, h)
+	love.graphics.polygon("fill", x0, y0, x1, y1, x2, y2, x3, y3)
 
 	local image = terrainImage(world)
 	if image then
-		local x, y = Projection.worldToScreen(p, 0, 0, 0)
+		-- One pixel per tile, through the ground matrix: the image's pixel
+		-- (u, v) is tile (u, v), so nearest sampling keeps every tile edge
+		-- on the tile grid (the GPU clips to the screen).
+		local ppt = p.pixelsPerTile
+		local ground = love.math.newTransform()
+		ground:setMatrix("row", p.a * ppt, p.b * ppt, 0, 0, p.c * ppt, p.d * ppt, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)
+		love.graphics.push()
+		love.graphics.applyTransform(ground)
 		love.graphics.setColor(1, 1, 1, 1)
-		love.graphics.draw(image, x, y, 0, p.pixelsPerTile, p.pixelsPerTile)
+		love.graphics.draw(image, 0, 0)
+		love.graphics.pop()
 	end
 
 	love.graphics.setColor(GRID)
 	love.graphics.setLineWidth(1)
 	for col = 0, world.width do
-		local x0, y0 = Projection.worldToScreen(p, col, 0, 0)
-		local x1, y1 = Projection.worldToScreen(p, col, world.height, 0)
-		love.graphics.line(x0, y0, x1, y1)
+		local ax, ay = Projection.worldToScreen(p, col, 0, 0)
+		local bx, by = Projection.worldToScreen(p, col, world.height, 0)
+		love.graphics.line(ax, ay, bx, by)
 	end
 	for row = 0, world.height do
-		local x0, y0 = Projection.worldToScreen(p, 0, row, 0)
-		local x1, y1 = Projection.worldToScreen(p, world.width, row, 0)
-		love.graphics.line(x0, y0, x1, y1)
+		local ax, ay = Projection.worldToScreen(p, 0, row, 0)
+		local bx, by = Projection.worldToScreen(p, world.width, row, 0)
+		love.graphics.line(ax, ay, bx, by)
 	end
 end
 

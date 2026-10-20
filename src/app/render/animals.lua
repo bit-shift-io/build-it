@@ -17,13 +17,13 @@ local function cacheFor(config)
 end
 
 -- Appends { sprite, tileX, tileY } per deer to `draws`, sprites baked at
--- whole bake `scale`.
-function AnimalsRender.addDraws(draws, ctx, scale)
+-- whole bake `scale`, in view `viewName`.
+function AnimalsRender.addDraws(draws, ctx, scale, viewName)
 	local cache = cacheFor(ctx.config)
 	local tile = ctx.config.tileSize
 	for _, a in ipairs(ctx.pools.animals) do
 		table.insert(draws, {
-			sprite = PropCache.sprite(cache, "deer", a.animator.facing, a.animator.frame, scale),
+			sprite = PropCache.sprite(cache, "deer", a.animator.facing, a.animator.frame, scale, viewName),
 			tileX = a.x / tile - 0.5,
 			tileY = a.y / tile - 0.5,
 		})

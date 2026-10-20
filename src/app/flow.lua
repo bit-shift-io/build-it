@@ -1,4 +1,4 @@
--- App flow: which screen is showing, and the switch between them. The app
+-- App flow (title -> Settings picks the view): which screen is showing, and the switch between them. The app
 -- launches on the title screen (Continue / New game); B opens the builder
 -- from the world; Esc goes back (unless the builder is taking typed text,
 -- when Esc only stops the typing). F5 in the world saves it, and so does
@@ -16,23 +16,26 @@ local BuilderScreen = require("src.app.screens.builder")
 local TitleScreen = require("src.app.screens.title")
 local DesignStore = require("src.app.design_store")
 local SaveStore = require("src.app.save_store")
+local SettingsStore = require("src.app.settings_store")
+local SettingsScreen = require("src.app.screens.settings")
 local StorageFacility = require("src.game.components.storage_facility")
 
 local Flow = {}
 
-local SCREENS = { title = TitleScreen, world = WorldScreen, builder = BuilderScreen }
+local SCREENS = { title = TitleScreen, world = WorldScreen, builder = BuilderScreen, settingsScreen = SettingsScreen }
 
 -- The design library is read once per launch (src/app/design_store.lua)
 -- and shared: the builder saves into it, the world places from it.
 local function newFlow(config)
 	local library, problems = DesignStore.load(config.designs.dir)
-	return { config = config, library = library, problems = problems }
+	-- The player's settings (src/game/settings.lua), read once per launch.
+	return { config = config, library = library, problems = problems, settings = SettingsStore.load(config) }
 end
 
 -- Shows the world of session `ctx`.
 local function begin(flow, ctx)
 	flow.ctx = ctx
-	flow.world = WorldScreen.new(ctx, flow.library)
+	flow.world = WorldScreen.new(ctx, flow.library, flow.settings.view)
 	flow.builder = BuilderScreen.new(flow.config, flow.library, flow.problems, function()
 		return StorageFacility.totals(ctx)
 	end)
@@ -70,10 +73,22 @@ local function choose(flow)
 			return
 		end
 		begin(flow, ctx)
+	elseif choice == "settings" then
+		flow.settingsScreen = SettingsScreen.new(flow.config, flow.settings.view)
+		flow.screen = "settingsScreen"
 	elseif choice == "new" then
 		local seed = flow.config.save.seed
 		begin(flow, Session.newGame(WorldGen.generate(flow.config, seed), flow.config, seed))
 	end
+end
+
+-- Stores the view the settings screen picked, in the flow and on disk.
+local function pick(flow)
+	local screen = flow.settingsScreen
+	flow.settings.view = screen.choice
+	screen.choice = nil
+	screen.current = flow.settings.view
+	SettingsStore.write(flow.config, flow.settings)
 end
 
 -- Saves the session into the slot; true, or nil and why not.
@@ -99,6 +114,13 @@ local function dispatch(flow, event, ...)
 	end
 	if flow.screen == "title" and flow.title.choice then
 		choose(flow)
+	elseif flow.screen == "settingsScreen" and flow.settingsScreen.choice then
+		pick(flow)
+	elseif flow.screen == "world" and flow.world.viewChoice then
+		-- The in-world overlay switched the view: save it like the title's.
+		flow.settings.view = flow.world.viewChoice
+		flow.world.viewChoice = nil
+		SettingsStore.write(flow.config, flow.settings)
 	end
 end
 
@@ -119,6 +141,8 @@ function Flow.keypressed(flow, key)
 	elseif flow.screen == "world" and key == "f5" then
 		local ok, err = Flow.save(flow)
 		flow.world.message = ok and "Saved." or ("Save failed: " .. tostring(err))
+	elseif flow.screen == "settingsScreen" and key == "escape" then
+		flow.screen = "title"
 	elseif flow.screen == "builder" and key == "escape" and not BuilderScreen.typing(flow.builder) then
 		flow.screen = "world"
 	else
