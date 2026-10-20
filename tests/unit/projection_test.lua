@@ -105,7 +105,7 @@ test("Projection.bakeScale is the smallest whole scale at or above the zoom", fu
 end)
 
 local Config = require("src.game.config")
-local VIEW_NAMES = { "topdown", "iso2to1", "iso" }
+local VIEW_NAMES = { "topdown", "iso2to1", "iso", "skew" }
 
 local function viewProjection(name, scale)
 	return Projection.new(Config, scale, Config.views[name])
@@ -158,6 +158,18 @@ test("Projection iso2to1 ground diamond is 2:1", function()
 	assertNear(ts, by)
 end)
 
+test("Projection skew view keeps north-south tile edges level and leans east-west ones", function()
+	assertTrue(Config.views.skew ~= nil, "skew view exists")
+	local p = viewProjection("skew")
+	local ts = Config.tileSize
+	local ex, ey = Projection.worldToScreen(p, 1, 0, 0)
+	assertNear(ts, ex)
+	assertNear(0, ey)
+	local sx, sy = Projection.worldToScreen(p, 0, 1, 0)
+	assertTrue(sx > 0 and sx < ts, "south edge leans right, but only slightly")
+	assertNear(ts, sy)
+end)
+
 test("Projection views lift voxel heights onto whole pixels and lift up the screen", function()
 	for _, name in ipairs(VIEW_NAMES) do
 		local lift = Config.views[name].lift
@@ -175,6 +187,7 @@ test("Projection depth orders nearer points higher in every view", function()
 		topdown = { { 0, 1, 0 } },
 		iso2to1 = { { 1, 0, 0 }, { 0, 1, 0 } },
 		iso = { { 1, 0, 0 }, { 0, 1, 0 } },
+		skew = { { -1, 0, 0 }, { 0, 1, 0 } },
 	}
 	for _, name in ipairs(VIEW_NAMES) do
 		local p = viewProjection(name)

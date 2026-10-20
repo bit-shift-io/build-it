@@ -55,6 +55,16 @@ return {
 			lift = 1,
 			depth = { 0.8660254037844386, 0.8660254037844386 },
 		},
+		-- 3/4 top-down sheared so the viewer stands to the south-west: moving
+		-- south also moves right on screen (screen x = x + 0.1*y), tile edges
+		-- along x stay level, and the west faces of buildings show beside the
+		-- south faces. Lift stays 1 and straight up. Depth: ground * (dx, dy)
+		-- = (0, lift) gives dy = 1, dx = -0.1.
+		skew = {
+			ground = { 1, 0.1, 0, 1 },
+			lift = 1,
+			depth = { -0.1, 1 },
+		},
 	},
 
 	-- Baked sprite lighting (src/app/bake/block_shader.glsl). lightDirection

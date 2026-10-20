@@ -59,7 +59,7 @@ Domain terms for Build-it. Code, docs and conversation use these words with thes
 - **Boundary:** The only place block models become pixels in the world. The builder renders live, without baking.
 
 ## View
-- **Definition:** The fixed perspective the world is drawn and baked in: 3/4 top-down, 2:1 isometric or true isometric.
+- **Definition:** The fixed perspective the world is drawn and baked in: 3/4 top-down, skewed top-down (3/4 sheared so west faces show), 2:1 isometric or true isometric.
 - **Boundary:** Data in `config`, applied through the one projection. A sprite is baked per view. Changes drawing and picking only, never the simulation, saves or the builder.
 
 ## Settings
