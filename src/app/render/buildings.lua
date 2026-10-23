@@ -17,28 +17,30 @@ local BuildingsRender = {}
 local caches = setmetatable({}, { __mode = "k" })
 
 -- The baked sprite of `blueprint` turned to `facing`, at whole bake
--- `scale`, in view `viewName` (a config.views key, default "topdown").
--- Shared by placed buildings, the placement ghost and the picker.
-function BuildingsRender.sprite(config, blueprint, facing, scale, viewName)
+-- `scale`, in view `viewName` (a config.views key, default "topdown"), team
+-- slots in `palette` (the local player's team palette, src/game/palette.lua;
+-- docs/DECISIONS: one player, so every building is theirs). Shared by
+-- placed buildings, the placement ghost and the picker.
+function BuildingsRender.sprite(config, blueprint, facing, scale, viewName, palette)
 	caches[config] = caches[config] or DesignCache.new(config)
-	return DesignCache.sprite(caches[config], blueprint, facing, scale, viewName)
+	return DesignCache.sprite(caches[config], blueprint, facing, scale, viewName, palette)
 end
 
 local SITE_ALPHA = 0.45
 
 -- Appends { sprite, tileX, tileY } per building, and per site with
--- `alpha`, to `draws`.
-function BuildingsRender.addDraws(draws, ctx, scale, viewName)
+-- `alpha`, to `draws`; team slots in `palette`.
+function BuildingsRender.addDraws(draws, ctx, scale, viewName, palette)
 	for _, b in ipairs(ctx.pools.buildings) do
 		table.insert(draws, {
-			sprite = BuildingsRender.sprite(ctx.config, b.blueprint, b.facing, scale, viewName),
+			sprite = BuildingsRender.sprite(ctx.config, b.blueprint, b.facing, scale, viewName, palette),
 			tileX = b.tileX,
 			tileY = b.tileY,
 		})
 	end
 	for _, site in ipairs(ctx.pools.sites) do
 		table.insert(draws, {
-			sprite = BuildingsRender.sprite(ctx.config, site.blueprint, site.facing, scale, viewName),
+			sprite = BuildingsRender.sprite(ctx.config, site.blueprint, site.facing, scale, viewName, palette),
 			tileX = site.tileX,
 			tileY = site.tileY,
 			alpha = SITE_ALPHA,

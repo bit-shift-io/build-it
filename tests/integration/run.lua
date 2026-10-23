@@ -7,6 +7,8 @@ local defaultTestFiles = {
 	"tests/integration/hand_harvest_test.lua",
 	"tests/integration/place_building_test.lua",
 	"tests/integration/woodcutter_test.lua",
+	"tests/integration/starter_chain_test.lua",
+	"tests/integration/replace_building_test.lua",
 	"tests/integration/sawmill_test.lua",
 	"tests/integration/forester_test.lua",
 	"tests/integration/forager_test.lua",
@@ -31,6 +33,12 @@ local defaultTestFiles = {
 	"tests/integration/script_builder_shape_test.lua",
 	"tests/integration/script_builder_path_test.lua",
 	"tests/integration/script_builder_material_test.lua",
+	"tests/integration/script_builder_colour_test.lua",
+	"tests/integration/team_colours_test.lua",
+	"tests/integration/prefab_flow_test.lua",
+	"tests/integration/library_panel_test.lua",
+	"tests/integration/hot_reload_test.lua",
+	"tests/integration/code_panel_test.lua",
 }
 
 local tests = {}

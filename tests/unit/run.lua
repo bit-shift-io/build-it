@@ -37,6 +37,7 @@ local defaultTestFiles = {
 	"tests/unit/save_codec_test.lua",
 	"tests/unit/save_records_test.lua",
 	"tests/unit/starter_design_test.lua",
+	"tests/unit/starter_content_test.lua",
 	"tests/unit/storage_facility_test.lua",
 	"tests/unit/pathfind_test.lua",
 	"tests/unit/walker_test.lua",
@@ -74,7 +75,10 @@ local defaultTestFiles = {
 	"tests/unit/sweep_test.lua",
 	"tests/unit/path_tool_test.lua",
 	"tests/unit/palette_test.lua",
+	"tests/unit/recent_colours_test.lua",
 	"tests/unit/design_cache_test.lua",
+	"tests/unit/prefab_test.lua",
+	"tests/unit/text_buffer_test.lua",
 }
 
 local tests = {}

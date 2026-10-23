@@ -12,18 +12,38 @@ local PICKER_W, HEADER_H = 360, 30
 local PICKER_ROW_H, THUMB = 44, 38
 local WHITE, RED = { 1, 1, 1, 1 }, { 1, 0.45, 0.4, 1 }
 
--- The context menu's single entry "Build" opened at (x, y): its rectangle.
-function PickerRender.menuItem(menu)
-	return { x = menu.x, y = menu.y, w = MENU_W, h = ROW_H }
+-- The context menu's entries opened at { x, y, building? }: "Build", and
+-- "Replace…" when it was opened on a building. { id, label } each.
+function PickerRender.menuEntries(menu)
+	local entries = { { id = "build", label = "1 Build" } }
+	if menu.building then
+		entries[#entries + 1] = { id = "replace", label = "Replace..." }
+	end
+	return entries
+end
+
+-- The rectangle of the menu's entry i, or nil when it has no such entry.
+function PickerRender.menuItem(menu, i)
+	i = i or 1
+	if not PickerRender.menuEntries(menu)[i] then
+		return nil
+	end
+	return { x = menu.x, y = menu.y + (i - 1) * ROW_H, w = MENU_W, h = ROW_H }
 end
 
 local function inside(rect, x, y)
 	return x >= rect.x and x < rect.x + rect.w and y >= rect.y and y < rect.y + rect.h
 end
 
--- Whether screen point (x, y) is on the menu's "Build" entry.
-function PickerRender.menuHit(menu, x, y)
-	return inside(PickerRender.menuItem(menu), x, y)
+-- The id of the menu entry under screen point (x, y) ("build" |
+-- "replace"), or nil.
+function PickerRender.menuAt(menu, x, y)
+	for i, entry in ipairs(PickerRender.menuEntries(menu)) do
+		if inside(PickerRender.menuItem(menu, i), x, y) then
+			return entry.id
+		end
+	end
+	return nil
 end
 
 -- The picker panel's rectangle, centred in a screen of w x h.
@@ -67,13 +87,13 @@ end
 -- One picker row for `design` (Library.placeable's { name, blueprint }):
 -- its blueprint's sprite (facing N, fixed bake scale 1) fitted into a
 -- square, the name, and the cost with short items in red.
--- ctx: { config, totals }.
+-- ctx: { config, totals, palette }.
 local function drawRow(design, rect, hover, ctx)
 	if hover then
 		love.graphics.setColor(1, 1, 1, 0.15)
 		love.graphics.rectangle("fill", rect.x, rect.y, rect.w, rect.h)
 	end
-	local sprite = BuildingsRender.sprite(ctx.config, design.blueprint, "N", 1)
+	local sprite = BuildingsRender.sprite(ctx.config, design.blueprint, "N", 1, nil, ctx.palette)
 	local iw, ih = sprite.image:getDimensions()
 	local scale = math.min(THUMB / iw, THUMB / ih)
 	local tx = rect.x + PAD + (THUMB - iw * scale) / 2
@@ -96,20 +116,22 @@ local function drawRow(design, rect, hover, ctx)
 end
 
 function PickerRender.drawMenu(menu, mouse)
-	local item = PickerRender.menuItem(menu)
 	love.graphics.push("all")
-	love.graphics.setColor(0, 0, 0, 0.85)
-	love.graphics.rectangle("fill", item.x, item.y, item.w, item.h)
-	if mouse and inside(item, mouse.x, mouse.y) then
-		love.graphics.setColor(1, 1, 1, 0.15)
+	for i, entry in ipairs(PickerRender.menuEntries(menu)) do
+		local item = PickerRender.menuItem(menu, i)
+		love.graphics.setColor(0, 0, 0, 0.85)
 		love.graphics.rectangle("fill", item.x, item.y, item.w, item.h)
+		if mouse and inside(item, mouse.x, mouse.y) then
+			love.graphics.setColor(1, 1, 1, 0.15)
+			love.graphics.rectangle("fill", item.x, item.y, item.w, item.h)
+		end
+		love.graphics.setColor(1, 1, 1, 1)
+		love.graphics.print(entry.label, item.x + PAD, item.y + 4)
 	end
-	love.graphics.setColor(1, 1, 1, 1)
-	love.graphics.print("1 Build", item.x + PAD, item.y + 4)
 	love.graphics.pop()
 end
 
--- ctx: { config, totals } for the rows' thumbnails and costs.
+-- ctx: { config, totals, palette } for the rows' thumbnails and costs.
 function PickerRender.drawPicker(picker, mouse, ctx)
 	local w, h = love.graphics.getDimensions()
 	local panel = PickerRender.panel(w, h)

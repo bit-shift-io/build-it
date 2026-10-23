@@ -16,8 +16,12 @@
 --   group{ id, name, transform, <child>, <child>, ... }
 --   role{ id, name, transform, ability = "saw" | port = "input"|"output" |
 --         storage = n }                                 a role at its origin
---   prefab("name", { id, name, transform })            a library prefab,
---                                                       resolved after the run
+--   prefab("name", { id, name, transform, params = { width = 2 } })
+--                                                       a library prefab,
+--                                                       resolved after the
+--                                                       run; params override
+--                                                       its UI.* params by
+--                                                       name
 --   shape{ id, name, transform, points = { { x, y }, { x, y, hx, hy }, ... },
 --          plane = { origin = { x, y, z }, u = { x, y, z }, v = { x, y, z } } }
 --                                                       a closed 2D outline
@@ -356,6 +360,34 @@ local function color(value, kind)
 	return out
 end
 
+-- A prefab instance's param overrides (docs/CONTEXT.md "Param"): a copy of
+-- { [param name] = number | true/false | choice string | { r, g, b } }, or
+-- nil when not given. Whether each fits its param is checked when the
+-- prefab runs (src/game/script/resolve.lua).
+local function overrides(value)
+	if value == nil then
+		return nil
+	end
+	if type(value) ~= "table" then
+		fail("prefab params must be a table, e.g. { width = 2 }")
+	end
+	local out = {}
+	for name, v in pairs(value) do
+		if type(name) ~= "string" then
+			fail("prefab params are named, e.g. { width = 2 }")
+		end
+		local kind = type(v)
+		if kind == "table" then
+			out[name] = vector(v, "param " .. name, "prefab")
+		elseif kind == "number" or kind == "boolean" or kind == "string" then
+			out[name] = v
+		else
+			fail("prefab param " .. name .. " must be a number, true/false, a string or { r, g, b }")
+		end
+	end
+	return out
+end
+
 -- `value` as a node's colour (a copy), or nil and why it can't be one.
 function Api.color(value)
 	if value == nil then
@@ -370,8 +402,12 @@ end
 
 -- A fresh API for one run. Returns the functions to expose and the run's
 -- state: { params = { <param> (src/game/script/params.lua), ... } } and
--- isNode(t), whether t is a node this API built.
-function Api.new()
+-- isNode(t), whether t is a node this API built. `given` (optional) holds
+-- values by declaration order, [1] for the first UI.* call: a param with
+-- one that fits takes it as its value instead of its default (a prefab
+-- instance's override); one that doesn't fit is ignored.
+function Api.new(given)
+	given = given or {}
 	local nodes = setmetatable({}, { __mode = "k" })
 	local state = { params = {} }
 
@@ -552,7 +588,8 @@ function Api.new()
 		if type(name) ~= "string" then
 			fail("prefab takes a name, e.g. prefab(\"bed\")")
 		end
-		return node("prefab", args or {}, { prefab = name, children = {} })
+		local params = overrides(type(args) == "table" and args.params or nil)
+		return node("prefab", args or {}, { prefab = name, params = params, children = {} })
 	end
 
 	-- Declares a param of `kind` from `args`, with `fields` (field ->
@@ -575,6 +612,13 @@ function Api.new()
 			fail(call .. " default " .. why)
 		end
 		param.default, param.value = clamped, clamped
+		local override = given[#state.params + 1]
+		if override ~= nil then
+			local fits = Params.clamp(param, override)
+			if fits ~= nil then
+				clamped, param.value = fits, fits
+			end
+		end
 		table.insert(state.params, param)
 		return type(clamped) == "table" and { clamped[1], clamped[2], clamped[3] } or clamped
 	end

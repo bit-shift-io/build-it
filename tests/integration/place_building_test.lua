@@ -256,10 +256,20 @@ local function launchWith(names)
 	return game, game.ctx.pools.characters[1]
 end
 
+-- The sorted, comma-joined names of the built-in designs and `extra`.
+local function withBuiltins(...)
+	local names = { ... }
+	for _, name in ipairs(require("src.game.designs.builtins").DESIGNS) do
+		names[#names + 1] = name
+	end
+	table.sort(names)
+	return table.concat(names, ",")
+end
+
 test("key 1 then Enter places the first design by name, built-ins included", function()
 	local game = launchWith({ "b", "a", "c" })
 	Fake.tap(game, "1")
-	assertEqual("a,b,c,storage_facility", (function()
+	assertEqual(withBuiltins("a", "b", "c"), (function()
 		local names = {}
 		for i, d in ipairs(game.flow.world.picker.designs) do
 			names[i] = d.name
@@ -280,7 +290,7 @@ test("a design file written while the game runs shows in the picker; one with no
 	for _, d in ipairs(game.flow.world.picker.designs) do
 		names[#names + 1] = d.name
 	end
-	assertEqual("mill,storage_facility", table.concat(names, ","))
+	assertEqual(withBuiltins("mill"), table.concat(names, ","))
 end)
 
 test("a building whose design file is deleted survives save and load", function()
@@ -308,18 +318,18 @@ local function rowCentre(i)
 end
 
 test("right-click, Build, type a name, click the row: placing that design", function()
-	local game = launchWith({ "hall", "mill", "hut" })
+	local game = launchWith({ "hall", "foundry", "hut" })
 	local screen = game.flow.world
 	Fake.click(game, 2, 300, 200)
 	assertTrue(screen.menu ~= nil, "menu opened")
 	Fake.click(game, 1, 310, 210)
 	assertEqual(nil, screen.menu)
 	assertTrue(screen.picker ~= nil, "picker opened")
-	Fake.typeText(game, "MIL")
+	Fake.typeText(game, "FOUN")
 	assertEqual(1, #Picker.matches(screen.picker))
 	Fake.click(game, 1, rowCentre(1))
 	assertEqual(nil, screen.picker)
-	assertEqual("mill", screen.placing.design)
+	assertEqual("foundry", screen.placing.design)
 end)
 
 test("a right-click outside the menu closes it", function()

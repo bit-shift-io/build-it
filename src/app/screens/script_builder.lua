@@ -76,6 +76,51 @@
 -- click on a material, a texture variant, or a scale or rotation stepper
 -- makes every selected node of the result (Scene.setMaterial), one undo
 -- step; clicks in the view still select. Esc puts the panel away.
+--
+-- Key 8 (Colour), or Colour in the context menu, opens the colour picker
+-- (src/app/ui/colour_picker.lua) under its slot: the team slots (drawn in
+-- the local player's palette), preset colours and the recent picks (the
+-- last 8, this session only). A click paints every selected node that
+-- slot or colour (Scene.setColor), one undo step. Esc puts it away.
+--
+-- Prefabs (docs/CONTEXT.md "Prefab"): Export as prefab in the context menu
+-- asks for a name, writes prefabs/<name>.lua and turns the selection into
+-- one instance of it (Scene.export), one undo step; a locked script
+-- refuses. A selected instance lists its prefab's tree read-only under its
+-- row (a click there selects the instance), and the params panel shows its
+-- prefab's params, a change overriding them on the instance
+-- (Scene.setParam); its material and colour cover all of it. Unlink
+-- replaces it with an editable copy (Scene.unlink), except a role prefab.
+-- Edit prefab opens the instance's prefab here; Ctrl+S then writes it, a
+-- built-in as a shadow copy in the save directory, and Reset to default
+-- deletes that copy (Library.reset).
+--
+-- Key 7 (Library) opens the library manager (src/app/ui/library_panel.lua)
+-- under its slot: Designs and Prefabs tabs listing every script with a
+-- thumbnail and Open, Duplicate, Rename and Delete (Reset for a built-in,
+-- which can't be renamed or deleted); Delete takes a second click to
+-- confirm. New starts an empty design. Renaming or deleting changes no
+-- script that places it by name: that script fails to load, naming it.
+-- Whatever would switch the open script away from unsaved changes (Open,
+-- New, Edit prefab, Reset of the open script) asks first: S saves, D
+-- drops them, Esc stays. Esc puts the panel away.
+--
+-- Key 6 (Code) opens the code panel (src/app/ui/code_panel.lua) down the
+-- right: the script as text (src/game/text_buffer.lua) with line numbers.
+-- While it is up every key types or edits there (digits pick no tool);
+-- a click places the cursor, a drag or Shift selects, Ctrl+C/X/V/A copy,
+-- cut, paste and select all, the wheel scrolls. Ctrl+Enter (or Run) runs
+-- the text as the script: declarative it stays editable, with code it
+-- locks; an error marks its line and keeps the last good model. Code not
+-- yet run is an unsaved change; Ctrl+S runs it first. Open folder opens
+-- the save folder for an external editor and shows its path. Esc puts the
+-- panel away, its text kept.
+--
+-- Hot reload: twice a second the builder looks for changed files in the
+-- save directory (DesignStore.stamp). The open script, changed on disk,
+-- opens again as it now reads, unless it has unsaved changes: those are
+-- kept and the message says the file changed. A changed prefab rebuilds
+-- the model.
 local Compile = require("src.game.buildings.compile")
 local Resolve = require("src.game.script.resolve")
 local Lockcheck = require("src.game.script.lockcheck")
@@ -93,6 +138,7 @@ local Path = require("src.game.geometry.path")
 local Shape2d = require("src.game.geometry.shape2d")
 local Properties = require("src.game.builder.properties")
 local Params = require("src.game.script.params")
+local Library = require("src.game.designs.library")
 local BuilderCamera = require("src.app.builder_camera")
 local DesignStore = require("src.app.design_store")
 local ScriptBuilderView = require("src.app.render.script_builder_view")
@@ -106,6 +152,14 @@ local InsertMenu = require("src.app.ui.insert_menu")
 local PropertiesStrip = require("src.app.ui.properties")
 local ParamsPanel = require("src.app.ui.params_panel")
 local MaterialPanel = require("src.app.ui.material_panel")
+local ColourPicker = require("src.app.ui.colour_picker")
+local LibraryPanel = require("src.app.ui.library_panel")
+local CodePanel = require("src.app.ui.code_panel")
+local TextBuffer = require("src.game.text_buffer")
+local Sandbox = require("src.game.script.sandbox")
+local BuildingsRender = require("src.app.render.buildings")
+local RecentColours = require("src.game.builder.recent_colours")
+local Palette = require("src.game.palette")
 local Screen = require("src.app.screen")
 
 local ScriptBuilderScreen = {}
@@ -117,11 +171,16 @@ ScriptBuilderScreen.TOOLS = {
 	[3] = { id = "path", label = "Path" },
 	[4] = { id = "insert", label = "Insert" },
 	[5] = { id = "material", label = "Material" },
+	[6] = { id = "code", label = "Code" },
 	[7] = { id = "library", label = "Library" },
+	[8] = { id = "colour", label = "Colour" },
 }
 
 -- The context menu's entries, top to bottom.
-local MENU = { "Rename", "Delete", "Duplicate", "Group", "Extrude", "Lathe", "Sweep", "Material" }
+local MENU = {
+	"Rename", "Delete", "Duplicate", "Group", "Extrude", "Lathe", "Sweep", "Material", "Colour",
+	"Export as prefab", "Unlink", "Edit prefab", "Reset to default",
+}
 
 -- The camera's radius around an empty design, in studs.
 local EMPTY_RADIUS = 4
@@ -146,12 +205,23 @@ local DOUBLE_CLICK = 0.4
 
 local LOCKED_MESSAGE = "Locked script: it holds code, so edit it as text"
 
+-- Seconds between hot reload's looks at the save directory.
+local POLL = 0.5
+
 -- read(path) returns a game file's text, or nil and why not
 -- (love.filesystem.read). library() returns the design library as it is
 -- now (src/game/designs/library.lua), which its prefabs resolve from.
-function ScriptBuilderScreen.new(config, read, library)
+-- palette: returns the local player's team palette (src/game/palette.lua),
+-- which the view draws team slots in; default Palette.DEFAULT.
+function ScriptBuilderScreen.new(config, read, library, palette)
 	return {
 		config = config,
+		palette = palette or function()
+			return Palette.DEFAULT
+		end,
+		-- The colour picker's recent picks (RecentColours), kept across
+		-- openings for the session.
+		recentColours = RecentColours.new(),
 		cfg = config.builder,
 		scfg = config.scriptBuilder,
 		read = read,
@@ -159,6 +229,8 @@ function ScriptBuilderScreen.new(config, read, library)
 		camera = BuilderCamera.new(config.builder),
 		-- The design library this opening reads prefabs from.
 		lib = nil,
+		-- What is open: a design or a prefab ("designs" | "prefabs").
+		kind = "designs",
 		-- The design's name, what its messages call it (the file path when
 		-- read from one), its text as read, and whether it is locked.
 		name = nil,
@@ -234,6 +306,36 @@ function ScriptBuilderScreen.new(config, read, library)
 		menu = nil,
 		-- The rename text box { id, text } while open, or nil.
 		rename = nil,
+		-- Export as prefab's name prompt { text } while open, or nil.
+		exportPrompt = nil,
+		-- The library manager while open: { tab ("designs" | "prefabs"),
+		-- entries (Library.entries, each with the blueprint its thumbnail
+		-- shows, or none), armed (the name whose Delete awaits its second
+		-- click, or nil) }; else nil.
+		libraryOpen = nil,
+		-- The manager's Rename prompt { kind, name, text } while open, or nil.
+		libraryRename = nil,
+		-- The code panel's state, kept while the panel is put away: { open,
+		-- buffer (TextBuffer), scroll (lines scrolled down), base (the
+		-- buffer's text when last opened or run: edits since are unsaved),
+		-- shown (text() then: when it has changed, the panel opens afresh),
+		-- errorLine (the line the last error points at, or nil), openedAt
+		-- (the clock when opened: that frame's textinput is the opening
+		-- key's), dragging (true while a left drag selects) }; nil until
+		-- first opened on the script.
+		code = nil,
+		-- The unsaved-changes prompt { go (what switching does) } while
+		-- open, or nil.
+		unsaved = nil,
+		-- The script's text as last opened or saved: it is dirty when its
+		-- text (text()) differs.
+		saved = nil,
+		-- Each prefab instance's own tree as last resolved, by the
+		-- instance's id: the tree panel shows a selected one's read-only.
+		expanded = {},
+		-- The selected instance's params (Resolve.prefab), worked out once
+		-- per revision: { revision, id, params }, or nil.
+		instanceCache = nil,
 		-- The right button's press { x, y, moved } while held, or nil.
 		rightPress = nil,
 		-- Seconds since the screen was made, and the last left click on a
@@ -292,6 +394,17 @@ local function rebuild(screen, message)
 		return
 	end
 	screen.params = Params.collect(source, resolved.params)
+	screen.expanded = {}
+	local function instances(node)
+		if node.kind == "prefab" then
+			screen.expanded[node.id or ""] = node.children[1]
+			return
+		end
+		for _, child in ipairs(node.children or {}) do
+			instances(child)
+		end
+	end
+	instances(resolved.root)
 	local blueprint, why = Compile.blueprint(resolved.root, screen.config)
 	show(screen, blueprint, resolved.root, why or message)
 end
@@ -301,10 +414,13 @@ local function nameOf(path)
 	return path:match("([^/]+)%.lua$") or path
 end
 
--- Reads and checks the design, showing it or why it failed.
-function ScriptBuilderScreen.open(screen)
-	local path = screen.scfg.testDesign
-	screen.name = nameOf(path)
+-- Reads and checks script `name` of `kind` ("designs" | "prefabs") from
+-- the design library, else (a design only) from game file `path`, showing
+-- it or why it failed. A built-in opens as shipped unless the save
+-- directory shadows it; saving writes the shadow. `given`, when given, is
+-- the script's text instead (a New design, not yet saved).
+local function readScript(screen, kind, name, path, given)
+	screen.kind, screen.name = kind, name
 	screen.lib = screen.library()
 	screen.scene, screen.history, screen.locked = nil, History.new(), false
 	screen.menu, screen.rename, screen.status, screen.transform = nil, nil, nil, nil
@@ -312,16 +428,19 @@ function ScriptBuilderScreen.open(screen)
 	screen.shape, screen.pointDrag, screen.hover, screen.sweeping = nil, nil, nil, nil
 	screen.plane, screen.planeName, screen.planeHeight = WorkPlane.ground(), "Ground", 0
 	screen.params, screen.paramField = {}, nil
-	screen.materialOpen = nil
-	local source, err = screen.lib.designs[screen.name], nil
-	screen.chunk = screen.name
-	if not source then
+	screen.materialOpen, screen.colourOpen, screen.libraryOpen = nil, nil, nil
+	screen.exportPrompt, screen.libraryRename, screen.unsaved = nil, nil, nil
+	screen.code = nil
+	local source, err = given or screen.lib[kind][name], "not in the library"
+	screen.chunk, screen.path = name, path
+	if not source and path then
 		source, err = screen.read(path)
 		screen.chunk = path
 	end
 	screen.source = source
+	screen.diskText = not given and source or nil
 	if not source then
-		show(screen, nil, nil, "Can't read " .. path .. ": " .. tostring(err))
+		show(screen, nil, nil, "Can't read " .. (path or name) .. ": " .. tostring(err))
 		return
 	end
 	local checked, reason = Lockcheck.check(source, screen.chunk)
@@ -334,13 +453,41 @@ function ScriptBuilderScreen.open(screen)
 	rebuild(screen)
 end
 
+local function openScript(screen, kind, name, path, given)
+	readScript(screen, kind, name, path, given)
+	screen.saved = text(screen)
+end
+
+-- Whether the code panel holds edits not yet run.
+local function unrun(screen)
+	return screen.code ~= nil and TextBuffer.text(screen.code.buffer) ~= screen.code.base
+end
+
+-- Whether the open script has changes not saved: its text as it stands
+-- differs from what was last opened or saved, or the code panel holds
+-- edits not yet run.
+function ScriptBuilderScreen.dirty(screen)
+	return text(screen) ~= screen.saved or unrun(screen)
+end
+
+-- Reads and checks the design named after config.scriptBuilder.testDesign's
+-- file.
+function ScriptBuilderScreen.open(screen)
+	local path = screen.scfg.testDesign
+	screen.stamp = DesignStore.stamp(screen.config.designs)
+	screen.pollIn = POLL
+	openScript(screen, "designs", nameOf(path), path)
+end
+
 -- Whether a menu or text box has the keyboard: Esc closes it, not the
 -- builder.
 function ScriptBuilderScreen.modal(screen)
 	return screen.menu ~= nil or screen.rename ~= nil or screen.transform ~= nil
 		or screen.field ~= nil or screen.insert ~= nil or screen.paramField ~= nil
 		or screen.shape ~= nil or screen.pointDrag ~= nil or screen.sweeping ~= nil
-		or screen.materialOpen ~= nil
+		or screen.materialOpen ~= nil or screen.colourOpen ~= nil or screen.exportPrompt ~= nil
+		or screen.libraryOpen ~= nil or screen.libraryRename ~= nil or screen.unsaved ~= nil
+		or (screen.code ~= nil and screen.code.open)
 end
 
 -- Runs scene edit `change` (a Scene function) through the undo history and
@@ -360,14 +507,20 @@ local function undo(screen, step)
 	end
 end
 
--- Writes the design file: the scene written out, or the locked script as
--- it was read.
+-- Writes the design or prefab file: the scene written out, or the locked
+-- script as it was read.
 local function save(screen)
+	if unrun(screen) and not ScriptBuilderScreen.runCode(screen) then
+		screen.status = "Save failed: the code has an error"
+		return
+	end
 	if not screen.source then
 		return
 	end
-	local ok, err = DesignStore.write(screen.config.designs, "designs", screen.name, text(screen))
+	local ok, err = DesignStore.write(screen.config.designs, screen.kind, screen.name, text(screen))
 	if ok then
+		screen.saved = text(screen)
+		screen.diskText = screen.saved
 		screen.status = "Saved " .. screen.name .. (screen.locked and " (locked: code kept as written)" or "")
 	else
 		screen.status = "Save failed: " .. tostring(err)
@@ -386,12 +539,17 @@ function ScriptBuilderScreen.topBar(screen)
 	return TopBar.slots(screen.scfg.topBarHeight, screen.scfg.topBarSlots, ScriptBuilderScreen.TOOLS)
 end
 
--- The tree panel's rows (TreePanel.rows); none when the script failed.
+-- The tree panel's rows (TreePanel.rows), a selected prefab instance's
+-- own tree read-only under it; none when the script failed.
 function ScriptBuilderScreen.treeRows(screen)
 	if not screen.scene then
 		return {}
 	end
-	return TreePanel.rows(screen.scene, screen.scfg.topBarHeight)
+	local expanded = {}
+	for _, id in ipairs(screen.scene.selection) do
+		expanded[id] = screen.expanded[id]
+	end
+	return TreePanel.rows(screen.scene, screen.scfg.topBarHeight, expanded)
 end
 
 -- What the camera circles, in studs: the middle of the geometry and its
@@ -442,7 +600,7 @@ local function nodeAt(screen, x, y)
 	local rows = ScriptBuilderScreen.treeRows(screen)
 	local row = TreePanel.rowAt(rows, x, y)
 	if row then
-		return row.node.id, true
+		return row.owner or row.node.id, true
 	end
 	if screen.scene and TreePanel.contains(rows, screen.scfg.topBarHeight, x, y) then
 		return nil, true
@@ -460,6 +618,124 @@ end
 
 local function shiftDown()
 	return love.keyboard.isDown("lshift") or love.keyboard.isDown("rshift")
+end
+
+-- The code panel's layout (CodePanel.layout), or nil when it is put away.
+function ScriptBuilderScreen.codePanel(screen)
+	local code = screen.code
+	if not (code and code.open) then
+		return nil
+	end
+	return CodePanel.layout(ScriptBuilderScreen.viewport(screen), #code.buffer.lines)
+end
+
+-- Shows the code panel: on the script's text as it stands, unless it
+-- still holds the same script's text from before (unrun edits kept).
+local function openCode(screen)
+	local shown = text(screen) or ""
+	local code = screen.code
+	if not code or code.shown ~= shown then
+		code = { buffer = TextBuffer.new(shown), scroll = 0, base = shown, shown = shown }
+		code.errorLine = screen.message and Sandbox.errorLine(screen.message, screen.chunk)
+		screen.code = code
+	end
+	code.open, code.openedAt, code.dragging = true, screen.clock, nil
+end
+
+-- Scrolls the code panel just enough to show the cursor.
+local function followCursor(screen)
+	local code = screen.code
+	code.scroll = CodePanel.scroll(ScriptBuilderScreen.codePanel(screen), code.buffer, code.scroll)
+end
+
+-- Runs the code panel's text as the script (Ctrl+Enter): checked like a
+-- file read (Lockcheck), it becomes the scene -- editable when
+-- declarative, else locked -- with a fresh undo history, and the model
+-- rebuilds. A script that fails keeps the model as it was and marks the
+-- line its error points at. True when it ran.
+function ScriptBuilderScreen.runCode(screen)
+	local code = screen.code
+	local source = TextBuffer.text(code.buffer)
+	local checked, reason = Lockcheck.check(source, screen.chunk)
+	if not checked then
+		code.errorLine = Sandbox.errorLine(reason, screen.chunk)
+		screen.message = reason
+		return false
+	end
+	screen.source = source
+	screen.scene, screen.locked, screen.history = Scene.new(checked.root), checked.locked, History.new()
+	rebuild(screen)
+	code.errorLine = screen.message and Sandbox.errorLine(screen.message, screen.chunk)
+	code.base, code.shown = source, text(screen)
+	return true
+end
+
+-- Open folder: the folder the open script saves in, opened for an
+-- external editor where the system allows, its path in the status either
+-- way.
+local function openFolder(screen)
+	local cfg = screen.config.designs
+	local path = love.filesystem.getSaveDirectory() .. "/" .. (screen.kind == "prefabs" and cfg.prefabDir or cfg.dir)
+	if love.system.openURL("file://" .. path) then
+		screen.status = "Opened " .. path
+	else
+		screen.status = "Can't open the folder: it is " .. path
+	end
+end
+
+-- A left press on code panel part `part` (CodePanel.hit) at (x, y).
+local function codeClick(screen, part, x, y)
+	local code = screen.code
+	if part == "run" then
+		ScriptBuilderScreen.runCode(screen)
+	elseif part == "folder" then
+		openFolder(screen)
+	elseif part == "text" then
+		local line, col = CodePanel.position(ScriptBuilderScreen.codePanel(screen), code.buffer, code.scroll, x, y)
+		TextBuffer.place(code.buffer, line, col, shiftDown())
+		code.dragging = true
+	end
+end
+
+-- The keys the code panel moves its cursor by.
+local CODE_MOVES = { left = "left", right = "right", up = "up", down = "down", home = "home", ["end"] = "end" }
+
+-- Keys while the code panel is showing: they edit its text. Ctrl+Enter
+-- runs it, Ctrl+C/X/V copy, cut and paste, Ctrl+A selects all, Ctrl+S
+-- runs and saves; Esc puts the panel away, its text kept.
+local function codeKey(screen, key)
+	local code = screen.code
+	local buf = code.buffer
+	if ctrlDown() then
+		if key == "return" or key == "kpenter" then
+			ScriptBuilderScreen.runCode(screen)
+		elseif key == "c" or key == "x" then
+			local selected = key == "c" and TextBuffer.selected(buf) or TextBuffer.cut(buf)
+			if selected then
+				love.system.setClipboardText(selected)
+			end
+		elseif key == "v" then
+			TextBuffer.insert(buf, love.system.getClipboardText() or "")
+		elseif key == "a" then
+			TextBuffer.selectAll(buf)
+		elseif key == "s" then
+			save(screen)
+		end
+	elseif key == "escape" then
+		code.open, screen.tool = false, "select"
+		return
+	elseif key == "return" or key == "kpenter" then
+		TextBuffer.insert(buf, "\n")
+	elseif key == "tab" then
+		TextBuffer.insert(buf, "\t")
+	elseif key == "backspace" then
+		TextBuffer.backspace(buf)
+	elseif key == "delete" then
+		TextBuffer.delete(buf)
+	elseif CODE_MOVES[key] then
+		TextBuffer.move(buf, CODE_MOVES[key], shiftDown())
+	end
+	followCursor(screen)
 end
 
 local function select(screen, id, add)
@@ -507,6 +783,191 @@ function ScriptBuilderScreen.materialPanel(screen)
 	end
 end
 
+-- The colour picker's layout (ColourPicker.layout) under its top bar slot,
+-- or nil when it is shut.
+function ScriptBuilderScreen.colourPicker(screen)
+	if not screen.colourOpen then
+		return nil
+	end
+	for _, slot in ipairs(ScriptBuilderScreen.topBar(screen)) do
+		if slot.tool and slot.tool.id == "colour" then
+			return ColourPicker.layout(ColourPicker.builderSections(screen.recentColours), slot.x, slot.y + slot.height + 4)
+		end
+	end
+end
+
+-- A click on colour picker swatch `swatch`: the selection painted its
+-- colour, one undo step, and the colour first in the recent row.
+local function colourClick(screen, swatch)
+	if #screen.scene.selection == 0 then
+		screen.message = "Select the nodes to colour"
+		return
+	end
+	RecentColours.add(screen.recentColours, swatch.color)
+	edit(screen, Scene.setColor, swatch.color)
+end
+
+-- The library manager's layout (LibraryPanel.layout) under its top bar
+-- slot, or nil when it is shut.
+function ScriptBuilderScreen.libraryPanel(screen)
+	local open = screen.libraryOpen
+	if not open then
+		return nil
+	end
+	for _, slot in ipairs(ScriptBuilderScreen.topBar(screen)) do
+		if slot.tool and slot.tool.id == "library" then
+			return LibraryPanel.layout(open.entries, open.tab, slot.x, slot.y + slot.height + 4)
+		end
+	end
+end
+
+-- Rereads the design library and lists tab `tab` of the manager (the one
+-- showing unless given), each row with the blueprint its script compiles
+-- to for a thumbnail; nothing armed.
+local function listLibrary(screen, tab)
+	screen.lib = screen.library()
+	tab = tab or screen.libraryOpen.tab
+	local entries = Library.entries(screen.lib, tab)
+	for _, entry in ipairs(entries) do
+		entry.blueprint = Compile.design(screen.lib[tab][entry.name], entry.name, screen.lib, screen.config)
+	end
+	screen.libraryOpen = { tab = tab, entries = entries }
+end
+
+-- Runs `go` (which opens another script) now, or after the unsaved-changes
+-- prompt when the open script has changes not saved.
+local function switch(screen, go)
+	if ScriptBuilderScreen.dirty(screen) then
+		screen.unsaved = { go = go }
+		return
+	end
+	go()
+end
+
+-- What New starts: an empty design named "untitled", else the first free
+-- of "untitled2", "untitled3", ... (Library.freeName), not saved until
+-- Ctrl+S.
+local NEW_NAME = "untitled"
+local EMPTY_DESIGN = "return group{}\n"
+
+-- What each library manager button does to script `name` of `kind`.
+local LIBRARY_ACTIONS = {
+	open = function(screen, kind, name)
+		switch(screen, function()
+			openScript(screen, kind, name)
+		end)
+	end,
+	duplicate = function(screen, kind, name)
+		local to = Library.copyName(screen.lib, kind, name)
+		local ok, why = Library.duplicate(screen.lib, kind, name, to)
+		if ok then
+			ok, why = DesignStore.write(screen.config.designs, kind, to, screen.lib[kind][name])
+		end
+		if not ok then
+			screen.message = why
+			return
+		end
+		listLibrary(screen)
+		screen.status = "Duplicated " .. name .. " as " .. to
+	end,
+	rename = function(screen, kind, name)
+		local ok, why = Library.removable(kind, name)
+		if not ok then
+			screen.message = why
+			return
+		end
+		screen.libraryRename = { kind = kind, name = name, text = name }
+	end,
+	delete = function(screen, kind, name)
+		local ok, why = Library.delete(screen.lib, kind, name)
+		if ok then
+			ok, why = DesignStore.remove(screen.config.designs, kind, name)
+		end
+		if not ok then
+			screen.message = why
+			return
+		end
+		if screen.kind == kind and screen.name == name then
+			-- Only the builder holds it now: it counts as unsaved.
+			screen.saved = nil
+		end
+		listLibrary(screen)
+		screen.status = "Deleted " .. name
+	end,
+	reset = function(screen, kind, name)
+		local cfg = screen.config.designs
+		local ok, why = Library.reset(DesignStore.load(cfg), kind, name)
+		if not ok then
+			screen.message = why
+			return
+		end
+		local function go()
+			local removed, err = DesignStore.remove(cfg, kind, name)
+			if not removed then
+				screen.message = err
+				return
+			end
+			if screen.kind == kind and screen.name == name then
+				openScript(screen, kind, name)
+			end
+			if screen.libraryOpen then
+				listLibrary(screen)
+			end
+			screen.status = "Reset " .. name .. " to default"
+		end
+		if screen.kind == kind and screen.name == name then
+			switch(screen, go)
+		else
+			go()
+		end
+	end,
+}
+
+-- Renames the script the manager's Rename prompt is on to the name typed:
+-- its file moves, and nothing that places it by its old name changes. The
+-- open script keeps its edits under the new name.
+local function commitLibraryRename(screen)
+	local r = screen.libraryRename
+	screen.libraryRename = nil
+	if r.text == r.name then
+		return
+	end
+	local ok, why = Library.rename(screen.lib, r.kind, r.name, r.text)
+	if ok then
+		ok, why = DesignStore.rename(screen.config.designs, r.kind, r.name, r.text)
+	end
+	if not ok then
+		screen.message = why
+		return
+	end
+	if screen.kind == r.kind and screen.name == r.name then
+		screen.name, screen.chunk = r.text, r.text
+	end
+	listLibrary(screen)
+	screen.status = "Renamed " .. r.name .. " to " .. r.text
+end
+
+-- A click on what `hit` (LibraryPanel.hit) names. A Delete needs a second
+-- click; any other click disarms it.
+local function libraryClick(screen, hit)
+	local open = screen.libraryOpen
+	local armed = open.armed
+	open.armed = nil
+	if hit.tab then
+		listLibrary(screen, hit.tab)
+	elseif hit.new then
+		switch(screen, function()
+			screen.lib = screen.library()
+			openScript(screen, "designs", Library.freeName(screen.lib, "designs", NEW_NAME), nil, EMPTY_DESIGN)
+		end)
+	elseif hit.action == "delete" and armed ~= hit.row.entry.name then
+		open.armed = hit.row.entry.name
+		screen.message = "Click Confirm to delete " .. hit.row.entry.name
+	else
+		LIBRARY_ACTIONS[hit.action](screen, open.tab, hit.row.entry.name)
+	end
+end
+
 -- A click on the material panel's `row` (stepper box `part`): the
 -- selection made of the material it picks, one undo step.
 local function materialClick(screen, row, part)
@@ -536,16 +997,48 @@ function ScriptBuilderScreen.properties(screen)
 	return PropertiesStrip.fields(Properties.of(node), w, screen.scfg.topBarHeight)
 end
 
--- The params panel's rows (ParamsPanel.rows), one per declared param.
-function ScriptBuilderScreen.paramsPanel(screen)
-	local w = Screen.dimensions()
-	return ParamsPanel.rows(screen.params, w, screen.scfg.topBarHeight)
+-- The one selected node when it is a prefab instance, else nil.
+local function selectedInstance(screen)
+	local scene = screen.scene
+	if not scene or #scene.selection ~= 1 then
+		return nil
+	end
+	local node = Scene.find(scene, scene.selection[1])
+	return node and node.kind == "prefab" and node or nil
 end
 
--- Sets the param at `index` to `value`, clamped: its default rewritten in
--- the script's text, the design rebuilt. A bad value is refused with why.
+-- The params the panel shows: the script's own when it declares any, else
+-- the one selected prefab instance's (Resolve.prefab, its overrides as
+-- values), worked out once per revision; and that instance, or nil.
+local function shownParams(screen)
+	if #screen.params > 0 then
+		return screen.params, nil
+	end
+	local node = not screen.locked and selectedInstance(screen)
+	if not node then
+		return {}, nil
+	end
+	local c = screen.instanceCache
+	if not (c and c.revision == screen.revision and c.id == node.id) then
+		local result = Resolve.prefab(screen.lib, node.prefab, node.params)
+		c = { revision = screen.revision, id = node.id, params = result and result.params or {} }
+		screen.instanceCache = c
+	end
+	return c.params, node
+end
+
+-- The params panel's rows (ParamsPanel.rows), one per param shown.
+function ScriptBuilderScreen.paramsPanel(screen)
+	local w = Screen.dimensions()
+	return ParamsPanel.rows((shownParams(screen)), w, screen.scfg.topBarHeight)
+end
+
+-- Sets the param at `index` to `value`, clamped: a selected instance's
+-- override (Scene.setParam, one undo step), else its default rewritten in
+-- the script's text; the design rebuilt. A bad value is refused with why.
 local function setParam(screen, index, value)
-	local param = screen.params[index]
+	local params, instance = shownParams(screen)
+	local param = params[index]
 	local clamped, why = Params.clamp(param, value)
 	if clamped == nil then
 		screen.message = param.label .. " " .. why
@@ -553,6 +1046,10 @@ local function setParam(screen, index, value)
 	end
 	if not param.name then
 		screen.message = param.label .. " is not declared at the top level, so edit it as text"
+		return
+	end
+	if instance then
+		edit(screen, Scene.setParam, instance.id, param.name, clamped)
 		return
 	end
 	local rewritten, problem = Params.rewrite(screen.source, param.name, clamped)
@@ -597,7 +1094,7 @@ local function commitParamField(screen)
 	if f.text == f.initial then
 		return
 	end
-	local param = screen.params[f.index]
+	local param = shownParams(screen)[f.index]
 	local value = tonumber(f.text)
 	if param.kind == "color" then
 		value = {}
@@ -1081,6 +1578,37 @@ local function commitRename(screen)
 	end
 end
 
+-- Export as prefab with the name typed: the selection becomes one
+-- instance of it (Scene.export, one undo step) and prefabs/<name>.lua is
+-- written. A taken or bad name, or a failed write, changes nothing.
+local function commitExport(screen)
+	local name = screen.exportPrompt.text
+	screen.exportPrompt = nil
+	if not name:match("^[%w_%-]+$") then
+		screen.message = "A prefab name is letters, digits, _ and -"
+		return
+	end
+	if screen.lib.prefabs[name] then
+		screen.message = "A prefab called " .. name .. " already exists"
+		return
+	end
+	local ok, result = History.apply(screen.history, screen.scene, Scene.export, name, screen.lib)
+	if not ok then
+		rebuild(screen, result)
+		return
+	end
+	local written, err = DesignStore.write(screen.config.designs, "prefabs", name, result)
+	if not written then
+		History.undo(screen.history, screen.scene)
+		screen.history.future = {}
+		rebuild(screen, "Export failed: " .. tostring(err))
+		return
+	end
+	screen.lib = screen.library()
+	screen.status = "Exported prefab " .. name
+	rebuild(screen)
+end
+
 -- Picks top bar slot `slot`'s tool (defined below).
 local setTool
 
@@ -1109,6 +1637,44 @@ local ACTIONS = {
 				setTool(screen, slot)
 			end
 		end
+	end,
+	Colour = function(screen)
+		for slot, tool in pairs(ScriptBuilderScreen.TOOLS) do
+			if tool.id == "colour" then
+				setTool(screen, slot)
+			end
+		end
+	end,
+	-- Opens the name prompt; Return exports the selection (commitExport).
+	["Export as prefab"] = function(screen)
+		if screen.locked then
+			screen.message = LOCKED_MESSAGE .. ": its nodes can't be exported"
+		elseif #screen.scene.selection == 0 then
+			screen.message = "Select the nodes to export as a prefab"
+		else
+			screen.exportPrompt = { text = "" }
+		end
+	end,
+	Unlink = function(screen)
+		edit(screen, Scene.unlink, screen.lib)
+	end,
+	-- Opens the one selected instance's prefab in the builder, after the
+	-- unsaved-changes prompt if need be; a built-in saves as a shadow copy
+	-- in the save directory.
+	["Edit prefab"] = function(screen)
+		local node = selectedInstance(screen)
+		if not node then
+			screen.message = "Select one prefab instance to edit its prefab"
+			return
+		end
+		switch(screen, function()
+			openScript(screen, "prefabs", node.prefab)
+		end)
+	end,
+	-- Deletes the open built-in's shadow copy and shows the built-in again,
+	-- after the unsaved-changes prompt if need be.
+	["Reset to default"] = function(screen)
+		LIBRARY_ACTIONS.reset(screen, screen.kind, screen.name)
 	end,
 	-- Waits for a click on the path to sweep the selected shape along.
 	Sweep = function(screen)
@@ -1179,8 +1745,12 @@ function setTool(screen, slot)
 	if not tool then
 		return
 	end
-	screen.insert, screen.shape, screen.materialOpen = nil, nil, nil
-	if tool.id == "insert" or tool.id == "shape" or tool.id == "path" or tool.id == "material" then
+	screen.insert, screen.shape, screen.materialOpen, screen.colourOpen = nil, nil, nil, nil
+	screen.libraryOpen = nil
+	if screen.code then
+		screen.code.open = false
+	end
+	if tool.id == "insert" or tool.id == "shape" or tool.id == "path" or tool.id == "material" or tool.id == "colour" then
 		if not screen.scene then
 			return
 		elseif screen.locked then
@@ -1196,6 +1766,12 @@ function setTool(screen, slot)
 		screen.shape = { kinds = PathTool.KINDS, kind = PathTool.KINDS[2], path = true }
 	elseif tool.id == "material" then
 		screen.materialOpen = true
+	elseif tool.id == "colour" then
+		screen.colourOpen = true
+	elseif tool.id == "library" then
+		listLibrary(screen, screen.kind)
+	elseif tool.id == "code" then
+		openCode(screen)
 	end
 	screen.tool = tool.id
 end
@@ -1228,6 +1804,22 @@ local function leftClick(screen, x, y)
 		setTool(screen, slot.number)
 		return
 	end
+	local codeLayout = ScriptBuilderScreen.codePanel(screen)
+	if CodePanel.contains(codeLayout, x, y) then
+		codeClick(screen, CodePanel.hit(codeLayout, x, y), x, y)
+		return
+	end
+	local libraryLayout = ScriptBuilderScreen.libraryPanel(screen)
+	local hit = LibraryPanel.hit(libraryLayout, x, y)
+	if hit then
+		libraryClick(screen, hit)
+		return
+	elseif LibraryPanel.contains(libraryLayout, x, y) then
+		screen.libraryOpen.armed = nil
+		return
+	elseif screen.libraryOpen then
+		screen.libraryOpen.armed = nil
+	end
 	local menu = ScriptBuilderScreen.insertMenu(screen)
 	local row = menu and InsertMenu.rowAt(menu, x, y)
 	if row then
@@ -1250,6 +1842,14 @@ local function leftClick(screen, x, y)
 	local materialRow, materialPart = MaterialPanel.hit(ScriptBuilderScreen.materialPanel(screen), x, y)
 	if materialRow then
 		materialClick(screen, materialRow, materialPart)
+		return
+	end
+	local colourLayout = ScriptBuilderScreen.colourPicker(screen)
+	local swatch = ColourPicker.hit(colourLayout, x, y)
+	if swatch then
+		colourClick(screen, swatch)
+		return
+	elseif ColourPicker.contains(colourLayout, x, y) then
 		return
 	end
 	local paramRows = ScriptBuilderScreen.paramsPanel(screen)
@@ -1301,13 +1901,79 @@ local function leftClick(screen, x, y)
 		startTransform(screen, screen.gizmoMode, axis, x, y, true)
 		return
 	end
-	if screen.tool == "select" or screen.tool == "material" then
+	if screen.tool == "select" or screen.tool == "material" or screen.tool == "colour" then
 		select(screen, id, ctrlDown())
+	end
+end
+
+-- Whether design libraries a and b hold the same texts.
+local function sameLibrary(a, b)
+	for _, kind in ipairs({ "designs", "prefabs" }) do
+		for _, pair in ipairs({ { a, b }, { b, a } }) do
+			for name, source in pairs(pair[1][kind]) do
+				if pair[2][kind][name] ~= source then
+					return false
+				end
+			end
+		end
+	end
+	return true
+end
+
+-- Hot reload: when the saved scripts' stamp (DesignStore.stamp) has
+-- changed, rereads the library. The open script, changed on disk, opens
+-- again as it now reads (locked or not by Lockcheck), the code panel too
+-- if it was showing -- unless it has unsaved changes, which are kept, the
+-- message saying the file changed. Any other change rebuilds the model,
+-- since a prefab it places may be the one changed.
+local function poll(screen)
+	local stamp = DesignStore.stamp(screen.config.designs)
+	if stamp == screen.stamp then
+		return
+	end
+	screen.stamp = stamp
+	local lib = screen.library()
+	local disk = lib[screen.kind][screen.name]
+	if disk == nil and screen.path then
+		disk = screen.read(screen.path)
+	end
+	if disk ~= nil and disk ~= screen.diskText then
+		screen.diskText = disk
+		if ScriptBuilderScreen.dirty(screen) then
+			screen.lib = lib
+			rebuild(screen, screen.name .. " changed on disk: your unsaved edits are kept, Ctrl+S overwrites the file")
+			return
+		end
+		local coding = screen.code and screen.code.open
+		openScript(screen, screen.kind, screen.name, screen.path)
+		if coding then
+			openCode(screen)
+			-- No key opened it: the next textinput is typed.
+			screen.code.openedAt = nil
+		end
+		screen.status = "Reloaded " .. screen.name .. " from disk"
+	elseif not sameLibrary(lib, screen.lib) then
+		screen.lib = lib
+		rebuild(screen)
+		if screen.libraryOpen then
+			listLibrary(screen)
+		end
 	end
 end
 
 function ScriptBuilderScreen.update(screen, dt)
 	screen.clock = screen.clock + dt
+	-- Held keys repeat while the code panel is up, only then.
+	local typing = screen.code ~= nil and screen.code.open
+	if typing ~= (screen.keyRepeat or false) then
+		love.keyboard.setKeyRepeat(typing)
+		screen.keyRepeat = typing
+	end
+	screen.pollIn = (screen.pollIn or POLL) - dt
+	if screen.pollIn <= 0 then
+		screen.pollIn = POLL
+		poll(screen)
+	end
 end
 
 function ScriptBuilderScreen.mousepressed(screen, x, y, button)
@@ -1347,6 +2013,9 @@ end
 -- A right-click without movement opens the context menu on the node under
 -- the pointer, selecting it first unless it is selected already.
 function ScriptBuilderScreen.mousereleased(screen, x, y, button)
+	if button == 1 and screen.code then
+		screen.code.dragging = nil
+	end
 	if button == 1 and screen.transform and screen.transform.gizmo then
 		endTransform(screen, true)
 		return
@@ -1380,8 +2049,13 @@ function ScriptBuilderScreen.mousemoved(screen, x, y, dx, dy)
 	screen.mouse = { x = x, y = y }
 	screen.hover = (screen.shape or screen.insert) and planeHit(screen, x, y) or nil
 	local drawing = screen.shape and screen.shape.drawing
+	local code = screen.code
 	if screen.transform then
 		follow(screen, x, y)
+	elseif code and code.open and code.dragging then
+		local line, col = CodePanel.position(ScriptBuilderScreen.codePanel(screen), code.buffer, code.scroll, x, y)
+		TextBuffer.place(code.buffer, line, col, true)
+		followCursor(screen)
 	elseif screen.pointDrag then
 		followPoint(screen, x, y)
 	elseif drawing and drawing.dragging and screen.hover then
@@ -1393,6 +2067,11 @@ function ScriptBuilderScreen.mousemoved(screen, x, y, dx, dy)
 end
 
 function ScriptBuilderScreen.wheelmoved(screen, _, y)
+	local codeLayout, m = ScriptBuilderScreen.codePanel(screen), screen.mouse
+	if m and CodePanel.contains(codeLayout, m.x, m.y) then
+		screen.code.scroll = CodePanel.scroll(codeLayout, screen.code.buffer, screen.code.scroll, -3 * y)
+		return
+	end
 	local _, radius = frame(screen)
 	BuilderCamera.zoomAround(screen.camera, y, radius, screen.cfg)
 end
@@ -1406,6 +2085,47 @@ local function renameKey(screen, key)
 		commitRename(screen)
 	elseif key == "escape" then
 		screen.rename = nil
+	end
+end
+
+-- Keys while Export as prefab's name prompt is open: they edit its text.
+local function exportKey(screen, key)
+	if key == "backspace" then
+		screen.exportPrompt.text = screen.exportPrompt.text:sub(1, -2)
+	elseif key == "return" or key == "kpenter" then
+		commitExport(screen)
+	elseif key == "escape" then
+		screen.exportPrompt = nil
+	end
+end
+
+-- Keys while the library manager's Rename prompt is open: they edit its
+-- text.
+local function libraryRenameKey(screen, key)
+	if key == "backspace" then
+		screen.libraryRename.text = screen.libraryRename.text:sub(1, -2)
+	elseif key == "return" or key == "kpenter" then
+		commitLibraryRename(screen)
+	elseif key == "escape" then
+		screen.libraryRename = nil
+	end
+end
+
+-- Keys while the unsaved-changes prompt is open: S saves then switches,
+-- D drops the changes and switches, Esc stays.
+local function unsavedKey(screen, key)
+	local go = screen.unsaved.go
+	if key == "s" then
+		screen.unsaved = nil
+		save(screen)
+		if not ScriptBuilderScreen.dirty(screen) then
+			go()
+		end
+	elseif key == "d" then
+		screen.unsaved = nil
+		go()
+	elseif key == "escape" then
+		screen.unsaved = nil
 	end
 end
 
@@ -1434,8 +2154,14 @@ end
 function ScriptBuilderScreen.keypressed(screen, key)
 	if screen.transform then
 		transformKey(screen, key)
+	elseif screen.unsaved then
+		unsavedKey(screen, key)
+	elseif screen.libraryRename then
+		libraryRenameKey(screen, key)
 	elseif screen.rename then
 		renameKey(screen, key)
+	elseif screen.exportPrompt then
+		exportKey(screen, key)
 	elseif screen.field then
 		fieldKey(screen, key)
 	elseif screen.paramField then
@@ -1444,12 +2170,18 @@ function ScriptBuilderScreen.keypressed(screen, key)
 		if key == "escape" then
 			screen.menu = nil
 		end
+	elseif screen.code and screen.code.open then
+		codeKey(screen, key)
 	elseif key == "escape" and screen.sweeping then
 		screen.sweeping, screen.message = nil, nil
 	elseif (key == "return" or key == "kpenter") and screen.shape and screen.shape.path and screen.shape.drawing then
 		finishPath(screen)
 	elseif key == "escape" and screen.materialOpen then
 		screen.materialOpen, screen.tool = nil, "select"
+	elseif key == "escape" and screen.colourOpen then
+		screen.colourOpen, screen.tool = nil, "select"
+	elseif key == "escape" and screen.libraryOpen then
+		screen.libraryOpen, screen.tool = nil, "select"
 	elseif key == "escape" and screen.insert then
 		screen.insert, screen.tool = nil, "select"
 	elseif key == "escape" and screen.shape and (screen.shape.drawing or screen.shape.picking) then
@@ -1481,13 +2213,50 @@ end
 -- Typed text goes to the rename box, the properties strip's text box or
 -- the params panel's.
 function ScriptBuilderScreen.textinput(screen, typed)
-	if screen.rename then
+	if screen.unsaved then
+		return
+	elseif screen.libraryRename then
+		screen.libraryRename.text = screen.libraryRename.text .. typed
+	elseif screen.rename then
 		screen.rename.text = screen.rename.text .. typed
+	elseif screen.exportPrompt then
+		screen.exportPrompt.text = screen.exportPrompt.text .. typed
 	elseif screen.field then
 		screen.field.text = screen.field.text .. typed
 	elseif screen.paramField then
 		screen.paramField.text = screen.paramField.text .. typed
+	elseif screen.code and screen.code.open and screen.clock ~= screen.code.openedAt then
+		TextBuffer.insert(screen.code.buffer, typed)
+		followCursor(screen)
 	end
+end
+
+-- A one-line text box across the top of the view, holding `line`.
+local function drawPrompt(line)
+	local w = Screen.dimensions()
+	local h = love.graphics.getFont():getHeight() + 12
+	love.graphics.push("all")
+	love.graphics.setColor(0.1, 0.1, 0.12, 0.95)
+	love.graphics.rectangle("fill", w / 2 - 220, 60, 440, h, 4, 4)
+	love.graphics.setColor(0.3, 0.5, 0.85, 1)
+	love.graphics.rectangle("line", w / 2 - 220, 60, 440, h, 4, 4)
+	love.graphics.setColor(1, 1, 1, 1)
+	love.graphics.print(line, w / 2 - 212, 66)
+	love.graphics.pop()
+end
+
+-- Draws `blueprint`'s sprite (facing N, bake scale 1, as the building
+-- picker does) fitted into `rect`.
+local function drawThumbnail(screen, blueprint, rect, palette)
+	local sprite = BuildingsRender.sprite(screen.config, blueprint, "N", 1, nil, palette)
+	local iw, ih = sprite.image:getDimensions()
+	local scale = math.min(rect.width / iw, rect.height / ih)
+	love.graphics.push("all")
+	-- Premultiplied, like every baked sprite.
+	love.graphics.setBlendMode("alpha", "premultiplied")
+	love.graphics.setColor(1, 1, 1, 1)
+	love.graphics.draw(sprite.image, rect.x + (rect.width - iw * scale) / 2, rect.y + (rect.height - ih * scale) / 2, 0, scale, scale)
+	love.graphics.pop()
 end
 
 function ScriptBuilderScreen.draw(screen)
@@ -1522,8 +2291,37 @@ function ScriptBuilderScreen.draw(screen)
 	if materialRows then
 		MaterialPanel.draw(materialRows, shownMaterial(screen), screen.mouse)
 	end
+	local colourLayout = ScriptBuilderScreen.colourPicker(screen)
+	if colourLayout then
+		local id = screen.scene and screen.scene.selection[1]
+		local shown = id and Scene.color(screen.scene, id)
+		ColourPicker.draw(colourLayout, screen.palette(), { slot = shown, preset = shown }, screen.mouse)
+	end
 	if screen.menu then
 		ContextMenu.draw(screen.menu, screen.mouse)
+	end
+	local codeLayout = ScriptBuilderScreen.codePanel(screen)
+	if codeLayout then
+		local c = screen.code
+		local cfg = screen.config.designs
+		local folder = love.filesystem.getSaveDirectory() .. "/" .. (screen.kind == "prefabs" and cfg.prefabDir or cfg.dir)
+		CodePanel.draw(codeLayout, c.buffer, c.scroll, c.errorLine, folder, c.errorLine and screen.message)
+	end
+	if screen.exportPrompt then
+		drawPrompt("Export as prefab: " .. screen.exportPrompt.text .. "_  (Return keeps, Esc drops)")
+	end
+	local libraryLayout = ScriptBuilderScreen.libraryPanel(screen)
+	if libraryLayout then
+		local palette = screen.palette()
+		LibraryPanel.draw(libraryLayout, screen.libraryOpen.armed, screen.kind == screen.libraryOpen.tab and screen.name, screen.mouse, function(blueprint, rect)
+			drawThumbnail(screen, blueprint, rect, palette)
+		end)
+	end
+	if screen.libraryRename then
+		drawPrompt("Rename " .. screen.libraryRename.name .. ": " .. screen.libraryRename.text .. "_  (Return keeps, Esc drops)")
+	end
+	if screen.unsaved then
+		drawPrompt(screen.name .. " has unsaved changes: S saves, D discards, Esc stays")
 	end
 	ScriptBuilderView.drawStatus(screen)
 end

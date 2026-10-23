@@ -22,9 +22,13 @@ end
 -- design as authored, each next one a quarter turn clockwise from above.
 Placement.FACINGS = { "N", "E", "S", "W" }
 
--- request = { design = <design name>, blueprint, facing, tileX, tileY }:
+-- request = { design = <design name>, blueprint, facing, tileX, tileY,
+--             replaces? }:
 -- what to place, its blueprint (src/game/buildings/compile.lua's, frozen
--- into the site or building) and where. Its blueprint.
+-- into the site or building) and where; `replaces`, a building, makes it
+-- a replacement (docs/CONTEXT.md "Replace"): that building's footprint
+-- counts as free, only the missing materials are paid, and placing it
+-- retires the building. Its blueprint.
 function Placement.blueprint(request)
 	return assert(request.blueprint, "a placement request needs a blueprint")
 end
@@ -89,15 +93,18 @@ local function inWorld(world, x, y)
 	return x >= 0 and y >= 0 and x < world.width and y < world.height
 end
 
--- Why a building may not stand on tile (x, y), or nil when it may.
-local function tileProblem(world, x, y)
+-- Why a building may not stand on tile (x, y), or nil when it may. The
+-- footprint of `own` (the building a replacement replaces, or nil) counts
+-- as free.
+local function tileProblem(world, x, y, own)
+	local there = World.buildingAt(world, x, y)
 	if not inWorld(world, x, y) then
 		return "outside"
 	elseif World.terrainAt(world, x, y) == "water" then
 		return "water"
 	elseif World.nodeAt(world, x, y) then
 		return "node"
-	elseif World.buildingAt(world, x, y) then
+	elseif there and there ~= own then
 		return "building"
 	end
 	return nil
@@ -111,14 +118,14 @@ local function fits(ctx, request, blueprint)
 	local width, depth = Placement.footprint(blueprint, request.facing)
 	for y = request.tileY, request.tileY + depth - 1 do
 		for x = request.tileX, request.tileX + width - 1 do
-			local problem = tileProblem(world, x, y)
+			local problem = tileProblem(world, x, y, request.replaces)
 			if problem then
 				return false, problem
 			end
 		end
 	end
 	for _, port in ipairs(Placement.ports(blueprint, request.facing, request.tileX, request.tileY)) do
-		if tileProblem(world, port.x, port.y) then
+		if tileProblem(world, port.x, port.y, request.replaces) then
 			return false, "port blocked"
 		end
 	end
@@ -129,12 +136,35 @@ function Placement.fits(ctx, request)
 	return fits(ctx, request, Placement.blueprint(request))
 end
 
+-- What placing `request` pays, { [item] = n }, a new table: its
+-- blueprint's cost, less the replaced building's blueprint cost per item
+-- for a replacement (docs/CONTEXT.md "Replace"); items left at zero or
+-- below are dropped. No refunds.
+function Placement.cost(request)
+	local old = request.replaces and request.replaces.blueprint.cost or {}
+	local cost = {}
+	for item, n in pairs(Placement.blueprint(request).cost) do
+		local left = n - (old[item] or 0)
+		if left > 0 then
+			cost[item] = left
+		end
+	end
+	return cost
+end
+
 local function check(ctx, request, blueprint)
+	local old = request.replaces
+	if old and old.dead then
+		return false, "gone"
+	elseif old and StorageFacility.is(old) then
+		-- Its stock and the sites' claims on it would have nowhere to go.
+		return false, "storage facility"
+	end
 	local ok, reason = fits(ctx, request, blueprint)
 	if not ok then
 		return false, reason
 	end
-	if not StorageFacility.has(ctx, blueprint.cost) then
+	if not StorageFacility.has(ctx, Placement.cost(request)) then
 		return false, "unaffordable"
 	end
 	return true
@@ -142,7 +172,8 @@ end
 
 -- Whether `request` may be placed, paying from the storage facilities
 -- (src/game/components/storage_facility.lua): true, or false and why,
--- checked in this order: a footprint tile is "outside" the world, on
+-- checked in this order: for a replacement (`request.replaces`, a
+-- building), it is "gone" already or a "storage facility"; a footprint tile is "outside" the world, on
 -- "water", under a "node" or under a "building"; a port tile is off the
 -- world or not open ("port blocked"); storage can't cover the cost
 -- ("unaffordable").
@@ -162,6 +193,20 @@ function Placement.build(ctx, request)
 	return building
 end
 
+-- Retires building `old` for a replacement: it is marked dead, so every
+-- job on it ends (and releases its reservations) when it next steps, and
+-- BuildingSystem.despawn removes it in the sweep. Its storage and port
+-- buffers go to the nearest storage facilities, or are lost when they are
+-- full.
+local function replace(ctx, old)
+	old.dead = true
+	local x, y = old.tileX, old.tileY
+	StorageFacility.deposit(ctx, old.storage, x, y)
+	for _, port in ipairs(old.ports) do
+		StorageFacility.deposit(ctx, port.buffer, x, y)
+	end
+end
+
 -- Places `request` as a construction site (src/game/buildings/site.lua)
 -- in ctx.pools.sites, its footprint marked in the world, its cost claimed
 -- in the storage facilities nearest its footprint first. Returns the site,
@@ -172,10 +217,10 @@ function Placement.place(ctx, request)
 	if not ok then
 		return nil, reason
 	end
-	local cost = {}
-	for item, n in pairs(blueprint.cost) do
-		cost[item] = n
+	if request.replaces then
+		replace(ctx, request.replaces)
 	end
+	local cost = Placement.cost(request)
 	local claims = StorageFacility.claim(ctx, cost, request.tileX, request.tileY)
 	local width, depth = Placement.footprint(blueprint, request.facing)
 	local site = Site.new(request, blueprint, width, depth, cost, claims)

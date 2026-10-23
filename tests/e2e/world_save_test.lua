@@ -46,7 +46,7 @@ return group{ id = "root", name = "Woodcutter",
 test("the title, and a building drawn from its saved blueprint after its design file is gone", function()
 	local config = testConfig()
 	clear(config)
-	assert(DesignStore.write(config.designs, "designs", "woodcutter", WOODCUTTER))
+	assert(DesignStore.write(config.designs, "designs", "e2e_lumber_camp", WOODCUTTER))
 
 	local first = GameHarness.launch({ real = true, config = config })
 	FrameStepper.step(first, 1)
@@ -56,18 +56,18 @@ test("the title, and a building drawn from its saved blueprint after its design 
 	local game = GameHarness.startSession(World.new(30, 20), { real = true, config = config })
 	local c = game.ctx.pools.characters[1]
 	c.inventory.counts.plank = 1000
-	local blueprint = assert(Compile.design(WOODCUTTER, "woodcutter", Flow.library(game.flow), config))
-	assert(Placement.build(game.ctx, { design = "woodcutter", blueprint = blueprint, facing = "N", tileX = 14, tileY = 12 }))
+	local blueprint = assert(Compile.design(WOODCUTTER, "e2e_lumber_camp", Flow.library(game.flow), config))
+	assert(Placement.build(game.ctx, { design = "e2e_lumber_camp", blueprint = blueprint, facing = "N", tileX = 14, tileY = 12 }))
 	FrameStepper.step(game, 2)
 	Capture.capture("before_save")
 	game:keypressed("f5")
-	assert(love.filesystem.remove(config.designs.dir .. "/woodcutter.lua"), "removed the design file")
+	assert(love.filesystem.remove(config.designs.dir .. "/e2e_lumber_camp.lua"), "removed the design file")
 
 	-- A fresh config table, so its design cache has never baked the
 	-- woodcutter: the sprite must come from the saved blueprint.
 	config = testConfig()
 	local again = GameHarness.launch({ real = true, config = config })
-	assertEqual(nil, Flow.library(again.flow).designs.woodcutter)
+	assertEqual(nil, Flow.library(again.flow).designs.e2e_lumber_camp)
 	FrameStepper.step(again, 1)
 	Capture.capture("title_continue")
 	again:keypressed("return")

@@ -117,10 +117,12 @@ local function tinted(r, g, b)
 	return { r + (SELECTED_COLOR[1] - r) * t, g + (SELECTED_COLOR[2] - g) * t, b + (SELECTED_COLOR[3] - b) * t }
 end
 
--- The geometry (screen.targets, selected nodes tinted), the footprint
--- square and the port markers as stud-space vertices.
+-- The geometry (screen.targets, team slots in the local player's palette,
+-- selected nodes tinted), the footprint square and the port markers as
+-- stud-space vertices.
 local function studVertices(screen)
 	if cached.screen ~= screen or cached.revision ~= screen.revision then
+		local palette = screen.palette()
 		local s = screen.cfg.studsPerTile
 		local out = {}
 		if screen.footprint then
@@ -131,7 +133,8 @@ local function studVertices(screen)
 			local selected = screen.scene and Scene.isSelected(screen.scene, target.id)
 			for _, v in ipairs(target.triangles) do
 				local n = { v.nx, v.ny, v.nz }
-				local color = selected and tinted(v.r, v.g, v.b) or { v.r, v.g, v.b }
+				local r, g, b = Baker.color(v, palette)
+				local color = selected and tinted(r, g, b) or { r, g, b }
 				table.insert(out, studVertex(v.x * s, v.y * s, v.z * s, n, color, v.material, v.texture))
 			end
 		end

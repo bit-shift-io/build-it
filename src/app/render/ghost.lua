@@ -14,8 +14,8 @@ local INVALID = { 0.95, 0.25, 0.2 }
 local SPRITE_ALPHA = 0.75
 
 -- ghost: WorldScreen.ghost's { request, ok, reason }. Draws in world space,
--- inside the camera.
-function GhostRender.draw(ctx, ghost, zoom, viewName)
+-- inside the camera, team slots in `palette`.
+function GhostRender.draw(ctx, ghost, zoom, viewName, palette)
 	viewName = viewName or "topdown"
 	local p = Projection.new(ctx.config, 1, ctx.config.views[viewName])
 	local req = ghost.request
@@ -31,7 +31,7 @@ function GhostRender.draw(ctx, ghost, zoom, viewName)
 		BuildingsRender.drawPort(p, port)
 	end
 
-	local sprite = BuildingsRender.sprite(ctx.config, blueprint, req.facing, Projection.bakeScale(zoom or 1), viewName)
+	local sprite = BuildingsRender.sprite(ctx.config, blueprint, req.facing, Projection.bakeScale(zoom or 1), viewName, palette)
 	local left, top, s = Projection.placeSprite(p, sprite.frame, req.tileX, req.tileY)
 	-- Premultiplied, like every baked sprite: the tint carries the alpha.
 	local a = SPRITE_ALPHA

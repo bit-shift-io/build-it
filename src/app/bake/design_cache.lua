@@ -24,13 +24,20 @@ end
 
 -- The key of `blueprint`'s sprites at `scale` in view `viewName` with team
 -- `palette`: "<hash>@x<scale>", then "@<view>" for views other than 3/4
--- top-down, then "@<Palette.key>" when a palette is given.
+-- top-down, then "@<Palette.key>" when a palette is given. A palette's
+-- key is worked out once per palette table (palettes are never changed in
+-- place; a new colour is a new palette).
+local paletteKeys = setmetatable({}, { __mode = "k" })
 function DesignCache.key(blueprint, scale, viewName, palette)
 	local k = blueprint.hash .. "@x" .. scale
 	if viewName ~= DEFAULT_VIEW then
 		k = k .. "@" .. viewName
 	end
-	return palette and k .. "@" .. Palette.key(palette) or k
+	if not palette then
+		return k
+	end
+	paletteKeys[palette] = paletteKeys[palette] or Palette.key(palette)
+	return k .. "@" .. paletteKeys[palette]
 end
 
 -- Bakes every facing of `blueprint` at `scale`: { [facing] = sprite }.

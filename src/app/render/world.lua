@@ -49,8 +49,9 @@ local function drawSprites(draws, p)
 end
 
 -- zoom is the camera zoom: sprites bake at the whole scale at or above it.
--- viewName is a config.views key (default "topdown").
-function WorldRender.draw(ctx, zoom, viewName)
+-- viewName is a config.views key (default "topdown"). palette: the local
+-- player's team palette, which buildings' team slots bake in.
+function WorldRender.draw(ctx, zoom, viewName, palette)
 	viewName = viewName or "topdown"
 	local p = Projection.new(ctx.config, 1, ctx.config.views[viewName])
 	Terrain.draw(ctx, p)
@@ -58,7 +59,7 @@ function WorldRender.draw(ctx, zoom, viewName)
 	local scale = Projection.bakeScale(zoom or 1)
 	local draws = {}
 	NodesRender.addDraws(draws, ctx, scale, viewName)
-	BuildingsRender.addDraws(draws, ctx, scale, viewName)
+	BuildingsRender.addDraws(draws, ctx, scale, viewName, palette)
 	CharacterRender.addVillagerDraws(draws, ctx, scale, viewName)
 	AnimalsRender.addDraws(draws, ctx, scale, viewName)
 	BuildingsRender.drawPorts(ctx, p)

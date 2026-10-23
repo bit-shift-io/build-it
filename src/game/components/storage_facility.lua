@@ -147,6 +147,22 @@ local function nearestFirst(ctx, x, y)
 	return list
 end
 
+-- Empties `store` into the storage of the live facilities, the one nearest
+-- tile (x, y) first, spilling to the next as each fills; items in name
+-- order. What none has room for is lost (docs/CONTEXT.md "Replace").
+function StorageFacility.deposit(ctx, store, x, y)
+	local facilities = nearestFirst(ctx, x, y)
+	for _, item in ipairs(Storage.items(store)) do
+		for _, b in ipairs(facilities) do
+			while not b.dead and store.counts[item] and Storage.room(b.storage) > 0 do
+				Storage.remove(store, item)
+				Storage.add(b.storage, item)
+			end
+		end
+		store.counts[item] = nil
+	end
+end
+
 -- Claims `cost` in the facilities for a construction site, the one
 -- nearest tile (x, y) first, spilling to the next when it runs short; items
 -- in name order, each facility's storage before its port buffers. Check

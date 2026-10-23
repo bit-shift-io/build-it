@@ -1,6 +1,8 @@
 -- Pool system for ctx.pools.buildings and ctx.pools.sites: places the
 -- construction sites players ask for (intent.place,
--- src/game/buildings/placement.lua), turns every built site into a
+-- src/game/buildings/placement.lua; a replacement marks the old building
+-- dead, so the jobs on it end in JobSystem.run this same step, before the
+-- despawn sweep removes it), turns every built site into a
 -- building, then runs every building's function bricks and moves its
 -- stored products to its outputs.
 local Placement = require("src.game.buildings.placement")

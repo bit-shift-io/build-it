@@ -178,8 +178,8 @@ end)
 local Builtins = require("tests.support.builtins")
 
 test("every built-in role prefab compiles with one role and a cost", function()
-	for name, text in pairs(Builtins.prefabs) do
-		local bp, message = Compile.design(text, name, Builtins, Config)
+	for _, name in ipairs(require("src.game.designs.builtins").PREFABS) do
+		local bp, message = Compile.design(Builtins.prefabs[name], name, Builtins, Config)
 		assertTrue(bp, message)
 		local r = bp.roles
 		local count = #r.abilities + #r.ports + (r.storage > 0 and 1 or 0)

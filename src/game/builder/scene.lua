@@ -11,6 +11,9 @@
 local Shape2d = require("src.game.geometry.shape2d")
 local Lathe = require("src.game.geometry.lathe")
 local Api = require("src.game.script.api")
+local Serialize = require("src.game.script.serialize")
+local Resolve = require("src.game.script.resolve")
+local Builtins = require("src.game.designs.builtins")
 
 local Scene = {}
 
@@ -64,11 +67,24 @@ function Scene.new(root)
 	return { root = Scene.ensureIds(root), selection = {} }
 end
 
--- The tree panel's rows: { { node, depth }, ... } in tree order.
-function Scene.rows(scene)
+-- The tree panel's rows: { { node, depth, readOnly?, owner? }, ... } in
+-- tree order. `expanded` (optional) maps a prefab instance's id to its
+-- prefab's own tree (resolved, src/game/script/resolve.lua): those nodes
+-- follow the instance's row, read-only, `owner` the instance's id.
+function Scene.rows(scene, expanded)
 	local rows = {}
+	local function own(node, depth, owner)
+		rows[#rows + 1] = { node = node, depth = depth, readOnly = true, owner = owner }
+		for _, child in ipairs(node.children or {}) do
+			own(child, depth + 1, owner)
+		end
+	end
 	walk(scene.root, function(node, depth)
 		rows[#rows + 1] = { node = node, depth = depth }
+		local inside = node.kind == "prefab" and expanded and expanded[node.id]
+		if inside then
+			own(inside, depth + 1, node.id)
+		end
 	end)
 	return rows
 end
@@ -348,14 +364,9 @@ function Scene.sweep(scene, pathId)
 	return true
 end
 
--- Makes every selected node, the root included, of `material` (Api's node
--- material: { name, variant, scale, rotation }), each its own copy with
--- every part filled in. True when it took; false and why otherwise.
-function Scene.setMaterial(scene, material)
-	local checked, why = Api.material(material)
-	if not checked then
-		return false, why
-	end
+-- Sets field `key` of every selected node, the root included, to its own
+-- copy of `value`. True when it took; false and why otherwise.
+local function setSelected(scene, key, value)
 	local nodes = {}
 	for _, id in ipairs(scene.selection) do
 		nodes[#nodes + 1] = Scene.find(scene, id)
@@ -364,24 +375,46 @@ function Scene.setMaterial(scene, material)
 		return false, "nothing selected"
 	end
 	for _, node in ipairs(nodes) do
-		node.material = deepCopy(checked)
+		node[key] = deepCopy(value)
 	end
 	return true
 end
 
--- The material node `id` is made of: its own, else that of the nearest
--- node above it with one; nil when none does.
-function Scene.material(scene, id)
+-- Makes every selected node, the root included, of `material` (Api's node
+-- material: { name, variant, scale, rotation }), each its own copy with
+-- every part filled in. True when it took; false and why otherwise.
+function Scene.setMaterial(scene, material)
+	local checked, why = Api.material(material)
+	if not checked then
+		return false, why
+	end
+	return setSelected(scene, "material", checked)
+end
+
+-- Paints every selected node, the root included, `color` (a node colour:
+-- { r, g, b } or a team slot name, src/game/palette.lua), each its own
+-- copy. True when it took; false and why otherwise.
+function Scene.setColor(scene, color)
+	local checked, why = Api.color(color)
+	if not checked then
+		return false, why
+	end
+	return setSelected(scene, "color", checked)
+end
+
+-- Field `key` of node `id`: its own, else that of the nearest node above
+-- it with one; nil when none does.
+local function inherited(scene, id, key)
 	local found
-	local function search(node, inherited)
-		local material = node.material or inherited
+	local function search(node, above)
+		local value = node[key] or above
 		if node.id == id then
-			found = material
+			found = value
 			return true
 		end
 		if node.kind ~= "prefab" then
 			for _, child in ipairs(node.children or {}) do
-				if search(child, material) then
+				if search(child, value) then
 					return true
 				end
 			end
@@ -389,6 +422,18 @@ function Scene.material(scene, id)
 	end
 	search(scene.root, nil)
 	return found
+end
+
+-- The material node `id` is made of: its own, else that of the nearest
+-- node above it with one; nil when none does.
+function Scene.material(scene, id)
+	return inherited(scene, id, "material")
+end
+
+-- The colour node `id` is painted: its own, else that of the nearest node
+-- above it with one; nil when none does.
+function Scene.color(scene, id)
+	return inherited(scene, id, "color")
 end
 
 -- Adds `node` (taken, not copied) as the root group's last child with a
@@ -404,6 +449,191 @@ function Scene.insert(scene, node)
 	end
 	table.insert(scene.root.children, node)
 	scene.selection = { node.id }
+	return true
+end
+
+-- The nodes from the root down to node `id`, both included; nil when no
+-- node has that id.
+local function pathTo(scene, id)
+	local function search(node, path)
+		path[#path + 1] = node
+		if node.id == id then
+			return path
+		end
+		if node.kind ~= "prefab" then
+			for _, child in ipairs(node.children or {}) do
+				if search(child, path) then
+					return path
+				end
+			end
+		end
+		path[#path] = nil
+	end
+	return search(scene.root, {})
+end
+
+-- Replaces the selected nodes with one instance of a new prefab called
+-- `name` (docs/CONTEXT.md "Prefab") holding copies of them. The instance
+-- goes in the nearest node holding them all, where the first of them
+-- stood, and each copy keeps its place in the world and its look: it is
+-- wrapped in a group per node between there and it, carrying that node's
+-- transform, material and colour. `library` ({ prefabs }) is checked for a
+-- prefab cycle the new one would make. Returns true and the new prefab's
+-- script text, or false and why. Writing the file is the caller's job.
+function Scene.export(scene, name, library)
+	local nodes, reason = selectedNodes(scene)
+	if not nodes then
+		return false, reason .. " exported"
+	end
+	if #nodes == 0 then
+		return false, "nothing selected"
+	end
+	local selected, paths = {}, {}
+	for _, s in ipairs(nodes) do
+		selected[s.node] = true
+	end
+	for _, s in ipairs(nodes) do
+		local path = pathTo(scene, s.node.id)
+		local inside = false
+		for i = 1, #path - 1 do
+			inside = inside or selected[path[i]]
+		end
+		if not inside then
+			paths[#paths + 1] = path
+		end
+	end
+	-- depth: how deep the nearest node holding every selected one is.
+	local depth = #paths[1] - 1
+	for _, path in ipairs(paths) do
+		local i = 1
+		while i <= depth and i < #path and path[i] == paths[1][i] do
+			i = i + 1
+		end
+		depth = i - 1
+	end
+	local host = paths[1][depth]
+	local copies = {}
+	for i, path in ipairs(paths) do
+		local copy = deepCopy(path[#path])
+		for j = #path - 1, depth + 1, -1 do
+			local above = path[j]
+			copy = {
+				kind = "group",
+				id = above.id,
+				name = above.name,
+				transform = deepCopy(above.transform) or {},
+				material = deepCopy(above.material),
+				color = deepCopy(above.color),
+				children = { copy },
+			}
+		end
+		copies[i] = copy
+	end
+	local prefab = { kind = "group", id = "root", name = name, transform = {}, children = copies }
+	local text = Serialize.tree(prefab)
+	local check = { designs = library.designs, prefabs = {} }
+	for k, v in pairs(library.prefabs) do
+		check.prefabs[k] = v
+	end
+	check.prefabs[name] = text
+	local ok, why = Resolve.design(text, name, check)
+	if not ok and why:find("prefab cycle", 1, true) then
+		return false, why
+	end
+	-- Where the instance goes: before the host's child leading to the first
+	-- selected node in tree order.
+	local first
+	for index, child in ipairs(host.children) do
+		for _, path in ipairs(paths) do
+			if not first and path[depth + 1] == child then
+				first = index
+			end
+		end
+	end
+	local instance = { kind = "prefab", prefab = name, id = freshId(name, idsIn(scene.root)), transform = {}, children = {} }
+	table.insert(host.children, first, instance)
+	for _, path in ipairs(paths) do
+		local node, parent = path[#path], path[#path - 1]
+		for i, child in ipairs(parent.children) do
+			if child == node then
+				table.remove(parent.children, i)
+				break
+			end
+		end
+	end
+	scene.selection = { instance.id }
+	return true, text
+end
+
+-- Overrides param `name` of prefab instance `id` with its own copy of
+-- `value` (docs/CONTEXT.md "Param"). True when it took; false and why
+-- otherwise. Whether the value fits the param is the prefab run's
+-- concern (src/game/script/resolve.lua).
+function Scene.setParam(scene, id, name, value)
+	local node = Scene.find(scene, id)
+	if not node or node.kind ~= "prefab" then
+		return false, "only a prefab instance has params to override"
+	end
+	node.params = node.params or {}
+	node.params[name] = deepCopy(value)
+	return true
+end
+
+-- Whether `name` is a role prefab (docs/CONTEXT.md "Role prefab").
+local function isRolePrefab(name)
+	for _, role in ipairs(Builtins.PREFABS) do
+		if role == name then
+			return true
+		end
+	end
+	return false
+end
+
+-- Replaces the one selected prefab instance with an editable copy of its
+-- prefab (run with its overrides, src/game/script/resolve.lua, from
+-- `library`): a group with the instance's id, name and transform holding
+-- the prefab's tree, the instance's material and colour on every node of
+-- it, any id the design already uses made fresh. The copy becomes the
+-- selection. Role prefabs refuse. True when it took; false and why
+-- otherwise.
+function Scene.unlink(scene, library)
+	local nodes, reason = selectedNodes(scene)
+	if not nodes then
+		return false, reason .. " unlinked"
+	end
+	local only = nodes[1]
+	if #nodes ~= 1 or only.node.kind ~= "prefab" then
+		return false, "select one prefab instance to unlink"
+	end
+	local instance = only.node
+	if isRolePrefab(instance.prefab) then
+		return false, "a role prefab can't be unlinked"
+	end
+	local result, why = Resolve.prefab(library, instance.prefab, instance.params)
+	if not result then
+		return false, why
+	end
+	local copy = {
+		kind = "group",
+		id = instance.id,
+		name = instance.name,
+		transform = deepCopy(instance.transform) or {},
+		children = { result.root },
+	}
+	local used = idsIn(scene.root)
+	walk(result.root, function(node)
+		for _, key in ipairs({ "material", "color" }) do
+			if instance[key] then
+				node[key] = deepCopy(instance[key])
+			end
+		end
+		if not node.id or used[node.id] then
+			node.id = freshId(node.kind, used)
+		end
+		used[node.id] = true
+	end)
+	only.parent.children[only.index] = copy
+	scene.selection = { copy.id }
 	return true
 end
 

@@ -275,3 +275,147 @@ test("each function brick knows its tile inside the footprint, turned by facing"
 		assertEqual(6 + at[2], fb.tileY, facing .. " y")
 	end
 end)
+
+-- Replace (docs/CONTEXT.md "Replace"): a request with `replaces` set to a
+-- building turns that building back into a site for another blueprint.
+
+-- A 1x1 design with a saw: the old building replaced below.
+local SMALL = Designs.floor(1, 1, Designs.ability("saw", 0.5, 0.5))
+-- A 2x2 design with a saw and more floor: the new one, costing more planks.
+local BIG = Designs.floor(2, 2, Designs.ability("saw", 0.5, 0.5))
+
+local function replaceRequest(old, text, facing, x, y)
+	local r = Designs.request(text, facing, x, y, "Big")
+	r.replaces = old
+	return r
+end
+
+test("a replacement costs the new blueprint less the old one, never below zero", function()
+	local ctx = newSession()
+	local old = Placement.build(ctx, Designs.request(BIG, "N", 5, 5))
+	old.blueprint = { cost = { plank = 3, stone = 50 } }
+	local r = replaceRequest(old, BIG, "N", 5, 5)
+	r.blueprint = { cost = { plank = 10, stone = 20, log = 2 } }
+
+	local cost = Placement.cost(r)
+	assertEqual(7, cost.plank)
+	assertEqual(nil, cost.stone, "more stone in the old one: nothing to pay")
+	assertEqual(2, cost.log)
+end)
+
+test("a replacement may stand on the replaced building's footprint", function()
+	local ctx = newSession()
+	local old = Placement.build(ctx, Designs.request(SMALL, "N", 5, 5))
+	-- BIG on (5..6, 5..6) covers the old footprint (5, 5).
+	local ok, reason = Placement.check(ctx, replaceRequest(old, BIG, "N", 5, 5))
+	assertTrue(ok, tostring(reason))
+	assertFalse(Placement.check(ctx, Designs.request(BIG, "N", 5, 5)), "a plain placement there is refused")
+end)
+
+test("a replacement is still refused by another building", function()
+	local ctx = newSession()
+	local old = Placement.build(ctx, Designs.request(SMALL, "N", 5, 5))
+	Placement.build(ctx, Designs.request(SMALL, "N", 6, 6))
+	local ok, reason = Placement.check(ctx, replaceRequest(old, BIG, "N", 5, 5))
+	assertFalse(ok)
+	assertEqual("building", reason)
+end)
+
+test("a replacement is affordable when storage covers only the missing materials", function()
+	local ctx, f = newSession()
+	local old = Placement.build(ctx, Designs.request(SMALL, "N", 5, 5))
+	local missing = Placement.cost(replaceRequest(old, BIG, "N", 5, 5))
+	assertTrue(missing.plank < Designs.blueprint(BIG).cost.plank, "the old planks count")
+	f.storage.counts.plank = missing.plank
+	assertTrue(Placement.check(ctx, replaceRequest(old, BIG, "N", 5, 5)))
+	f.storage.counts.plank = missing.plank - 1
+	local ok, reason = Placement.check(ctx, replaceRequest(old, BIG, "N", 5, 5))
+	assertFalse(ok)
+	assertEqual("unaffordable", reason)
+end)
+
+test("replacing turns the building into a site that claims only the missing materials", function()
+	local ctx, f = newSession()
+	local old = Placement.build(ctx, Designs.request(SMALL, "N", 5, 5))
+	local r = replaceRequest(old, BIG, "N", 5, 5)
+	local missing = Placement.cost(r)
+
+	ctx.intents[1] = { x = 0, y = 0, place = r }
+	Session.advance(ctx, 1 / 60)
+	ctx.intents[1] = nil
+
+	assertEqual(1, #ctx.pools.buildings, "the old building despawned; the facility stays")
+	assertEqual(f, ctx.pools.buildings[1])
+	assertTrue(old.dead)
+	local site = ctx.pools.sites[1]
+	assertEqual("Big", site.design)
+	assertEqual(missing.plank, site.cost.plank)
+	assertEqual(missing.plank, f.storage.claimed.plank)
+	for y = 5, 6 do
+		for x = 5, 6 do
+			assertEqual(site, World.buildingAt(ctx.world, x, y))
+		end
+	end
+end)
+
+-- A 2x1 woodcutter with storage and an output port on its south edge.
+local STOCKED = Designs.floor(2, 1, Designs.ability("saw", 0.5, 0.5), Designs.storage(8, 1.5, 0.5), Designs.port("output", 0.5, 1))
+
+local function fill(store, item, n)
+	store.capacity = math.max(store.capacity, n)
+	for _ = 1, n do
+		Storage.add(store, item)
+	end
+end
+
+local function replaceAt(ctx, old)
+	ctx.intents[1] = { x = 0, y = 0, place = replaceRequest(old, BIG, "N", old.tileX, old.tileY) }
+	Session.advance(ctx, 1 / 60)
+	ctx.intents[1] = nil
+end
+
+test("a replaced building's storage and buffers go to the nearest storage facility, then the next", function()
+	local ctx, far = newSession()
+	local old = Placement.build(ctx, Designs.request(STOCKED, "N", 5, 5))
+	fill(old.storage, "log", 6)
+	fill(old.ports[1].buffer, "log", 2)
+	local near = facility(ctx, 3, 3, {})
+	near.storage.capacity = 5
+	local farLogs = far.storage.counts.log or 0
+
+	replaceAt(ctx, old)
+
+	assertEqual(5, near.storage.counts.log, "the nearest fills up")
+	assertEqual(farLogs + 3, far.storage.counts.log, "the rest goes to the next")
+end)
+
+test("what no storage facility has room for is lost", function()
+	local ctx, f = newSession()
+	local old = Placement.build(ctx, Designs.request(STOCKED, "N", 5, 5))
+	fill(old.storage, "log", 6)
+	f.storage.capacity = Storage.total(f.storage) + 4
+
+	replaceAt(ctx, old)
+
+	assertEqual(4, (f.storage.counts.log or 0) - (Config.stockpile.log or 0))
+	assertEqual(0, Storage.room(f.storage))
+end)
+
+test("a storage facility can't be replaced", function()
+	local ctx, f = newSession()
+	local ok, reason = Placement.check(ctx, replaceRequest(f, BIG, "N", 18, 18))
+	assertFalse(ok)
+	assertEqual("storage facility", reason)
+end)
+
+test("a building already replaced can't be replaced again", function()
+	local ctx = newSession()
+	local old = Placement.build(ctx, Designs.request(SMALL, "N", 5, 5))
+	replaceAt(ctx, old)
+	local sites = #ctx.pools.sites
+	replaceAt(ctx, old)
+	assertEqual(sites, #ctx.pools.sites)
+	local ok, reason = Placement.check(ctx, replaceRequest(old, BIG, "N", 5, 5))
+	assertFalse(ok)
+	assertEqual("gone", reason)
+end)

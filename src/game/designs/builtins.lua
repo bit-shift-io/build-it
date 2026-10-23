@@ -27,7 +27,43 @@ Builtins.PREFABS = {
 	"storage",
 }
 
-Builtins.DESIGNS = { "storage_facility" }
+-- Starter prefabs: parametric building parts, not roles. A saved prefab of
+-- the same name shadows one, like any built-in.
+Builtins.STARTER_PREFABS = {
+	"wall",
+	"window_frame",
+	"door_frame",
+	"gable_roof",
+	"pitched_roof",
+	"column",
+	"arch",
+	"chimney",
+	"fence",
+}
+
+-- The starting storage facility, then the starter buildings.
+Builtins.DESIGNS = {
+	"storage_facility",
+	"woodcutter",
+	"quarry",
+	"sawmill",
+	"forager_hut",
+	"fishing_hut",
+	"hunter_lodge",
+	"bedhouse",
+	"canteen",
+}
+
+-- Every built-in prefab name: role prefabs, then starter prefabs.
+function Builtins.prefabNames()
+	local names = {}
+	for _, list in ipairs({ Builtins.PREFABS, Builtins.STARTER_PREFABS }) do
+		for _, name in ipairs(list) do
+			names[#names + 1] = name
+		end
+	end
+	return names
+end
 
 -- The path of built-in `name` of `kind` ("designs" | "prefabs").
 function Builtins.path(kind, name)
@@ -38,7 +74,7 @@ end
 -- the library, or nil and a message naming the file that failed.
 function Builtins.load(read)
 	local library = { designs = {}, prefabs = {} }
-	for kind, names in pairs({ designs = Builtins.DESIGNS, prefabs = Builtins.PREFABS }) do
+	for kind, names in pairs({ designs = Builtins.DESIGNS, prefabs = Builtins.prefabNames() }) do
 		for _, name in ipairs(names) do
 			local path = Builtins.path(kind, name)
 			local text, err = read(path)

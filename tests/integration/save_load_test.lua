@@ -25,7 +25,7 @@ local WOODCUTTER = Designs.floor(2, 1, Designs.ability("saw", 0.375, 0.125), Des
 -- then walks and hand-harvests a while. Returns the game.
 local function play()
 	_G.love = LoveMock.new()
-	assert(DesignStore.write(Config.designs, "designs", "woodcutter", WOODCUTTER))
+	assert(DesignStore.write(Config.designs, "designs", "lumber_camp", WOODCUTTER))
 	local world = World.new(20, 20)
 	World.setTerrain(world, 2, 2, "water")
 	local id = 0
@@ -41,7 +41,7 @@ local function play()
 	table.insert(game.ctx.pools.villagers, villager)
 	local input = Fake.FakeInput.new()
 	local c = game.ctx.pools.characters[1]
-	Fake.pickDesign(game, "woodcutter")
+	Fake.pickDesign(game, "lumber_camp")
 	Fake.click(game, 1, 640 + (13 * TILE - c.x), 360 + (7.5 * TILE - c.y))
 	GameHarness.completeSites(game)
 	assert(game.ctx.pools.buildings[2], "fixture: the woodcutter was placed")
@@ -82,7 +82,7 @@ test("F5 saves; relaunch offers Continue, which restores the session exactly", f
 	assertTrue(ctx ~= nil, "expected a session")
 	assertEqual(saved, SaveCodec.encode(ctx), "expected the loaded session to equal the saved one")
 	assertEqual(2, #ctx.pools.buildings, "the storage facility and the woodcutter")
-	assertEqual("woodcutter", ctx.pools.buildings[2].design)
+	assertEqual("lumber_camp", ctx.pools.buildings[2].design)
 	assertTrue(again.flow.world.player == ctx.pools.characters[1], "expected the world screen on the loaded character")
 	assertTrue(again.camera == again.flow.world.camera, "expected the harness camera to follow the new world screen")
 	Fake.runUntil(again, function()
@@ -110,14 +110,14 @@ test("a building whose design file is deleted loads from its saved blueprint and
 	local game = play()
 	game:keypressed("f5")
 	local hash = game.ctx.pools.buildings[2].blueprint.hash
-	assertTrue(love.filesystem.remove(Config.designs.dir .. "/woodcutter.lua"), "fixture: removed the design file")
+	assertTrue(love.filesystem.remove(Config.designs.dir .. "/lumber_camp.lua"), "fixture: removed the design file")
 
 	local again = relaunch()
-	assertEqual(nil, Flow.library(again.flow).designs.woodcutter, "expected the library to have lost the design")
+	assertEqual(nil, Flow.library(again.flow).designs.lumber_camp, "expected the library to have lost the design")
 	again:keypressed("return")
 	assertEqual("world", again.flow.screen)
 	local b = again.ctx.pools.buildings[2]
-	assertEqual("woodcutter", b.design)
+	assertEqual("lumber_camp", b.design)
 	assertEqual(hash, b.blueprint.hash)
 	Fake.runUntil(again, function()
 		return b.full

@@ -90,11 +90,12 @@ local function guarded(chunk, budget, strings)
 end
 
 -- Runs design script `text`, named `name` in error messages. opts.budget
--- overrides Sandbox.BUDGET. Returns { root = <node>, params = { ... } }
+-- overrides Sandbox.BUDGET; opts.values gives params values by declaration
+-- order (Api.new). Returns { root = <node>, params = { ... } }
 -- (src/game/script/api.lua), or nil and a message with the script line.
 function Sandbox.run(text, name, opts)
 	opts = opts or {}
-	local functions, state = Api.new()
+	local functions, state = Api.new(opts.values)
 	local strings = stringLibrary()
 	local chunk, err = load(text, "=" .. name, "t", environment(functions, strings))
 	if not chunk then
@@ -114,6 +115,16 @@ function Sandbox.run(text, name, opts)
 		return nil, name .. ": the script must return a node, e.g. return box{}"
 	end
 	return { root = root, params = state.params }
+end
+
+-- The line of script `name` that error `message` (from Sandbox.run) points
+-- at, or nil when it names none of that script's lines.
+function Sandbox.errorLine(message, name)
+	local prefix = name .. ":"
+	if message:sub(1, #prefix) ~= prefix then
+		return nil
+	end
+	return tonumber(message:sub(#prefix + 1):match("^(%d+):"))
 end
 
 return Sandbox

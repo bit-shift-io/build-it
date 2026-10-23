@@ -69,7 +69,11 @@ local function newFilesystem(saveDir)
 		end
 		local size = file:seek("end")
 		file:close()
-		return { type = "file", size = size }
+		-- Seconds since the epoch, as LÖVE gives it (BSD stat, else GNU).
+		local stat = io.popen("stat -f %m " .. quote(real(path)) .. " 2>/dev/null || stat -c %Y " .. quote(real(path)))
+		local modtime = tonumber(stat:read("*l"))
+		stat:close()
+		return { type = "file", size = size, modtime = modtime }
 	end
 	function fs.getDirectoryItems(path)
 		local items = {}
@@ -109,6 +113,25 @@ function LoveMock.new(opts)
 		end,
 		setTextInput = function(enabled)
 			state.textInput = enabled
+		end,
+		setKeyRepeat = function(enabled)
+			state.keyRepeat = enabled
+		end,
+	}
+
+	-- The clipboard, and every URL openURL was asked for (state.opened);
+	-- opening succeeds unless state.openFails.
+	state.clipboard, state.opened = "", {}
+	love.system = {
+		getClipboardText = function()
+			return state.clipboard
+		end,
+		setClipboardText = function(text)
+			state.clipboard = text
+		end,
+		openURL = function(url)
+			state.opened[#state.opened + 1] = url
+			return not state.openFails
 		end,
 	}
 

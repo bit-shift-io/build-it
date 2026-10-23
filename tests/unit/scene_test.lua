@@ -157,6 +157,46 @@ test("setMaterial makes every selected node, the root too, of a material; a bad 
 	assertEqual("nothing selected", why)
 end)
 
+test("setColor paints every selected node a literal colour or a team slot, one undo step", function()
+	local History = require("src.game.builder.history")
+	local scene = sceneOf(HOUSE)
+	local history = History.new()
+	Scene.select(scene, "roof")
+	Scene.select(scene, "base", true)
+	local red = { 1, 0, 0 }
+	assertTrue(History.apply(history, scene, Scene.setColor, red))
+	assertEqual(1, Scene.find(scene, "roof").color[1])
+	red[2] = 1
+	assertEqual(0, Scene.find(scene, "base").color[2], "the node keeps its own copy")
+	assertTrue(History.apply(history, scene, Scene.setColor, "primary"))
+	assertEqual("primary", Scene.find(scene, "roof").color)
+
+	local ok, why = Scene.setColor(scene, "teal")
+	assertFalse(ok)
+	assertTrue(why:find("slot", 1, true), why)
+
+	History.undo(history, scene)
+	assertEqual(1, Scene.find(scene, "roof").color[1])
+	History.undo(history, scene)
+	assertEqual(nil, Scene.find(scene, "roof").color)
+	Scene.select(scene, nil)
+	ok, why = Scene.setColor(scene, red)
+	assertFalse(ok)
+	assertEqual("nothing selected", why)
+end)
+
+test("a node's colour is its own, else the nearest one above it, else none", function()
+	local scene = sceneOf([[
+return group{ id = "root", color = "secondary",
+	group{ id = "g", color = { 0, 1, 0 }, box{ id = "b" } },
+	box{ id = "c" },
+}
+]])
+	assertEqual(1, Scene.color(scene, "b")[2])
+	assertEqual("secondary", Scene.color(scene, "c"))
+	assertEqual(nil, Scene.color(sceneOf("return group{ id = \"root\", box{ id = \"b\" } }"), "b"))
+end)
+
 test("a node's material is its own, else the nearest one above it, else none", function()
 	local scene = sceneOf([[
 return group{ id = "root", material = { name = "stone" },

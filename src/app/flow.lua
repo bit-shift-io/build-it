@@ -20,6 +20,7 @@ local SettingsStore = require("src.app.settings_store")
 local SettingsScreen = require("src.app.screens.settings")
 local Builtins = require("src.game.designs.builtins")
 local Library = require("src.game.designs.library")
+local Settings = require("src.game.settings")
 
 local Flow = {}
 
@@ -56,11 +57,13 @@ local function begin(flow, ctx)
 	flow.ctx = ctx
 	flow.world = WorldScreen.new(ctx, function()
 		return Flow.library(flow)
-	end, flow.settings.view)
+	end, flow.settings.view, flow.settings)
 	flow.scriptBuilder = ScriptBuilderScreen.new(flow.config, function(path)
 		return love.filesystem.read(path)
 	end, function()
 		return Flow.library(flow)
+	end, function()
+		return Settings.palette(flow.settings)
 	end)
 	flow.screen = "world"
 end
@@ -98,12 +101,19 @@ local function choose(flow)
 		end
 		begin(flow, ctx)
 	elseif choice == "settings" then
-		flow.settingsScreen = SettingsScreen.new(flow.config, flow.settings.view)
+		flow.settingsScreen = SettingsScreen.new(flow.config, flow.settings.view, flow.settings)
 		flow.screen = "settingsScreen"
 	elseif choice == "new" then
 		local seed = flow.config.save.seed
 		begin(flow, Session.newGame(WorldGen.generate(flow.config, seed), flow.config, seed, Flow.library(flow)))
 	end
+end
+
+-- Stores team colour `picked` ({ field, color }, a Settings screen's
+-- colourChoice), in the flow and on disk.
+local function pickColour(flow, picked)
+	flow.settings[picked.field] = { picked.color[1], picked.color[2], picked.color[3] }
+	SettingsStore.write(flow.config, flow.settings)
 end
 
 -- Stores the view the settings screen picked, in the flow and on disk.
@@ -140,6 +150,13 @@ local function dispatch(flow, event, ...)
 		choose(flow)
 	elseif flow.screen == "settingsScreen" and flow.settingsScreen.choice then
 		pick(flow)
+	elseif flow.screen == "settingsScreen" and flow.settingsScreen.colourChoice then
+		pickColour(flow, flow.settingsScreen.colourChoice)
+		flow.settingsScreen.colourChoice = nil
+	elseif flow.screen == "world" and flow.world.colourChoice then
+		-- The in-world overlay picked a team colour: save it like the title's.
+		pickColour(flow, flow.world.colourChoice)
+		flow.world.colourChoice = nil
 	elseif flow.screen == "world" and flow.world.viewChoice then
 		-- The in-world overlay switched the view: save it like the title's.
 		flow.settings.view = flow.world.viewChoice
@@ -171,6 +188,7 @@ function Flow.keypressed(flow, key)
 		flow.screen = "title"
 	elseif flow.screen == "scriptBuilder" and key == "escape" and not ScriptBuilderScreen.modal(flow.scriptBuilder) then
 		flow.screen = "world"
+		WorldScreen.refresh(flow.world) -- the builder may have changed designs
 	else
 		dispatch(flow, "keypressed", key)
 	end
