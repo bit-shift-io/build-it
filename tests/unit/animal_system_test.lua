@@ -1,4 +1,5 @@
 local Session = require("src.game.session")
+local Builtins = require("tests.support.builtins")
 local WorldGen = require("src.game.world_gen")
 local World = require("src.game.world")
 local Config = require("src.game.config")
@@ -28,7 +29,7 @@ end
 
 test("the same seed spawns the same herds, and different seeds differ", function()
 	local function signature(seed)
-		local ctx = Session.newGame(WorldGen.generate(Config, seed), Config, seed)
+		local ctx = Session.newGame(WorldGen.generate(Config, seed), Config, seed, Builtins)
 		local parts = {}
 		for _, h in ipairs(ctx.pools.herds) do
 			parts[#parts + 1] = string.format("h%d@%d,%d/%d", h.id, h.tileX, h.tileY, h.cap)
@@ -38,14 +39,14 @@ test("the same seed spawns the same herds, and different seeds differ", function
 		end
 		return table.concat(parts, "|")
 	end
-	assertTrue(#Session.newGame(WorldGen.generate(Config, 1), Config, 1).pools.herds > 0, "expected herds")
+	assertTrue(#Session.newGame(WorldGen.generate(Config, 1), Config, 1, Builtins).pools.herds > 0, "expected herds")
 	assertEqual(signature(2), signature(2))
 	assertTrue(signature(2) ~= signature(3))
 end)
 
 test("new-game deer stand on standable tiles, each herd at its cap", function()
 	for seed = 1, 3 do
-		local ctx = Session.newGame(WorldGen.generate(Config, seed), Config, seed)
+		local ctx = Session.newGame(WorldGen.generate(Config, seed), Config, seed, Builtins)
 		local counts = {}
 		for _, a in ipairs(ctx.pools.animals) do
 			local x, y = tileOf(a)

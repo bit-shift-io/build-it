@@ -16,12 +16,12 @@ local Session = require("src.game.session")
 
 local TILE = Config.tileSize
 
-local function configWithDesignDir(dir)
+local function configWithDesignDirs(dir, prefabDir)
 	local config = {}
 	for k, v in pairs(Config) do
 		config[k] = v
 	end
-	config.designs = { dir = dir, maxNameLength = Config.designs.maxNameLength }
+	config.designs = { dir = dir, prefabDir = prefabDir }
 	return config
 end
 
@@ -31,28 +31,20 @@ local function clearDir(dir)
 	end
 end
 
-local function brick(shape, x, y, z, width, depth, paint, port)
-	return { shape = shape, rotation = 0, x = x, y = y, z = z, width = width, depth = depth, material = "plank", paint = paint, port = port }
-end
-
--- A 3x2 tile works: a tan wall along the south, a red tower in the
--- north-east corner, a blue input port on the west edge (tile 0, 1) and an
--- orange output port on the north edge (tile 2, 0).
-local function works()
-	local bricks = {
-		brick("1x1", 0, 5, 0, 1, 1, 8, "input"),
-		brick("1x1", 9, 0, 0, 1, 1, 2, "output"),
-	}
-	for z = 0, 2 do
-		for x = 0, 8, 4 do
-			table.insert(bricks, brick("2x4", x, 6, z, 4, 2, 4))
-		end
-	end
-	for z = 0, 5 do
-		table.insert(bricks, brick("2x2", 10, 0, z, 2, 2, 1))
-	end
-	return { id = "d1", name = "Works", versions = { { width = 3, depth = 2, bricks = bricks } } }
-end
+-- A 3x2 tile works, as a player writes it by hand: a wall along the
+-- south, a tower in the north-east corner, a saw (so the picker offers
+-- it), an input port on the west edge (tile 0, 1) and an output port on
+-- the north edge (tile 2, 0).
+local WORKS = [[
+return group{ id = "root", name = "Works",
+	box{ id = "floor", name = "Floor", size = { 3, 2, 0.125 } },
+	box{ id = "wall", name = "Wall", size = { 3, 0.5, 0.75 }, transform = { move = { 0, 1.5, 0 } } },
+	box{ id = "tower", name = "Tower", size = { 0.5, 0.5, 1.5 }, transform = { move = { 2.5, 0, 0 } } },
+	prefab("saw", { id = "saw", transform = { move = { 1, 0.5, 0.125 } } }),
+	role{ id = "in", port = "input", transform = { move = { 0, 1.375, 0 } } },
+	role{ id = "out", port = "output", transform = { move = { 2.375, 0, 0 } } },
+}
+]]
 
 local function screenOf(game, c, wx, wy)
 	local w, h = Screen.dimensions()
@@ -61,29 +53,29 @@ local function screenOf(game, c, wx, wy)
 end
 
 test("a design places in all 4 facings with its port tiles marked, and the ghost shows valid and invalid", function()
-	local config = configWithDesignDir("e2e_place_designs")
+	local config = configWithDesignDirs("e2e_place_designs", "e2e_place_prefabs")
 	clearDir(config.designs.dir)
-	assert(DesignStore.write(config.designs.dir, works()))
+	clearDir(config.designs.prefabDir)
+	assert(DesignStore.write(config.designs, "designs", "works", WORKS))
 
 	local world = World.new(30, 20)
 	for x = 2, 6 do
 		World.setTerrain(world, x, 17, "water")
 		World.setTerrain(world, x, 18, "water")
 	end
-	-- Storage for 5 placements of 110 planks and more.
+	-- Storage for 5 placements and more.
 	local game = GameHarness.startSession(world, { real = true, config = config, storage = { plank = 1000, stone = 1000 } })
 	local c = game.ctx.pools.characters[1]
 	local screen = game.flow.world
 
-	Fake.tap(game, "1")
-	Fake.tap(game, "return")
+	Fake.pickDesign(game, "works")
 	-- One building per facing in a row south of the character,
 	-- footprints 3x2 or 2x3.
 	local spots = { N = { 3, 12 }, E = { 9, 12 }, S = { 15, 12 }, W = { 21, 12 } }
 	for _, facing in ipairs({ "N", "E", "S", "W" }) do
 		assertEqual(facing, screen.placing.facing)
 		local spot = spots[facing]
-		local w, d = Placement.footprint(screen.placing.design.versions[1], facing)
+		local w, d = Placement.footprint(screen.placing.blueprint, facing)
 		Fake.click(game, 1, screenOf(game, c, spot[1] + w / 2, spot[2] + d / 2))
 		Fake.tap(game, "r")
 	end
@@ -127,8 +119,7 @@ test("a design places in all 4 facings with its port tiles marked, and the ghost
 	end
 	Capture.capture("placed_all_facings")
 
-	Fake.tap(game, "1")
-	Fake.tap(game, "return")
+	Fake.pickDesign(game, "works")
 	game:mousemoved(screenOf(game, c, 12.5, 18))
 	assertTrue(WorldScreen.ghost(screen).ok, "expected a valid ghost on grass")
 	Capture.capture("ghost_valid")

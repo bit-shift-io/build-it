@@ -96,6 +96,14 @@ local function typeText(game, text)
 	FrameStepper.step(game, 1)
 end
 
+-- Opens the building picker with the 1 key, types `query` into its search
+-- and picks the first design matching it with Return.
+local function pickDesign(game, query)
+	tap(game, "1")
+	typeText(game, query)
+	tap(game, "return")
+end
+
 -- A mouse click at screen (x, y) with button (1 left, 2 right): the pointer
 -- moves there, then presses and releases without moving.
 local function click(game, button, x, y)
@@ -127,6 +135,7 @@ return {
 	runUntil = runUntil,
 	tap = tap,
 	typeText = typeText,
+	pickDesign = pickDesign,
 	click = click,
 	drag = drag,
 }

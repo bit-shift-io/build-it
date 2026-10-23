@@ -111,6 +111,18 @@ function StorageFacility.has(ctx, cost)
 	return true
 end
 
+-- The items of `cost` that `totals` ({ [item] = n }) can't cover:
+-- { [item] = true }.
+function StorageFacility.short(cost, totals)
+	local short = {}
+	for item, n in pairs(cost) do
+		if (totals[item] or 0) < n then
+			short[item] = true
+		end
+	end
+	return short
+end
+
 -- Whole tiles from tile (x, y) to the nearest footprint tile of `b`.
 local function distance(b, x, y)
 	local dx = math.max(b.tileX - x, 0, x - (b.tileX + b.width - 1))

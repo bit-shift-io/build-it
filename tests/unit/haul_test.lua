@@ -14,26 +14,14 @@ local Haul = require("src.game.jobs.haul")
 local TILE = Config.tileSize
 local STEP = 1 / 60
 
-local function brick(shape, x, y, extra)
-	local b = { x = x, y = y, z = 0, width = 2, depth = 1, height = 1, shape = shape, rotation = 0, material = "plank", paint = 1 }
-	for k, v in pairs(extra or {}) do
-		b[k] = v
-	end
-	return b
-end
+local Designs = require("tests.support.designs")
 
 -- 1x1 tile buildings with one port on the south edge.
-local CUTTER = { id = "d1", name = "Cutter", versions = { { width = 1, depth = 1, bricks = {
-	brick("saw", 0, 0, { ability = "saw" }),
-	brick("output", 0, 3, { port = "output" }),
-} } } }
-local MILL = { id = "d2", name = "Mill", versions = { { width = 1, depth = 1, bricks = {
-	brick("sawbench", 0, 0, { ability = "sawbench" }),
-	brick("input", 0, 3, { port = "input" }),
-} } } }
+local CUTTER = Designs.floor(1, 1, Designs.ability("saw", 0.25, 0.125), Designs.port("output", 0.25, 1))
+local MILL = Designs.floor(1, 1, Designs.ability("sawbench", 0.25, 0.125), Designs.port("input", 0.25, 1))
 
 local function place(ctx, design, x, y)
-	return Placement.build(ctx, { design = design, version = 1, facing = "N", tileX = x, tileY = y })
+	return Placement.build(ctx, Designs.request(design, "N", x, y))
 end
 
 local function endpoint(b, port)

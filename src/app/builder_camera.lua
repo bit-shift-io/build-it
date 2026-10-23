@@ -1,10 +1,10 @@
--- The builder's orbit camera: a perspective view circling the baseplate.
--- Pure math, no `love.*`, so the ray it builds for picking
--- (src/game/builder/pick.lua) and the projection the live view draws with
--- (src/app/render/builder_view.lua) are the same transform and unit-testable.
+-- The builder's orbit camera: a perspective view circling the model. Pure
+-- math, no `love.*`, so the ray it builds for picking and the projection
+-- the live view draws with (src/app/render/script_builder_view.lua) are the
+-- same transform and unit-testable.
 --
--- Space is draft space: studs, x east, y south, z up in brick layers.
--- cfg is config.builder; cfg.camera holds the orbit tuning.
+-- Space is studs (config.builder.studsPerTile to a tile), x east, y south,
+-- z up. cfg is config.builder; cfg.camera holds the orbit tuning.
 local BuilderCamera = {}
 
 -- Clip planes, in studs along the view direction. The camera never comes
@@ -30,35 +30,6 @@ local function dot(a, b)
 	return a[1] * b[1] + a[2] * b[2] + a[3] * b[3]
 end
 
--- How high the model reaches, in layers: the top of its highest brick, plus
--- one layer for a brick about to be placed on it.
-local function modelTop(draft)
-	local top = 0
-	for _, b in ipairs(draft.bricks) do
-		top = math.max(top, b.z + 1)
-	end
-	return top + 1
-end
-
--- The point the camera circles: the middle of the model's box.
-local function target(draft, cfg)
-	local studs = cfg.studsPerTile
-	return { draft.width * studs / 2, draft.depth * studs / 2, modelTop(draft) / 2 }
-end
-
--- The radius of a sphere about the target that holds the baseplate slab
--- and every brick, including one about to be placed on top.
-local function modelRadius(draft, cfg)
-	local studs = cfg.studsPerTile
-	local hw, hd, hh = draft.width * studs / 2, draft.depth * studs / 2, modelTop(draft) / 2 + 0.5
-	return math.sqrt(hw * hw + hd * hd + hh * hh)
-end
-
--- The nearest the camera may come to the target for this draft.
-function BuilderCamera.minDistance(draft, cfg)
-	return modelRadius(draft, cfg) + cfg.camera.nearMargin
-end
-
 -- Turns the camera by a drag of (dx, dy) pixels: sideways spins it about
 -- the model, down tilts it to look more steeply down.
 function BuilderCamera.orbit(cam, dx, dy, cfg)
@@ -67,21 +38,22 @@ function BuilderCamera.orbit(cam, dx, dy, cfg)
 	cam.pitch = math.max(c.minPitch, math.min(c.maxPitch, cam.pitch + dy * c.orbitSpeed))
 end
 
--- Zooms by `notches` wheel steps (positive zooms in), between the draft's
--- minDistance and cfg.camera.maxDistance.
-function BuilderCamera.zoomBy(cam, notches, draft, cfg)
+-- Zooms by `notches` wheel steps (positive zooms in), for a model held by
+-- a sphere of `radius`: between radius + cfg.camera.nearMargin and
+-- cfg.camera.maxDistance.
+function BuilderCamera.zoomAround(cam, notches, radius, cfg)
 	local c = cfg.camera
 	local distance = cam.distance / c.zoomStep ^ notches
-	cam.distance = math.max(BuilderCamera.minDistance(draft, cfg), math.min(c.maxDistance, distance))
+	cam.distance = math.max(radius + c.nearMargin, math.min(c.maxDistance, distance))
 end
 
--- A frozen view for one frame: eye position, basis, focal length and the
--- viewport (in screen pixels) it draws into. Yaw 0 looks north from the
--- south; positive pitch looks down.
-function BuilderCamera.view(cam, draft, cfg, viewport)
+-- A frozen view for one frame, circling point `t` ({ x, y, z }) and
+-- keeping outside a sphere of `radius` about it: eye position, basis,
+-- focal length and the viewport (in screen pixels) it draws into. Yaw 0
+-- looks north from the south; positive pitch looks down.
+function BuilderCamera.viewAround(cam, t, radius, cfg, viewport)
 	local c = cfg.camera
-	local distance = math.max(BuilderCamera.minDistance(draft, cfg), math.min(c.maxDistance, cam.distance))
-	local t = target(draft, cfg)
+	local distance = math.max(radius + c.nearMargin, math.min(c.maxDistance, cam.distance))
 	local cp = math.cos(cam.pitch)
 	local eye = {
 		t[1] + distance * cp * math.sin(cam.yaw),
@@ -100,7 +72,7 @@ function BuilderCamera.view(cam, draft, cfg, viewport)
 		centerX = viewport.x + viewport.width / 2,
 		centerY = viewport.y + viewport.height / 2,
 		near = NEAR,
-		far = distance + modelRadius(draft, cfg) + 1,
+		far = distance + radius + 1,
 	}
 end
 

@@ -16,24 +16,15 @@ local AnimalSystem = require("src.game.systems.animal_system")
 local TILE = Config.tileSize
 local STEP = 1 / 60
 
-local function brick(shape, x, y, extra)
-	local b = { x = x, y = y, z = 0, width = 2, depth = 1, height = 1, shape = shape, rotation = 0, material = "plank", paint = 1 }
-	for k, v in pairs(extra or {}) do
-		b[k] = v
-	end
-	return b
-end
+local Designs = require("tests.support.designs")
+local ability, port = Designs.ability, Designs.port
 
-local MILL = { id = "d1", name = "Mill", versions = { { width = 2, depth = 1, bricks = {
-	brick("sawbench", 0, 0, { width = 4, depth = 2, ability = "sawbench" }),
-	brick("input", 0, 3, { port = "input" }),
-	brick("output", 4, 3, { port = "output" }),
-} } } }
+local MILL = Designs.floor(2, 1, ability("sawbench", 0.5, 0.25), port("input", 0.25, 1), port("output", 1.25, 1))
 
 local function setup()
 	local ctx = Session.new(World.new(20, 20), Config, 1)
 	ctx.dt = STEP
-	local mill = Placement.build(ctx, { design = MILL, version = 1, facing = "N", tileX = 8, tileY = 8 })
+	local mill = Placement.build(ctx, Designs.request(MILL, "N", 8, 8))
 	local v = Session.newVillager(1, 3.5 * TILE, 3.5 * TILE, Config)
 	for _ = 1, 2 do
 		Storage.add(mill.ports[1].buffer, "log")
@@ -146,15 +137,12 @@ test("an operator job with no route ends at once and frees the brick", function(
 	assertEqual(2, port.buffer.counts.log, "nothing taken")
 end)
 
-local CUTTER = { id = "d2", name = "Cutter", versions = { { width = 2, depth = 1, bricks = {
-	brick("saw", 0, 0, { width = 3, depth = 1, ability = "saw" }),
-	brick("output", 4, 3, { port = "output" }),
-} } } }
+local CUTTER = Designs.floor(2, 1, ability("saw", 0.375, 0.125), port("output", 1.25, 1))
 
 test("a harvester job whose node has no free neighbour ends at once and frees the node", function()
 	local ctx = Session.new(World.new(20, 20), Config, 1)
 	ctx.dt = STEP
-	local b = Placement.build(ctx, { design = CUTTER, version = 1, facing = "N", tileX = 8, tileY = 8 })
+	local b = Placement.build(ctx, Designs.request(CUTTER, "N", 8, 8))
 	-- A tree on a tile ringed by water.
 	for y = 5, 7 do
 		for x = 5, 7 do
@@ -211,7 +199,7 @@ end)
 local function cutterWithTree()
 	local ctx = Session.new(World.new(20, 20), Config, 1)
 	ctx.dt = STEP
-	local b = Placement.build(ctx, { design = CUTTER, version = 1, facing = "N", tileX = 8, tileY = 8 })
+	local b = Placement.build(ctx, Designs.request(CUTTER, "N", 8, 8))
 	local tree = World.addNode(ctx.world, { id = 1, kind = "tree", tileX = 8, tileY = 6, variant = 1, stage = 1, amount = 5 })
 	local v = Session.newVillager(1, 12.5 * TILE, 12.5 * TILE, Config)
 	return ctx, b, tree, v
@@ -278,10 +266,7 @@ test("a finished operator cycle adds one to the brick's ability, and nothing els
 	assertEqual(0, others)
 end)
 
-local ANGLER = { id = "d9", name = "Angler", versions = { { width = 2, depth = 1, bricks = {
-	brick("fishing", 0, 0, { width = 3, ability = "fishing" }),
-	brick("output", 3, 3, { port = "output" }),
-} } } }
+local ANGLER = Designs.floor(2, 1, ability("fishing", 0.375, 0.125), port("output", 1, 1))
 
 local function angler(waterX, waterY)
 	local ctx = Session.new(World.new(40, 40), Config, 1)
@@ -289,7 +274,7 @@ local function angler(waterX, waterY)
 	if waterX then
 		World.setTerrain(ctx.world, waterX, waterY, "water")
 	end
-	local b = Placement.build(ctx, { design = ANGLER, version = 1, facing = "N", tileX = 8, tileY = 8 })
+	local b = Placement.build(ctx, Designs.request(ANGLER, "N", 8, 8))
 	return ctx, b
 end
 
@@ -321,17 +306,14 @@ test("a fisher stands on land beside the water, never on it, and delivers a fish
 	assertTrue(Load.empty(v.load), "fish delivered")
 end)
 
-local HUNTER = { id = "d10", name = "Hunter", versions = { { width = 2, depth = 1, bricks = {
-	brick("hunter", 0, 0, { width = 3, ability = "hunter" }),
-	brick("output", 3, 3, { port = "output" }),
-} } } }
+local HUNTER = Designs.floor(2, 1, ability("hunter", 0.375, 0.125), port("output", 1, 1))
 
 -- A hunter building at tile (8, 8) in an open world, with deer at `spots`
 -- (tiles) of one herd.
 local function huntRange(spots)
 	local ctx = Session.new(World.new(30, 30), Config, 1)
 	ctx.dt = STEP
-	local b = Placement.build(ctx, { design = HUNTER, version = 1, facing = "N", tileX = 8, tileY = 8 })
+	local b = Placement.build(ctx, Designs.request(HUNTER, "N", 8, 8))
 	local herd = AnimalSystem.addHerd(ctx, 12, 12, 4)
 	local deer = {}
 	for i, s in ipairs(spots) do
@@ -359,11 +341,11 @@ test("two hunters never reserve the same deer", function()
 	local j1 = Operate.new(b, fb)
 	assertTrue(Operate.start(j1, a, ctx))
 	local d1 = j1.deer
-	local b2 = Placement.build(ctx, { design = HUNTER, version = 1, facing = "N", tileX = 8, tileY = 14 })
+	local b2 = Placement.build(ctx, Designs.request(HUNTER, "N", 8, 14))
 	local j2 = Operate.new(b2, b2.functionBricks[1])
 	assertTrue(Operate.start(j2, c, ctx))
 	assertTrue(d1 ~= nil and j2.deer ~= nil and d1 ~= j2.deer, "different deer")
-	local b3 = Placement.build(ctx, { design = HUNTER, version = 1, facing = "N", tileX = 15, tileY = 14 })
+	local b3 = Placement.build(ctx, Designs.request(HUNTER, "N", 15, 14))
 	local j3 = Operate.new(b3, b3.functionBricks[1])
 	assertEqual(false, Operate.start(j3, Session.newVillager(3, 3.5 * TILE, 5.5 * TILE, Config), ctx), "no free deer left")
 end)
@@ -428,9 +410,7 @@ local function progressGain(ctx, b, v, stage, rate)
 	return fb.progress - before
 end
 
-local PLANTER = { id = "d11", name = "Forester", versions = { { width = 2, depth = 1, bricks = {
-	brick("planter", 0, 0, { width = 4, depth = 2, ability = "planter" }),
-} } } }
+local PLANTER = Designs.floor(2, 1, ability("planter", 0.5, 0.25))
 
 local AURA_CASES = {
 	{ "convert", "working", function()
@@ -444,7 +424,7 @@ local AURA_CASES = {
 	{ "plant", "seeding", function()
 		local ctx = Session.new(World.new(20, 20), Config, 1)
 		ctx.dt = STEP
-		local b = Placement.build(ctx, { design = PLANTER, version = 1, facing = "N", tileX = 8, tileY = 8 })
+		local b = Placement.build(ctx, Designs.request(PLANTER, "N", 8, 8))
 		return ctx, b, Session.newVillager(1, 3.5 * TILE, 3.5 * TILE, Config)
 	end },
 	{ "fish", "fishing", function()

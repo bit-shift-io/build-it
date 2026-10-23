@@ -1,4 +1,5 @@
 local Session = require("src.game.session")
+local Builtins = require("tests.support.builtins")
 local Config = require("src.game.config")
 
 local function newSession(world)
@@ -77,7 +78,7 @@ test("Session.new has an empty villager pool", function()
 end)
 
 test("Session.newGame spawns config.villagers.count idle villagers on open tiles near the storage facility", function()
-	local ctx = Session.newGame(WorldGen.generate(Config, 1), Config, 1)
+	local ctx = Session.newGame(WorldGen.generate(Config, 1), Config, 1, Builtins)
 	local b = ctx.pools.buildings[1]
 	local tile, radius = Config.tileSize, Config.villagers.spawnRadius
 	local taken = {}
@@ -98,8 +99,8 @@ test("Session.newGame spawns config.villagers.count idle villagers on open tiles
 end)
 
 test("Session.newGame spawns the same villagers for the same seed", function()
-	local a = Session.newGame(WorldGen.generate(Config, 3), Config, 3)
-	local b = Session.newGame(WorldGen.generate(Config, 3), Config, 3)
+	local a = Session.newGame(WorldGen.generate(Config, 3), Config, 3, Builtins)
+	local b = Session.newGame(WorldGen.generate(Config, 3), Config, 3, Builtins)
 	for i, v in ipairs(a.pools.villagers) do
 		assertEqual(v.x, b.pools.villagers[i].x)
 		assertEqual(v.y, b.pools.villagers[i].y)
@@ -107,7 +108,7 @@ test("Session.newGame spawns the same villagers for the same seed", function()
 end)
 
 test("Session.step walks a villager sent across the map to its target, round the facility", function()
-	local ctx = Session.newGame(WorldGen.generate(Config, 1), Config, 1)
+	local ctx = Session.newGame(WorldGen.generate(Config, 1), Config, 1, Builtins)
 	local b = ctx.pools.buildings[1]
 	b.aura.walkSpeed = 0
 	local v = ctx.pools.villagers[1]
@@ -135,7 +136,7 @@ test("Session.step walks a villager sent across the map to its target, round the
 end)
 
 test("a villager sent across a generated map walks around water and trees to its target", function()
-	local ctx = Session.newGame(WorldGen.generate(Config, 1), Config, 1)
+	local ctx = Session.newGame(WorldGen.generate(Config, 1), Config, 1, Builtins)
 	local v = ctx.pools.villagers[1]
 	local tile = Config.tileSize
 	local tx, ty = 12, 12
@@ -193,7 +194,7 @@ test("a collapsed villager does not walk its path", function()
 end)
 
 test("a starving player respawns at the storage facility with full needs and its inventory", function()
-	local ctx = Session.newGame(WorldGen.generate(Config, 1), Config, 1)
+	local ctx = Session.newGame(WorldGen.generate(Config, 1), Config, 1, Builtins)
 	local p = ctx.pools.characters[1]
 	p.inventory.counts.log = 3
 	p.x, p.y = 40, 40

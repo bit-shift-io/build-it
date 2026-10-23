@@ -13,46 +13,22 @@ local Load = require("src.game.components.load")
 
 local STEP = 1 / 60
 
--- A brick record as the builder saves it (src/game/builder/draft.lua).
-local function brick(shape, x, y, z, material)
-	local fields = {
-		saw = { width = 3, depth = 1, height = 3, ability = "saw" },
-		pickaxe = { width = 3, depth = 1, height = 3, ability = "pickaxe" },
-		output = { width = 2, depth = 1, height = 1, port = "output" },
-		storage = { width = 2, depth = 2, height = 2, storage = 8 },
-		["1x1"] = { width = 1, depth = 1, height = 1 },
-	}
-	local f = fields[shape]
-	return {
-		x = x,
-		y = y,
-		z = z,
-		width = f.width,
-		depth = f.depth,
-		height = f.height,
-		shape = shape,
-		rotation = 0,
-		material = material or "plank",
-		paint = 1,
-		ability = f.ability,
-		port = f.port,
-		storage = f.storage,
-	}
-end
+local Designs = require("tests.support.designs")
 
--- A 2x1 tile design (8x4 studs): `first` and `second` (shape names, or nil
--- for a plain 1x1 plank filler, so trait totals match) on the north row,
--- and an output port on the south edge facing the tile below tile (1, 0).
-local function design(first, second, extra)
-	local bricks = {
-		brick(first, 0, 0, 0),
-		second and brick(second, 4, 0, 0) or brick("1x1", 4, 0, 0),
-		brick("output", 3, 3, 0),
-	}
-	for _, b in ipairs(extra or {}) do
-		table.insert(bricks, b)
+-- A 2x1 tile design: abilities `first` and `second` (or nil) on the north
+-- row of tiles 0 and 1, an output port on the south edge facing the tile
+-- below tile (1, 0), and with `productive` a plank block on top for more
+-- traits.
+local function design(first, second, productive)
+	local nodes = { Designs.ability(first, 0.375, 0.125) }
+	if second then
+		nodes[#nodes + 1] = Designs.ability(second, 1.375, 0.125)
 	end
-	return { id = "d1", name = "Cutter", versions = { { width = 2, depth = 1, bricks = bricks } } }
+	nodes[#nodes + 1] = Designs.port("output", 1, 1)
+	if productive then
+		nodes[#nodes + 1] = "box{ size = { 2, 1, 0.5 }, transform = { move = { 0, 0, 0.0625 } } }"
+	end
+	return Designs.floor(2, 1, unpack(nodes))
 end
 
 local function newSession(config)
@@ -63,7 +39,7 @@ end
 -- Places `d` facing N with its north-west tile on (x, y), paid for.
 local function build(ctx, c, d, x, y)
 	c.inventory = Inventory.new({ plank = 10000, stone = 10000 })
-	return assert(Placement.build(ctx, { design = d, version = 1, facing = "N", tileX = x, tileY = y }))
+	return assert(Placement.build(ctx, Designs.request(d, "N", x, y)))
 end
 
 local TILE = Config.tileSize
@@ -294,13 +270,8 @@ local function secondsToCut(d, n)
 end
 
 test("a building with more productivity harvests each item faster", function()
-	local extra = {}
-	for i = 0, 7 do
-		table.insert(extra, brick("1x1", i, 2, 0))
-		table.insert(extra, brick("1x1", i, 1, 0))
-	end
 	local plain = secondsToCut(design("saw"), 3)
-	local productive = secondsToCut(design("saw", nil, extra), 3)
+	local productive = secondsToCut(design("saw", nil, true), 3)
 	assertTrue(productive < plain, productive .. " < " .. plain)
 end)
 

@@ -7,7 +7,7 @@ local Config = require("src.game.config")
 local Model = require("src.game.blocks.model")
 local Baker = require("src.app.bake.baker")
 local Starter = require("src.game.designs.starter")
-local Draft = require("src.game.builder.draft")
+local Builtins = require("src.game.designs.builtins")
 local Placement = require("src.game.buildings.placement")
 local Projection = require("src.game.projection")
 
@@ -65,17 +65,20 @@ test("bakes at whole scales: scale 2 doubles the sprite and its anchor", functio
 	assertEqual(2 * one.frame.anchorY, two.frame.anchorY)
 end)
 
--- The starting storage facility (src/game/designs/starter.lua) as a block
--- model on the stud grid, as DesignCache bakes it.
-local function houseModel()
-	return Draft.toModel(Starter.design(Config).versions[1], Config.builder)
+-- The starting storage facility (src/game/designs/starter.lua), compiled
+-- from the built-in Lua design into the blueprint DesignCache bakes.
+local function houseBlueprint()
+	local library = assert(Builtins.load(function(path)
+		return love.filesystem.read(path)
+	end))
+	return Starter.blueprint(library, Config)
 end
 
-test("the starter house bakes in all 4 facings, footprint turning with the facing", function()
-	local house = houseModel()
+test("the starter house bakes from its triangle mesh in all 4 facings, footprint turning with the facing", function()
+	local house = houseBlueprint()
 	local wantWidth = { N = house.width, E = house.depth, S = house.width, W = house.depth }
 	for _, facing in ipairs(Model.FACINGS) do
-		local sprite = Baker.bake(house, facing, Config, 2)
+		local sprite = Baker.bakeMesh(house.mesh, house.width, house.depth, facing, Config, 2)
 		Capture.captureTexture("house_" .. facing .. "_x2", sprite.image)
 		assertEqual(wantWidth[facing], sprite.width, "footprint width facing " .. facing)
 		-- Walls stand flush on the footprint, so the sprite is exactly as wide.
@@ -110,9 +113,9 @@ end
 test("the starter house draws with its footprint exactly on its tiles at every zoom", function()
 	local world = { width = 40, height = 30 }
 	local game = GameHarness.startSession(world, { real = true })
-	local place = { design = Starter.design(Config), version = 1, facing = "N", tileX = 10, tileY = 6 }
+	local house = houseBlueprint()
+	local place = { design = Starter.NAME, blueprint = house, facing = "N", tileX = 10, tileY = 6 }
 	Placement.build(game.ctx, place)
-	local house = houseModel()
 	local p = Projection.new(Config)
 	local w, h = love.graphics.getDimensions()
 
@@ -199,14 +202,14 @@ local DesignCache = require("src.app.bake.design_cache")
 local PropCache = require("src.app.bake.prop_cache")
 
 test("design sprites of two views coexist in memory, each baked once", function()
-	local design = Starter.design(Config)
+	local blueprint = houseBlueprint()
 	local cache = DesignCache.new(Config)
-	local top = DesignCache.sprite(cache, design, 1, "N", 1)
-	local iso = DesignCache.sprite(cache, design, 1, "N", 1, "iso")
+	local top = DesignCache.sprite(cache, blueprint, "N", 1)
+	local iso = DesignCache.sprite(cache, blueprint, "N", 1, "iso")
 	assertTrue(top ~= iso and top.frame.height ~= iso.frame.height, "views bake different sprites")
 	assertEqual(2, #cache.baked, "one bake per view")
-	assertTrue(top == DesignCache.sprite(cache, design, 1, "N", 1, "topdown"), "topdown reused")
-	assertTrue(iso == DesignCache.sprite(cache, design, 1, "N", 1, "iso"), "iso reused")
+	assertTrue(top == DesignCache.sprite(cache, blueprint, "N", 1, "topdown"), "topdown reused")
+	assertTrue(iso == DesignCache.sprite(cache, blueprint, "N", 1, "iso"), "iso reused")
 	assertEqual(2, #cache.baked, "no rebake when switching back")
 end)
 

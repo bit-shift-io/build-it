@@ -165,30 +165,64 @@ return {
 	-- empty.
 	stockpile = { plank = 50, stone = 50, berry = 20 },
 
-	-- What placing a building costs (src/game/builder/cost.lua): items per
-	-- baseplate tile, and items per stud of each brick's footprint by its
-	-- material. Function, port and storage bricks add their own `cost`
-	-- (builder.bricks) on top.
-	costs = {
-		baseplatePerTile = { plank = 2 },
-		perStud = { plank = { plank = 1 }, stone = { stone = 1 } },
+	-- Materials (docs/CONTEXT.md "Material", "Texture variant"): what a
+	-- design's nodes may be made of, each with its texture variants in menu
+	-- order, the first the default. The material sets cost and traits; the
+	-- variant only how the shader (src/app/bake/block_shader.glsl) draws it.
+	materials = {
+		plank = { variants = { "polished", "bark", "shingles", "logs" } },
+		stone = { variants = { "polished", "rough", "jagged", "brick" } },
 	},
 
-	-- What each brick adds to its design's traits (src/game/builder/traits.lua)
-	-- by its material. Productivity shortens cycles, capacity grows buffers
-	-- and storage, reach sets harvest and aura radius, health does nothing yet.
+	-- What each blueprints.traitVoxels voxels of a material add to a
+	-- design's traits (src/game/buildings/compile.lua). Productivity
+	-- shortens cycles, capacity grows buffers and storage, reach sets
+	-- harvest and aura radius, health does nothing yet.
 	traits = {
 		plank = { productivity = 1, capacity = 1, reach = 1, health = 1 },
 		stone = { productivity = -1, capacity = 1, reach = 0, health = 3 },
 	},
 
-	-- Auras (docs/CONTEXT.md "Aura"): what each brick of a material adds to
-	-- its building's aura. Fractions: 0.001 is +0.1%. walkSpeed scales the
+	-- Auras (docs/CONTEXT.md "Aura"): what each blueprints.traitVoxels
+	-- voxels of a material add to its building's aura. Fractions: 0.001 is +0.1%. walkSpeed scales the
 	-- character's walk speed, harvestRate its hand-harvest speed, while it
 	-- is within the building's reach. Auras of several buildings add up.
 	auras = {
 		plank = { walkSpeed = 0.0005, harvestRate = 0 },
 		stone = { walkSpeed = 0, harvestRate = 0.001 },
+	},
+
+	-- Compiled designs (src/game/buildings/compile.lua; ADR 0006): cost
+	-- and traits come from the model's voxels, voxelsPerTile to a tile
+	-- side, counted by material. Geometry with no material is
+	-- defaultMaterial.
+	--   voxelsPerItem[material][item]: voxels per item they cost, rounded
+	--     up per material. 64 is a stud cube, which cost a plank as a brick.
+	--   traitVoxels: voxels of a material per point of its traits
+	--     (config.traits) and auras (config.auras); 256 is about one brick.
+	--   roleCosts: what each role adds on top (docs/CONTEXT.md "Role
+	--     prefab"): per ability, per port kind, and per storage item.
+	blueprints = {
+		voxelsPerTile = 16,
+		defaultMaterial = "plank",
+		voxelsPerItem = { plank = { plank = 64 }, stone = { stone = 64 } },
+		traitVoxels = 256,
+		roleCosts = {
+			abilities = {
+				saw = { stone = 4 },
+				pickaxe = { stone = 4 },
+				forager = { plank = 4 },
+				fishing = { plank = 4 },
+				hunter = { plank = 4 },
+				planter = { plank = 4 },
+				sawbench = { plank = 4, stone = 2 },
+				depot = { plank = 4 },
+				bed = { plank = 3 },
+				canteen = { plank = 4 },
+			},
+			ports = { input = { plank = 1 }, output = { plank = 1 } },
+			storagePerItem = { plank = 0.5 },
+		},
 	},
 
 	-- Building production (src/game/components/{function_brick,ports,storage}.lua).
@@ -243,10 +277,12 @@ return {
 	-- variants, rebakes every kind.
 	props = { variants = 8, seed = 1, cacheDir = "props" },
 
-	-- The design library (src/game/designs/, src/app/design_store.lua): one
-	-- file per design under `dir` in the save directory, shared by every
-	-- world. Names are labels of at most maxNameLength characters.
-	designs = { dir = "designs", maxNameLength = 24 },
+	-- The design library (src/game/designs/library.lua,
+	-- src/app/design_store.lua): one Lua file per design under `dir` and per
+	-- prefab under `prefabDir` in the save directory, shared by every world
+	-- and named by file name. They shadow the built-ins of the same name
+	-- (src/game/designs/builtins.lua).
+	designs = { dir = "designs", prefabDir = "prefabs" },
 
 	-- The one world save slot (src/game/save/codec.lua,
 	-- src/app/save_store.lua): a file in the save directory. seed is the
@@ -319,195 +355,21 @@ return {
 		zoomStep = 1.1, -- zoom factor per wheel notch
 	},
 
-	-- The builder screen (src/game/builder/, src/app/screens/builder.lua).
-	-- Bricks sit on the stud grid (studsPerTile per tile side) and stack in
-	-- layers one stud tall. The baseplate is minBaseplate..maxBaseplate tiles
-	-- per side; no brick may reach above maxLayers.
+	-- The script builder (src/app/screens/script_builder.lua). testDesign is
+	-- the design script it opens, read from the game's files. The top bar
+	-- holds topBarSlots numbered tool slots, topBarHeight pixels tall. It
+	-- shares builder.camera's orbit and draws in builder studs (studsPerTile
+	-- per tile).
+	scriptBuilder = {
+		testDesign = "content/designs/test.lua",
+		topBarSlots = 9,
+		topBarHeight = 40,
+	},
+
+	-- The builder's orbit camera (src/app/builder_camera.lua), which draws
+	-- in studs, studsPerTile to a tile side.
 	builder = {
 		studsPerTile = 4,
-		minBaseplate = 1,
-		maxBaseplate = 4,
-		maxLayers = 12,
-		-- The brick palette (src/game/builder/bricks.lua), unturned
-		-- footprints in studs. A slope's `slope` row is the edge it falls
-		-- toward: one stud row of 45-degree slope, the rest full height.
-		--
-		-- Function, port and storage bricks (docs/CONTEXT.md) carry their
-		-- role, copied onto every brick placed: `ability` (what the building
-		-- can do), `port` ("input" | "output") or `storage` (items it
-		-- holds). Each adds its own `cost` (src/game/builder/cost.lua) and
-		-- draws its own model from `layers`: bottom layer first, each a list
-		-- of stud rows north to south, one character per stud west to east:
-		--   "." empty, "#" box in paint and material, "o" box in `accent`,
-		--   "N" "E" "S" "W" a slope in paint looking that way, "n" "e" "s"
-		--   "w" the same in accent. Accent studs have no material.
-		-- A shape without `layers` is one layer of boxes (and its `slope`).
-		-- `label` names the sidebar button (the name when absent).
-		bricks = {
-			{ name = "1x1", width = 1, depth = 1 },
-			{ name = "1x2", width = 2, depth = 1 },
-			{ name = "1x4", width = 4, depth = 1 },
-			{ name = "2x2", width = 2, depth = 2 },
-			{ name = "2x4", width = 4, depth = 2 },
-			{ name = "slope", width = 2, depth = 2, slope = "S" },
-			{
-				name = "saw",
-				label = "Saw",
-				ability = "saw",
-				width = 3,
-				depth = 1,
-				cost = { stone = 4 },
-				accent = { 0.78, 0.8, 0.82 },
-				layers = { { "###" }, { "ooo" }, { "woe" } },
-			},
-			{
-				name = "pickaxe",
-				label = "Pickaxe",
-				ability = "pickaxe",
-				width = 3,
-				depth = 1,
-				cost = { stone = 4 },
-				accent = { 0.45, 0.47, 0.5 },
-				layers = { { ".#." }, { ".#." }, { "woe" } },
-			},
-			{
-				name = "forager",
-				label = "Forager",
-				ability = "forager",
-				width = 3,
-				depth = 1,
-				cost = { plank = 4 },
-				accent = { 0.8, 0.2, 0.35 },
-				layers = { { "###" }, { "o.o" }, { ".o." } },
-			},
-			{
-				name = "fishing",
-				label = "Fishing",
-				ability = "fishing",
-				width = 3,
-				depth = 1,
-				cost = { plank = 4 },
-				accent = { 0.25, 0.55, 0.8 },
-				layers = { { "###" }, { "o.o" }, { ".o." } },
-			},
-			{
-				name = "hunter",
-				label = "Hunter",
-				ability = "hunter",
-				width = 3,
-				depth = 1,
-				cost = { plank = 4 },
-				accent = { 0.6, 0.35, 0.2 },
-				layers = { { "###" }, { "o.o" }, { ".o." } },
-			},
-			{
-				name = "planter",
-				label = "Planter",
-				ability = "planter",
-				width = 2,
-				depth = 2,
-				cost = { plank = 4 },
-				accent = { 0.3, 0.7, 0.25 },
-				layers = { { "##", "##" }, { "o.", ".o" } },
-			},
-			{
-				name = "sawbench",
-				label = "Saw bench",
-				ability = "sawbench",
-				width = 4,
-				depth = 2,
-				cost = { plank = 4, stone = 2 },
-				accent = { 0.78, 0.8, 0.82 },
-				layers = { { "#..#", "#..#" }, { "####", "####" }, { ".we.", "...." } },
-			},
-			-- The depot (docs/CONTEXT.md "Depot") makes its building a
-			-- storage facility: it needs no operator and its input port
-			-- accepts every item.
-			{
-				name = "depot",
-				label = "Depot",
-				ability = "depot",
-				width = 2,
-				depth = 2,
-				cost = { plank = 4 },
-				accent = { 0.55, 0.36, 0.18 },
-				layers = { { "##", "##" }, { "oo", "oo" }, { "#.", ".#" } },
-			},
-			-- The bed (docs/CONTEXT.md "Bed") sleeps one villager. An
-			-- exception to ADR 0003: it needs no operator, a sleeper
-			-- reserves it (src/game/jobs/sleep.lua).
-			{
-				name = "bed",
-				label = "Bed",
-				ability = "bed",
-				width = 2,
-				depth = 2,
-				cost = { plank = 3 },
-				accent = { 0.85, 0.85, 0.9 },
-				layers = { { "##", "##" }, { "oo", "o." } },
-			},
-			-- The canteen (docs/CONTEXT.md "Canteen") makes its building an
-			-- eating spot. An exception to ADR 0003: it needs no operator;
-			-- haulers stock its input ports with food.
-			{
-				name = "canteen",
-				label = "Canteen",
-				ability = "canteen",
-				width = 2,
-				depth = 2,
-				cost = { plank = 4 },
-				accent = { 0.95, 0.7, 0.3 },
-				layers = { { "##", "##" }, { "oo", ".." } },
-			},
-			{
-				name = "input",
-				label = "Input port",
-				port = "input",
-				width = 2,
-				depth = 1,
-				cost = { plank = 1 },
-				accent = { 0.25, 0.5, 0.95 },
-				layers = { { "oo" } },
-			},
-			{
-				name = "output",
-				label = "Output port",
-				port = "output",
-				width = 2,
-				depth = 1,
-				cost = { plank = 1 },
-				accent = { 0.95, 0.55, 0.15 },
-				layers = { { "oo" } },
-			},
-			{
-				name = "storage",
-				label = "Storage",
-				storage = 8,
-				width = 2,
-				depth = 2,
-				cost = { plank = 4 },
-				accent = { 0.3, 0.2, 0.12 },
-				layers = { { "##", "##" }, { "oo", "oo" } },
-			},
-		},
-		materials = { "plank", "stone" },
-		-- Paint colours, free and cosmetic; bricks store an index into it.
-		palette = {
-			{ 0.79, 0.1, 0.09 }, -- red
-			{ 0.95, 0.47, 0.12 }, -- orange
-			{ 0.98, 0.79, 0.05 }, -- yellow
-			{ 0.95, 0.89, 0.71 }, -- tan
-			{ 0.35, 0.67, 0.25 }, -- lime green
-			{ 0.13, 0.45, 0.2 }, -- dark green
-			{ 0.36, 0.69, 0.86 }, -- light blue
-			{ 0.05, 0.3, 0.62 }, -- blue
-			{ 0.54, 0.27, 0.62 }, -- purple
-			{ 0.35, 0.2, 0.12 }, -- brown
-			{ 0.95, 0.95, 0.95 }, -- white
-			{ 0.1, 0.1, 0.1 }, -- black
-		},
-		-- The brick in hand when the builder opens.
-		held = { shape = "2x2", rotation = 0, material = "plank", paint = 1 },
 		-- Orbit camera, in studs and radians. distance is from the target;
 		-- the camera never comes nearer than the model's bounding radius plus
 		-- nearMargin, so orbiting and zooming never clip the model.
@@ -522,16 +384,6 @@ return {
 			nearMargin = 2,
 			orbitSpeed = 0.01, -- radians per pixel dragged
 			zoomStep = 1.1, -- distance factor per wheel notch
-		},
-		-- A right-button press that moves less than this many pixels before
-		-- release is a click (remove a brick), not an orbit drag.
-		clickSlop = 4,
-		sidebarWidth = 200,
-		-- The info panel right of the view: traits, cost, design problems.
-		infoWidth = 200,
-		colors = {
-			baseplate = { 0.3, 0.55, 0.3 },
-			baseplateStud = { 0.34, 0.6, 0.34 },
 		},
 	},
 }

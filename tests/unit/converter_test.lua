@@ -13,26 +13,21 @@ local Storage = require("src.game.components.storage")
 local TILE = Config.tileSize
 local STEP = 1 / 60
 
-local function brick(shape, x, y, f)
-	return { x = x, y = y, z = 0, width = f.width, depth = f.depth, height = 1, shape = shape, rotation = 0, material = "plank", paint = 1, ability = f.ability, port = f.port, storage = f.storage }
-end
+local Designs = require("tests.support.designs")
 
--- A 2x1 tile design: `n` saw benches, an input port (south, tile 0) and an
--- output port (south, tile 1).
+-- A 2x1 tile design: `n` saw benches, one a tile from the west, an input
+-- port (south, tile 0) and an output port (south, tile 1).
 local function design(n)
-	local bricks = {
-		brick("input", 0, 3, { width = 2, depth = 1, port = "input" }),
-		brick("output", 4, 3, { width = 2, depth = 1, port = "output" }),
-	}
+	local roles = { Designs.port("input", 0.25, 1), Designs.port("output", 1.25, 1) }
 	for i = 1, n do
-		table.insert(bricks, brick("sawbench", (i - 1) * 4, 0, { width = 4, depth = 2, ability = "sawbench" }))
+		table.insert(roles, Designs.ability("sawbench", i - 0.5, 0.25))
 	end
-	return { id = "d1", name = "Mill", versions = { { width = 2, depth = 1, bricks = bricks } } }
+	return Designs.floor(2, 1, unpack(roles))
 end
 
 local function setup(n)
 	local ctx = Session.new(World.new(30, 30), Config, 1)
-	local b = assert(Placement.build(ctx, { design = design(n), version = 1, facing = "N", tileX = 10, tileY = 10 }))
+	local b = assert(Placement.build(ctx, Designs.request(design(n), "N", 10, 10)))
 	return ctx, b
 end
 

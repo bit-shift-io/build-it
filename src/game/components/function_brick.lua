@@ -14,7 +14,7 @@
 -- FunctionBrick.hasWork. `operator` is never saved.
 --
 -- Every record of a placed building has tileX, tileY: the world tile
--- under its brick.
+-- under its ability role.
 --
 -- A fishing brick ({ ability = "fishing", fishing = <item>, progress, state,
 -- operator }) does nothing by itself: its operator stands on land beside any
@@ -60,14 +60,15 @@ FunctionBrick.BED = "bed"
 -- building an eating spot and needs no operator.
 FunctionBrick.CANTEEN = "canteen"
 
--- One record per function brick of `version`, in brick order: a depot
--- ({ ability, depot = true, state }), or one that harvests a node kind
--- (config.production.abilities), plants or converts. brickTile(brick) ->
--- x, y (optional) gives each record the world tile under its brick
+-- One record per ability role of `blueprint`
+-- (src/game/buildings/blueprint.lua), in role order: a depot ({ ability,
+-- depot = true, state }), or one that harvests a node kind
+-- (config.production.abilities), plants or converts. roleTile(role) ->
+-- x, y (optional) gives each record the world tile under its role
 -- (tileX, tileY), where its operator works.
-function FunctionBrick.fromVersion(version, config, brickTile)
+function FunctionBrick.fromBlueprint(blueprint, config, roleTile)
 	local list = {}
-	for _, b in ipairs(version.bricks) do
+	for _, b in ipairs(blueprint.roles.abilities) do
 		local count = #list
 		local kind = b.ability and config.production.abilities[b.ability]
 		local recipe = b.ability and config.production.recipes[b.ability]
@@ -91,9 +92,9 @@ function FunctionBrick.fromVersion(version, config, brickTile)
 		elseif kind then
 			table.insert(list, { ability = b.ability, kind = kind, progress = 0, node = nil, state = "idle" })
 		end
-		if brickTile and #list > count then
+		if roleTile and #list > count then
 			local fb = list[#list]
-			fb.tileX, fb.tileY = brickTile(b)
+			fb.tileX, fb.tileY = roleTile(b)
 		end
 	end
 	return list

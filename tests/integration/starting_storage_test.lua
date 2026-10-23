@@ -25,7 +25,7 @@ test("a new game shows the storage facility at the centre holding the stockpile,
 	local game, _, c = newGame()
 	local facilities = StorageFacility.all(game.ctx)
 	assertEqual(1, #facilities)
-	assertEqual(Starter.ID, facilities[1].design.id)
+	assertEqual(Starter.NAME, facilities[1].design)
 	local w, h = game.ctx.world.width, game.ctx.world.height
 	assertEqual(facilities[1], World.buildingAt(game.ctx.world, math.floor(w / 2), math.floor(h / 2)))
 

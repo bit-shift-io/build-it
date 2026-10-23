@@ -1,5 +1,5 @@
 -- Storage (src/game/components/storage.lua): a bounded item store, sized
--- from storage bricks and grown by the capacity trait.
+-- from a blueprint's storage role and grown by the capacity trait.
 local Storage = require("src.game.components.storage")
 local Config = require("src.game.config")
 
@@ -18,13 +18,13 @@ test("a store holds items up to its capacity, counting every item together", fun
 	assertFalse(pcall(Storage.add, s, "log"), "a full store refuses more")
 end)
 
-test("a building's storage is its storage bricks' sum, grown by capacity", function()
-	local version = { bricks = { { storage = 8 }, { storage = 8 }, {} } }
-	assertEqual(16, Storage.ofVersion(version, traits(0), Config).capacity)
-	local grown = Storage.ofVersion(version, traits(10), Config).capacity
+test("a building's storage is its blueprint's storage role, grown by capacity", function()
+	local blueprint = { roles = { storage = 16 } }
+	assertEqual(16, Storage.ofBlueprint(blueprint, traits(0), Config).capacity)
+	local grown = Storage.ofBlueprint(blueprint, traits(10), Config).capacity
 	assertEqual(math.floor(16 * (1 + 10 * Config.production.capacityStep)), grown)
 	assertTrue(grown > 16)
-	assertEqual(0, Storage.ofVersion({ bricks = { {} } }, traits(10), Config).capacity, "no storage brick, no storage")
+	assertEqual(0, Storage.ofBlueprint({ roles = { storage = 0 } }, traits(10), Config).capacity, "no storage brick, no storage")
 end)
 
 test("negative capacity never makes a store smaller than empty", function()

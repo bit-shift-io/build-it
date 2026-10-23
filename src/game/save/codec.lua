@@ -2,10 +2,10 @@
 -- world save, and back into a session. Pure -- no `love.*`; reading and
 -- writing the file is src/app/save_store.lua's job.
 --
--- Line based like a design file, with the same record format
--- (src/game/designs/codec.lua: `tag key=n:1 key=s:text ...`):
+-- Line based, one record per line (src/game/save/records.lua: `tag
+-- key=n:1 key=s:text ...`):
 --
---   build-it-save 7
+--   build-it-save 8
 --   session seed=n:1 time=n:12.5 rng=n:<rng state> [nextNodeId=n:..] [nextAnimalId=n:..]
 --   world width=n:128 height=n:128
 --   character player=n:1 name=s:Ada x=n:.. y=n:.. facing=n:.. frame=n:.. health=n:..
@@ -19,7 +19,23 @@
 --   deer id=n:1 herd=n:1 x=n:.. y=n:.. facing=n:.. frame=n:.. distance=n:..
 --                                         -- its path and wander timer are
 --                                         -- not saved: it wanders anew
---   site design=s:d1 version=n:1 facing=s:N tileX=n:.. tileY=n:.. progress=n:..
+--   blueprint width=n:2 depth=n:1 storage=n:8
+--                                         -- the k-th blueprint record is
+--                                         -- blueprint k of the buildings
+--                                         -- and sites below; equal
+--                                         -- blueprints are saved once
+--   ability ability=s:saw x=n:.. y=n:..   -- its roles, in order
+--   portRole kind=s:input edge=s:S x=n:.. y=n:..
+--   price plank=n:12                      -- its cost
+--   traits productivity=n:.. capacity=n:.. reach=n:.. health=n:..
+--   auras walkSpeed=n:.. harvestRate=n:..
+--   vertex x=n:.. y=n:.. z=n:.. nx=n:.. ny=n:.. nz=n:.. r=n:.. g=n:.. b=n:..
+--                                         -- its mesh, one vertex a record
+--   building id=n:2 design=s:mill blueprint=n:1 facing=s:N tileX=n:.. ...
+--   storage log=n:3                       -- the building above's storage
+--   port log=n:1                          -- each port's buffer, in order
+--   function progress=n:.. state=s:..     -- each function brick, in order
+--   site design=s:mill blueprint=n:1 facing=s:N tileX=n:.. tileY=n:.. progress=n:..
 --   cost plank=n:30                       -- the site above's whole cost
 --   delivered plank=n:12                  -- what haulers brought it
 --   claim facility=n:1 store=n:0 item=s:plank count=n:18
@@ -40,9 +56,15 @@
 -- state but has no operator until a free villager takes the job anew, and
 -- the next cycle starts from 0.
 --
+-- A building or site saves its whole blueprint (ADR 0007), so the world
+-- loads and draws without the design library: a design deleted or edited
+-- since leaves its buildings as they were. A blueprint's hash is its
+-- content's (Blueprint.hash), so it is worked out again on load. A design
+-- is kept by name only, a label.
+--
 -- Only state is saved; anything derived (indexes, traits, reach, sizes from
 -- config) is rebuilt on load.
-local Codec = require("src.game.designs.codec")
+local Codec = require("src.game.save.records")
 local Rng = require("src.core.rng")
 local World = require("src.game.world")
 local Session = require("src.game.session")
@@ -50,6 +72,7 @@ local Placement = require("src.game.buildings.placement")
 local Site = require("src.game.buildings.site")
 local Storage = require("src.game.components.storage")
 local AnimalSystem = require("src.game.systems.animal_system")
+local Blueprint = require("src.game.buildings.blueprint")
 
 local SaveCodec = {}
 
@@ -72,8 +95,12 @@ local SaveCodec = {}
 --
 -- Format 7: `herd` and `deer` records for the animals pool. Older saves have
 -- no deer, so load with none.
-local FORMAT = 7
-local OLDEST = 2
+--
+-- Format 8 (designs are Lua scripts, ADR 0006 and 0007): buildings and
+-- sites carry blueprints, not design versions. Every older save is
+-- refused, never migrated, so the fallbacks above no longer run.
+local FORMAT = 8
+local OLDEST = 8
 local HEADER = "build-it-save " .. FORMAT
 
 local function sessionRecord(ctx)
@@ -150,53 +177,41 @@ local function terrainRecords(lines, world)
 	flush()
 end
 
--- A snapshot of every design version a building stands on, so the world
--- loads and draws without the design library: per design, its record and
--- each referenced version (numbered `n`) with its bricks. The built-in
--- starter design (src/game/designs/starter.lua) is snapshotted like any
--- other, under its reserved id.
-local function snapshotRecords(lines, buildings)
-	local designs, order = {}, {}
-	for _, b in ipairs(buildings) do
-		local id = b.design.id
-		if not designs[id] then
-			designs[id] = { design = b.design, versions = {} }
-			order[#order + 1] = id
-		end
-		designs[id].versions[b.version] = true
-	end
-	for _, id in ipairs(order) do
-		local entry = designs[id]
-		lines[#lines + 1] = Codec.record("design", { id = id, name = entry.design.name })
-		local numbers = {}
-		for n in pairs(entry.versions) do
-			numbers[#numbers + 1] = n
-		end
-		table.sort(numbers)
-		for _, n in ipairs(numbers) do
-			local version = entry.design.versions[n]
-			local fields = { n = n }
-			for k, v in pairs(version) do
-				if k ~= "bricks" then
-					fields[k] = v
-				end
+-- Every blueprint the buildings and sites in `placed` stand on, each once
+-- (by content hash), in first-use order. Returns blueprint number by hash.
+local function blueprintRecords(lines, placed)
+	local numbers, count = {}, 0
+	for _, b in ipairs(placed) do
+		local bp = b.blueprint
+		if not numbers[bp.hash] then
+			count = count + 1
+			numbers[bp.hash] = count
+			lines[#lines + 1] = Codec.record("blueprint", { width = bp.width, depth = bp.depth, storage = bp.roles.storage })
+			for _, a in ipairs(bp.roles.abilities) do
+				lines[#lines + 1] = Codec.record("ability", a)
 			end
-			lines[#lines + 1] = Codec.record("version", fields)
-			for _, brick in ipairs(version.bricks) do
-				lines[#lines + 1] = Codec.record("brick", brick)
+			for _, p in ipairs(bp.roles.ports) do
+				lines[#lines + 1] = Codec.record("portRole", p)
+			end
+			lines[#lines + 1] = Codec.record("price", bp.cost)
+			lines[#lines + 1] = Codec.record("traits", bp.traits)
+			lines[#lines + 1] = Codec.record("auras", bp.auras)
+			for _, v in ipairs(bp.mesh) do
+				lines[#lines + 1] = Codec.record("vertex", v)
 			end
 		end
 	end
+	return numbers
 end
 
--- A building's own state; the rest (footprint, ports, traits, sizes) is
--- rebuilt from its design version on load. A function brick's reserved
--- node is saved as the node's id.
-local function buildingRecords(lines, b)
+-- A building's own state and its blueprint's number in `blueprints`; the
+-- rest (footprint, ports, traits, sizes) is rebuilt from its blueprint on
+-- load. A function brick's reserved node is saved as the node's id.
+local function buildingRecords(lines, b, blueprints)
 	lines[#lines + 1] = Codec.record("building", {
 		id = b.id,
-		design = b.design.id,
-		version = b.version,
+		design = b.design,
+		blueprint = blueprints[b.blueprint.hash],
 		facing = b.facing,
 		tileX = b.tileX,
 		tileY = b.tileY,
@@ -215,12 +230,12 @@ local function buildingRecords(lines, b)
 	end
 end
 
--- A construction site's own state; its footprint is rebuilt from its
--- design version on load.
-local function siteRecords(lines, site, ctx)
+-- A construction site's own state and its blueprint's number in
+-- `blueprints`; its footprint is rebuilt from its blueprint on load.
+local function siteRecords(lines, site, ctx, blueprints)
 	lines[#lines + 1] = Codec.record("site", {
-		design = site.design.id,
-		version = site.version,
+		design = site.design,
+		blueprint = blueprints[site.blueprint.hash],
 		facing = site.facing,
 		tileX = site.tileX,
 		tileY = site.tileY,
@@ -257,12 +272,12 @@ function SaveCodec.encode(ctx)
 			placed[#placed + 1] = b
 		end
 	end
-	snapshotRecords(lines, placed)
+	local blueprints = blueprintRecords(lines, placed)
 	for _, b in ipairs(ctx.pools.buildings) do
-		buildingRecords(lines, b)
+		buildingRecords(lines, b, blueprints)
 	end
 	for _, site in ipairs(ctx.pools.sites) do
-		siteRecords(lines, site, ctx)
+		siteRecords(lines, site, ctx, blueprints)
 	end
 	for _, c in ipairs(ctx.pools.characters) do
 		characterRecords(lines, c)
@@ -305,7 +320,7 @@ local function parse(text)
 				return nil, "not a world save"
 			end
 		else
-			local tag, fields = Codec.parseRecord(line, n)
+			local tag, fields = Codec.parse(line, n)
 			if not tag then
 				return nil, fields
 			end
@@ -342,18 +357,24 @@ local function copy(t)
 	return out
 end
 
--- Rebuilds building `saved` = { fields, storage, ports, functions } from its
--- design version through Placement.assemble, then puts back its own state.
-local function restoreBuilding(ctx, saved, designs, nodesById)
-	local f = saved.fields
-	local design = designs[f.design]
-	if not (design and design.versions[f.version]) then
-		error("building " .. tostring(f.id) .. " has no snapshot of its design version")
+-- The placement request of a saved building or site `f`, its blueprint
+-- from `blueprints`; raises when the save holds no such blueprint.
+local function request(f, blueprints, what)
+	local blueprint = blueprints[f.blueprint]
+	if not blueprint then
+		error(what .. " has no saved blueprint")
 	end
-	local request = { design = design, version = f.version, facing = f.facing, tileX = f.tileX, tileY = f.tileY }
-	local b = Placement.assemble(f.id, request, ctx.config)
+	return { design = f.design, blueprint = blueprint, facing = f.facing, tileX = f.tileX, tileY = f.tileY }
+end
+
+-- Rebuilds building `saved` = { fields, storage, ports, functions } from its
+-- blueprint through Placement.assemble, then puts back its own state.
+local function restoreBuilding(ctx, saved, blueprints, nodesById)
+	local f = saved.fields
+	local what = "building " .. tostring(f.id)
+	local b = Placement.assemble(f.id, request(f, blueprints, what), ctx.config)
 	if #saved.ports ~= #b.ports or #saved.functions ~= #b.functionBricks then
-		error("building " .. tostring(f.id) .. " does not match its design version")
+		error(what .. " does not match its blueprint")
 	end
 	b.full = f.full
 	b.storage.counts = copy(saved.storage)
@@ -374,15 +395,10 @@ local function restoreBuilding(ctx, saved, designs, nodesById)
 end
 
 -- Rebuilds site `saved` = { fields, cost, delivered, claims } from its
--- design version, claiming its claims again in the facilities' stores.
-local function restoreSite(ctx, saved, designs)
+-- blueprint, claiming its claims again in the facilities' stores.
+local function restoreSite(ctx, saved, blueprints)
 	local f = saved.fields
-	local design = designs[f.design]
-	local version = design and design.versions[f.version]
-	if not version then
-		error("a site has no snapshot of its design version")
-	end
-	local request = { design = design, version = f.version, facing = f.facing, tileX = f.tileX, tileY = f.tileY }
+	local req = request(f, blueprints, "a site")
 	local claims = {}
 	for _, c in ipairs(saved.claims) do
 		local b = assert(ctx.pools.buildings[c.facility], "a site claims from a missing facility")
@@ -390,8 +406,8 @@ local function restoreSite(ctx, saved, designs)
 		Storage.claim(store, c.item, c.count)
 		claims[#claims + 1] = { building = b, store = store, item = c.item, count = c.count, taking = 0 }
 	end
-	local width, depth = Placement.footprint(version, f.facing)
-	local site = Site.new(request, width, depth, copy(saved.cost), claims)
+	local width, depth = Placement.footprint(req.blueprint, f.facing)
+	local site = Site.new(req, req.blueprint, width, depth, copy(saved.cost), claims)
 	site.delivered.counts = copy(saved.delivered)
 	site.progress = f.progress
 	table.insert(ctx.pools.sites, site)
@@ -403,7 +419,7 @@ local function build(records, config)
 	local session, world
 	local characters, buildings, villagers, sites = {}, {}, {}, {}
 	local herds, animals = {}, {}
-	local designs, design, version = {}, nil, nil
+	local blueprints = {}
 	local nodesById = {}
 	local tile = 0 -- terrain tiles read so far
 	local function last(list, what, line)
@@ -425,18 +441,26 @@ local function build(records, config)
 			assert(world, "line " .. r.line .. " is a node before the world")
 			World.addNode(world, f)
 			nodesById[f.id] = f
-		elseif tag == "design" then
-			design = { id = f.id, name = f.name, versions = {} }
-			designs[f.id] = design
-			version = nil
-		elseif tag == "version" then
-			assert(design, "line " .. r.line .. " is a version outside any design")
-			version = f
-			design.versions[f.n] = version
-			version.n = nil
-			version.bricks = {}
-		elseif tag == "brick" then
-			table.insert(assert(version, "line " .. r.line .. " is a brick outside any version").bricks, f)
+		elseif tag == "blueprint" then
+			blueprints[#blueprints + 1] = {
+				width = f.width,
+				depth = f.depth,
+				mesh = {},
+				roles = { abilities = {}, ports = {}, storage = f.storage },
+				cost = {},
+				traits = {},
+				auras = {},
+			}
+		elseif tag == "ability" then
+			table.insert(last(blueprints, tag, r.line).roles.abilities, f)
+		elseif tag == "portRole" then
+			table.insert(last(blueprints, tag, r.line).roles.ports, f)
+		elseif tag == "price" then
+			last(blueprints, tag, r.line).cost = f
+		elseif tag == "traits" or tag == "auras" then
+			last(blueprints, tag, r.line)[tag] = f
+		elseif tag == "vertex" then
+			table.insert(last(blueprints, tag, r.line).mesh, f)
 		elseif tag == "building" then
 			buildings[#buildings + 1] = { fields = f, storage = {}, ports = {}, functions = {} }
 		elseif tag == "storage" then
@@ -479,6 +503,9 @@ local function build(records, config)
 		end
 	end
 	assert(session and world, "no session or world record")
+	for _, bp in ipairs(blueprints) do
+		bp.hash = Blueprint.hash(bp)
+	end
 
 	local ctx = Session.new(world, config, session.seed)
 	ctx.time = session.time
@@ -492,10 +519,10 @@ local function build(records, config)
 		c.inventory.counts = saved.inventory
 	end
 	for _, saved in ipairs(buildings) do
-		restoreBuilding(ctx, saved, designs, nodesById)
+		restoreBuilding(ctx, saved, blueprints, nodesById)
 	end
 	for _, saved in ipairs(sites) do
-		restoreSite(ctx, saved, designs)
+		restoreSite(ctx, saved, blueprints)
 	end
 	ctx.pools.villagers = villagers
 	for i, h in ipairs(herds) do

@@ -1,42 +1,30 @@
--- The built-in starting storage facility design (docs/CONTEXT.md
--- "Storage facility", "Depot"): a valid design with a depot, storage
--- bricks and both ports, under a reserved id.
+-- The built-in starting storage facility (docs/CONTEXT.md "Storage
+-- facility", "Depot"): the Lua design content/designs/storage_facility.lua,
+-- compiled (src/game/buildings/compile.lua), addressed by name.
 local Starter = require("src.game.designs.starter")
-local Validate = require("src.game.builder.validate")
 local Config = require("src.game.config")
+local Builtins = require("tests.support.builtins")
 
-local function count(version, test)
-	local n = 0
-	for _, b in ipairs(version.bricks) do
-		if test(b) then
-			n = n + 1
-		end
+test("the starter blueprint compiles from the Lua design with a depot, storage and both ports", function()
+	local bp = Starter.blueprint(Builtins, Config)
+	assertEqual("depot", bp.roles.abilities[1].ability)
+	assertTrue(bp.roles.storage > 0, "has storage")
+	local kinds = {}
+	for _, p in ipairs(bp.roles.ports) do
+		kinds[p.kind] = (kinds[p.kind] or 0) + 1
 	end
-	return n
-end
-
-test("the starter design is valid and has a depot, storage and both ports", function()
-	local design = Starter.design(Config)
-	local version = design.versions[1]
-	assertEqual(0, #Validate.problems(version, Config.builder), table.concat(Validate.problems(version, Config.builder), ", "))
-	assertEqual(1, count(version, function(b)
-		return b.ability == "depot"
-	end))
-	assertTrue(count(version, function(b)
-		return b.storage ~= nil
-	end) > 0, "has storage bricks")
-	assertEqual(1, count(version, function(b)
-		return b.port == "input"
-	end))
-	assertEqual(1, count(version, function(b)
-		return b.port == "output"
-	end))
+	assertEqual(1, kinds.input)
+	assertEqual(1, kinds.output)
 end)
 
-test("the starter design has a reserved id outside the library's dN scheme", function()
-	local design = Starter.design(Config)
-	assertEqual(Starter.ID, design.id)
-	assertFalse(design.id:match("^d%d+$") ~= nil, "id must not look like a library id")
+local Library = require("src.game.designs.library")
+
+test("a saved design named like the starter shadows the built-in one", function()
+	local mine = [[return group{ box{ size = { 2, 2, 1 } }, prefab("depot", { transform = { move = { 0.5, 0.5, 0 } } }) }]]
+	local bp = Starter.blueprint(Library.merge(Builtins, { designs = { [Starter.NAME] = mine } }), Config)
+	assertEqual(2, bp.width)
+	assertEqual(2, bp.depth)
+	assertEqual(0, #bp.roles.ports)
 end)
 
 local Session = require("src.game.session")
@@ -47,11 +35,11 @@ local Inventory = require("src.game.components.inventory")
 
 test("a new game places the starter facility at the world centre with the stockpile in its storage", function()
 	local world = WorldGen.generate(Config, 1)
-	local ctx = Session.newGame(world, Config, 1)
+	local ctx = Session.newGame(world, Config, 1, Builtins)
 
 	assertEqual(1, #ctx.pools.buildings)
 	local b = ctx.pools.buildings[1]
-	assertEqual(Starter.ID, b.design.id)
+	assertEqual(Starter.NAME, b.design)
 	assertEqual(b, World.buildingAt(ctx.world, math.floor(world.width / 2), math.floor(world.height / 2)), "covers the centre tile")
 	assertEqual(1, #StorageFacility.all(ctx))
 	assertEqual(Config.stockpile.plank, b.storage.counts.plank)
@@ -59,7 +47,7 @@ test("a new game places the starter facility at the world centre with the stockp
 end)
 
 test("a new game's player starts outside the facility with no planks or stone", function()
-	local ctx = Session.newGame(WorldGen.generate(Config, 1), Config, 1)
+	local ctx = Session.newGame(WorldGen.generate(Config, 1), Config, 1, Builtins)
 	local c = ctx.pools.characters[1]
 	local tile = Config.tileSize
 	local x, y = math.floor(c.x / tile), math.floor(c.y / tile)

@@ -4,12 +4,8 @@
 local defaultTestFiles = {
 	"tests/integration/walk_test.lua",
 	"tests/integration/water_blocks_test.lua",
-	"tests/integration/builder_flow_test.lua",
-	"tests/integration/builder_undo_test.lua",
 	"tests/integration/hand_harvest_test.lua",
-	"tests/integration/design_save_test.lua",
 	"tests/integration/place_building_test.lua",
-	"tests/integration/builder_traits_test.lua",
 	"tests/integration/woodcutter_test.lua",
 	"tests/integration/sawmill_test.lua",
 	"tests/integration/forester_test.lua",
@@ -26,6 +22,15 @@ local defaultTestFiles = {
 	"tests/integration/settings_test.lua",
 	"tests/integration/view_input_test.lua",
 	"tests/integration/view_switch_test.lua",
+	"tests/integration/script_builder_open_test.lua",
+	"tests/integration/design_store_test.lua",
+	"tests/integration/script_builder_tree_test.lua",
+	"tests/integration/script_builder_transform_test.lua",
+	"tests/integration/script_builder_insert_test.lua",
+	"tests/integration/script_builder_params_test.lua",
+	"tests/integration/script_builder_shape_test.lua",
+	"tests/integration/script_builder_path_test.lua",
+	"tests/integration/script_builder_material_test.lua",
 }
 
 local tests = {}

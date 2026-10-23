@@ -11,31 +11,18 @@ local Inventory = require("src.game.components.inventory")
 local Placement = require("src.game.buildings.placement")
 local Session = require("src.game.session")
 
-local function brick(shape, x, y, width, fields)
-	local b = { shape = shape, rotation = 0, x = x, y = y, z = 0, width = width, depth = 1, height = 3, material = "plank", paint = 4 }
-	for k, v in pairs(fields) do
-		b[k] = v
-	end
-	return b
-end
+local Designs = require("tests.support.designs")
 
 -- 2x1 tiles: a saw and a pickaxe on the north row, an output port on the
 -- south edge under tile (1, 0).
-local CUTTER = {
-	id = "d1",
-	name = "Cutter",
-	versions = {
-		{
-			width = 2,
-			depth = 1,
-			bricks = {
-				brick("saw", 0, 0, 3, { ability = "saw" }),
-				brick("pickaxe", 4, 0, 3, { ability = "pickaxe" }),
-				brick("output", 3, 3, 2, { height = 1, port = "output", paint = 2 }),
-			},
-		},
-	},
+local CUTTER = [[
+return group{ id = "root", name = "Cutter",
+	box{ id = "floor", size = { 2, 1, 0.125 } },
+	prefab("saw", { id = "saw", transform = { move = { 0, 0, 0.125 } } }),
+	prefab("pickaxe", { id = "pickaxe", transform = { move = { 1, 0, 0.125 } } }),
+	prefab("output_port", { id = "out", transform = { move = { 0.75, 0.75, 0 } } }),
 }
+]]
 
 test("a working building shows its work and fill, and FULL once nothing has room", function()
 	local world = World.new(30, 30)
@@ -51,7 +38,7 @@ test("a working building shows its work and fill, and FULL once nothing has room
 	local game = GameHarness.startSession(world, { real = true })
 	local ctx, c = game.ctx, game.ctx.pools.characters[1]
 	c.inventory = Inventory.new({ plank = 1000, stone = 1000 })
-	local b = assert(Placement.build(ctx, { design = CUTTER, version = 1, facing = "N", tileX = 15, tileY = 18 }))
+	local b = assert(Placement.build(ctx, Designs.request(CUTTER, "N", 15, 18, "cutter", ctx.config)))
 	-- One operator per function brick (docs/adr/0003-function-bricks-need-operators.md).
 	for i = 1, 2 do
 		table.insert(ctx.pools.villagers, Session.newVillager(i, (14 + i) * Config.tileSize, 22.5 * Config.tileSize, Config))

@@ -12,32 +12,20 @@ local DesignStore = require("src.app.design_store")
 local TitleScreen = require("src.app.screens.title")
 local SaveCodec = require("src.game.save.codec")
 local Session = require("src.game.session")
+local Designs = require("tests.support.designs")
 
 local TILE = Config.tileSize
 
--- A plank saw on the north row of a 2x1 tile baseplate and an output port
--- on its south edge under tile (1, 0).
-local WOODCUTTER = {
-	id = "d1",
-	name = "Woodcutter",
-	versions = {
-		{
-			width = 2,
-			depth = 1,
-			bricks = {
-				{ x = 0, y = 0, z = 0, width = 3, depth = 1, height = 3, shape = "saw", rotation = 0, material = "plank", paint = 1, ability = "saw" },
-				{ x = 3, y = 3, z = 0, width = 2, depth = 1, height = 1, shape = "output", rotation = 0, material = "plank", paint = 2, port = "output" },
-			},
-		},
-	},
-}
+-- A saw on the north row of a 2x1 tile floor and an output port on its
+-- south edge under tile (1, 0).
+local WOODCUTTER = Designs.floor(2, 1, Designs.ability("saw", 0.375, 0.125), Designs.port("output", 1, 1))
 
 -- Plays a session in a 20x20 world with trees north-east of the
 -- character: places the woodcutter (footprint (12..13, 7)), lets it work,
 -- then walks and hand-harvests a while. Returns the game.
 local function play()
 	_G.love = LoveMock.new()
-	assert(DesignStore.write(Config.designs.dir, WOODCUTTER))
+	assert(DesignStore.write(Config.designs, "designs", "woodcutter", WOODCUTTER))
 	local world = World.new(20, 20)
 	World.setTerrain(world, 2, 2, "water")
 	local id = 0
@@ -53,8 +41,7 @@ local function play()
 	table.insert(game.ctx.pools.villagers, villager)
 	local input = Fake.FakeInput.new()
 	local c = game.ctx.pools.characters[1]
-	Fake.tap(game, "1")
-	Fake.tap(game, "return")
+	Fake.pickDesign(game, "woodcutter")
 	Fake.click(game, 1, 640 + (13 * TILE - c.x), 360 + (7.5 * TILE - c.y))
 	GameHarness.completeSites(game)
 	assert(game.ctx.pools.buildings[2], "fixture: the woodcutter was placed")
@@ -95,7 +82,7 @@ test("F5 saves; relaunch offers Continue, which restores the session exactly", f
 	assertTrue(ctx ~= nil, "expected a session")
 	assertEqual(saved, SaveCodec.encode(ctx), "expected the loaded session to equal the saved one")
 	assertEqual(2, #ctx.pools.buildings, "the storage facility and the woodcutter")
-	assertEqual("d1", ctx.pools.buildings[2].design.id)
+	assertEqual("woodcutter", ctx.pools.buildings[2].design)
 	assertTrue(again.flow.world.player == ctx.pools.characters[1], "expected the world screen on the loaded character")
 	assertTrue(again.camera == again.flow.world.camera, "expected the harness camera to follow the new world screen")
 	Fake.runUntil(again, function()
@@ -117,21 +104,33 @@ test("quitting autosaves; Continue after relaunch restores the session", functio
 	end
 end)
 
-test("a building whose design is gone from the library loads from the save's snapshot", function()
+local Flow = require("src.app.flow")
+
+test("a building whose design file is deleted loads from its saved blueprint and keeps working", function()
 	local game = play()
 	game:keypressed("f5")
-	assertTrue(love.filesystem.remove(Config.designs.dir .. "/d1.design"), "fixture: removed the design file")
+	local hash = game.ctx.pools.buildings[2].blueprint.hash
+	assertTrue(love.filesystem.remove(Config.designs.dir .. "/woodcutter.lua"), "fixture: removed the design file")
 
 	local again = relaunch()
-	assertEqual(0, #again.flow.library.designs, "expected the library to have lost the design")
+	assertEqual(nil, Flow.library(again.flow).designs.woodcutter, "expected the library to have lost the design")
 	again:keypressed("return")
 	assertEqual("world", again.flow.screen)
 	local b = again.ctx.pools.buildings[2]
-	assertEqual("Woodcutter", b.design.name)
-	assertEqual(#WOODCUTTER.versions[1].bricks, #b.design.versions[b.version].bricks)
+	assertEqual("woodcutter", b.design)
+	assertEqual(hash, b.blueprint.hash)
 	Fake.runUntil(again, function()
 		return b.full
 	end, 60 * 60)
+end)
+
+test("a save from before blueprints is refused on the title with the older-version reason", function()
+	_G.love = LoveMock.new()
+	assert(love.filesystem.write(Config.save.file, "build-it-save 7\nsession seed=n:1\n"))
+	local game = GameHarness.launch()
+	Fake.tap(game, "return")
+	assertEqual("title", game.flow.screen)
+	assertEqual("Can't continue: save is from an older version of the game (format 7)", game.flow.title.message)
 end)
 
 test("with no save the title offers only New game, which starts the seeded world", function()

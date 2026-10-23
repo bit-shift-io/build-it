@@ -1,0 +1,51 @@
+-- The Path tool's game side (src/game/builder/path_tool.lua): the clicks
+-- on a work plane made a path node of the curve picked.
+local PathTool = require("src.game.builder.path_tool")
+local WorkPlane = require("src.game.builder.work_plane")
+local Serialize = require("src.game.script.serialize")
+local Sandbox = require("src.game.script.sandbox")
+
+-- Whether `node` is one the API would build the same: it runs back the same.
+local function assertRuns(node)
+	node.id = "p"
+	local text = Serialize.tree(node)
+	local result, message = Sandbox.run(text, "design")
+	assertTrue(result, message)
+	assertEqual(text, Serialize.tree(result.root))
+end
+
+test("clicked points become a point path on a copy of the work plane, needing two different ones", function()
+	local plane = WorkPlane.axis("XZ", 1)
+	local clicks = { { 0, 0 }, { 1, 0, 0.5, 0 }, { 1, 1 } }
+	local node = assert(PathTool.node("bezier", clicks, plane))
+	assertEqual("path", node.kind)
+	assertEqual("bezier", node.curve)
+	assertEqual("1 0 0.5 0", table.concat(node.points[2], " "))
+	assertTrue(node.plane ~= plane and node.points ~= clicks, "copies, not the drawing's tables")
+	assertRuns(node)
+	assertRuns(assert(PathTool.node("catmull", clicks, plane)))
+	local poly = assert(PathTool.node("polyline", clicks, plane))
+	assertEqual("1 0", table.concat(poly.points[2], " "), "only a Bézier keeps handles")
+	assertRuns(poly)
+	assertEqual(nil, (PathTool.node("polyline", { { 1, 1 }, { 1, 1 } }, plane)))
+	assertEqual(nil, (PathTool.node("line", { { 1, 1 } }, plane)))
+end)
+
+test("an arc takes its centre, then its start, then its end counter-clockwise; a helix its centre and radius", function()
+	local plane = WorkPlane.ground()
+	assertEqual(3, PathTool.CLICKS.arc)
+	assertEqual(2, PathTool.CLICKS.helix)
+	assertEqual(2, PathTool.CLICKS.line)
+	local arc = assert(PathTool.node("arc", { { 1, 1 }, { 1, 3 }, { 3, 1 } }, plane))
+	assertEqual("1 1", table.concat(arc.centre, " "))
+	assertEqual(2, arc.radius)
+	assertEqual(90, arc.start)
+	assertEqual(270, arc.angle)
+	assertRuns(arc)
+	local helix = assert(PathTool.node("helix", { { 1, 1 }, { 1, 2.5 } }, plane))
+	assertEqual(1.5, helix.radius)
+	assertEqual(1, helix.turns)
+	assertEqual(1, helix.pitch)
+	assertRuns(helix)
+	assertEqual(nil, (PathTool.node("arc", { { 1, 1 }, { 1, 1 }, { 2, 2 } }, plane)))
+end)

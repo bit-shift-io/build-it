@@ -1,6 +1,7 @@
 -- Block model: plain data describing a 3D object as unit cells on a grid
--- (docs/CONTEXT.md "Block model"). The only input to the baker. Holds no
--- rendering state. Pure -- no `love.*`.
+-- (docs/CONTEXT.md "Block model"): what props and the character bake from
+-- (designs bake from a blueprint's mesh instead). Holds no rendering
+-- state. Pure -- no `love.*`.
 --
 --   { cellsPerTile = 4, width = 2, depth = 1, cells = { <cell>, ... } }
 --

@@ -1,7 +1,7 @@
--- Placing a building through the real input path: a number key picks a
--- design from the library, the pointer moves the ghost, R turns it, a left
--- click places it. The design library is a real file in love_mock's save
--- directory, read when the app starts.
+-- Placing a building through the real input path: a number key opens the
+-- picker on the library's placeable designs, the pointer moves the ghost,
+-- R turns it, a left click places its blueprint. The designs are real Lua
+-- files in love_mock's save directory, read when the picker opens.
 local GameHarness = require("tests.support.game_harness")
 local LoveMock = require("tests.support.love_mock")
 local Fake = require("tests.support.fake_input")
@@ -9,29 +9,26 @@ local Config = require("src.game.config")
 local World = require("src.game.world")
 local Inventory = require("src.game.components.inventory")
 local StorageFacility = require("src.game.components.storage_facility")
-local Cost = require("src.game.builder.cost")
 local DesignStore = require("src.app.design_store")
 local Session = require("src.game.session")
+local Designs = require("tests.support.designs")
 
 local TILE = Config.tileSize
 
-local function brick(x, y, port)
-	return { x = x, y = y, z = 0, width = 1, depth = 1, shape = "1x1", rotation = 0, material = "plank", paint = 1, port = port }
+-- A 2x2 tile hall: a bed, and an output port on its south edge in tile
+-- (1, 1).
+local HALL = Designs.floor(2, 2, Designs.ability("bed", 0.625, 0.625), Designs.port("output", 1.625, 2))
+
+local function write(name, text)
+	assert(DesignStore.write(Config.designs, "designs", name, text))
 end
 
--- A 2x2 tile hall with an output port on its south edge, in tile (1, 1).
-local HALL = {
-	id = "d1",
-	name = "Hall",
-	versions = { { width = 2, depth = 2, bricks = { brick(2, 2), brick(6, 7, "output") } } },
-}
-
--- 20x20 world, character at its centre (px 320, 320), HALL in the library,
--- a storage facility holding the stockpile in the south-east corner tile
--- (ctx.pools.buildings[1]).
+-- 20x20 world, character at its centre (px 320, 320), HALL in the library
+-- as "hall", a storage facility holding the stockpile in the south-east
+-- corner tile (ctx.pools.buildings[1]).
 local function launch()
 	_G.love = LoveMock.new()
-	assert(DesignStore.write(Config.designs.dir, HALL))
+	write("hall", HALL)
 	local world = World.new(20, 20)
 	local game = GameHarness.startSession(world, { storage = Config.stockpile })
 	return game, Fake.FakeInput.new(), game.ctx.pools.characters[1], world
@@ -58,20 +55,19 @@ test("picking a design and clicking places a construction site, its cost reserve
 	local game, _, c, world = launch()
 	local planks = stored(game, "plank")
 
-	Fake.tap(game, "1")
-	Fake.tap(game, "return")
+	Fake.pickDesign(game, "hall")
 	local sx, sy = pointAt(game, c, 12, 9)
 	Fake.click(game, 1, sx, sy)
 
 	assertEqual(1, #game.ctx.pools.buildings, "no building yet")
 	local site = game.ctx.pools.sites[1]
 	assert(site, "a site")
-	assertEqual("d1", site.design.id)
-	assertEqual(1, site.version)
+	assertEqual("hall", site.design)
+	assertEqual(Designs.blueprint(HALL).hash, site.blueprint.hash, "its blueprint compiled from the file")
 	assertEqual("N", site.facing)
 	assertEqual(12, site.tileX)
 	assertEqual(9, site.tileY)
-	local cost = Cost.of(HALL.versions[1], Config).plank
+	local cost = site.blueprint.cost.plank
 	assertEqual(planks - cost, stored(game, "plank"), "the totals drop: the cost is reserved")
 	assertEqual(cost, StorageFacility.claimed(game.ctx).plank)
 	assertEqual(0, Inventory.count(c.inventory, "plank"), "the inventory pays nothing")
@@ -83,26 +79,21 @@ test("picking a design and clicking places a construction site, its cost reserve
 	assertEqual(nil, World.portAt(world, 13, 11), "no port until built")
 end)
 
--- Bricks as the builder saves them: a plank saw on the north row of a 2x1
--- tile baseplate and an output port on its south edge under tile (1, 0).
-local WOODCUTTER = {
-	id = "d1",
-	name = "Woodcutter",
-	versions = {
-		{
-			width = 2,
-			depth = 1,
-			bricks = {
-				{ x = 0, y = 0, z = 0, width = 3, depth = 1, height = 3, shape = "saw", rotation = 0, material = "plank", paint = 1, ability = "saw" },
-				{ x = 3, y = 3, z = 0, width = 2, depth = 1, height = 1, shape = "output", rotation = 0, material = "plank", paint = 2, port = "output" },
-			},
-		},
-	},
+-- A woodcutter as a player writes it by hand: a 2 x 1 tile floor, a saw
+-- prefab on its north row and an output port prefab on its south edge
+-- under tile (1, 0).
+local WOODCUTTER = [[
+local W, D = 2, 1
+return group{ id = "root", name = "Woodcutter",
+	box{ id = "floor", name = "Floor", size = { W, D, 0.125 } },
+	prefab("saw", { id = "saw", transform = { move = { 0, 0, 0 } } }),
+	prefab("output_port", { id = "out", transform = { move = { 1, D - 0.25, 0 } } }),
 }
+]]
 
 test("villagers haul a placed woodcutter's cost from storage and build it, then it produces", function()
 	_G.love = LoveMock.new()
-	assert(DesignStore.write(Config.designs.dir, WOODCUTTER))
+	write("woodcutter", WOODCUTTER)
 	local world = World.new(20, 20)
 	for y = 4, 6 do
 		World.addNode(world, { id = y, kind = "tree", tileX = 11, tileY = y, variant = 1, stage = 1, amount = Config.nodes.tree.amount })
@@ -116,10 +107,11 @@ test("villagers haul a placed woodcutter's cost from storage and build it, then 
 	end
 
 	-- Footprint (12..13, 7); the ghost centres on the pointer.
-	Fake.tap(game, "1")
-	Fake.tap(game, "return")
+	Fake.pickDesign(game, "wood")
 	Fake.click(game, 1, 640 + (13 * TILE - c.x), 360 + (7.5 * TILE - c.y))
-	assert(game.ctx.pools.sites[1], "a site")
+	local site = game.ctx.pools.sites[1]
+	assert(site, "a site")
+	local cost = site.blueprint.cost
 	local hauled, built = false, false
 	Fake.runUntil(game, function()
 		for _, job in ipairs(game.ctx.pools.jobs) do
@@ -134,20 +126,30 @@ test("villagers haul a placed woodcutter's cost from storage and build it, then 
 	assert(b, "the site became a building")
 	assertEqual(b, World.buildingAt(world, 12, 7))
 	assertEqual(b.ports[1], World.portAt(world, 13, 8))
-	local cost = Cost.of(WOODCUTTER.versions[1], Config).plank
-	assertEqual(held - cost, stored(game, "plank"), "the cost left the facility")
+	assertEqual(held - cost.plank, stored(game, "plank"), "the cost left the facility")
 	assertEqual(nil, StorageFacility.claimed(game.ctx).plank, "nothing reserved any more")
 
 	Fake.runUntil(game, function()
 		return (facility.storage.counts.log or 0) > 0
 	end, 60 * 120)
 	assertEqual(0, Inventory.count(c.inventory, "log"), "the player did nothing")
+
+	-- Saved with F5 and continued after a relaunch over the same files.
+	game:keypressed("f5")
+	_G.love = LoveMock.new({ saveDir = love.filesystem.getSaveDirectory() })
+	local again = GameHarness.launch()
+	again:keypressed("return")
+	assertEqual("world", again.flow.screen)
+	local lb = again.ctx.pools.buildings[2]
+	assertEqual("woodcutter", lb.design)
+	assertEqual(b.blueprint.hash, lb.blueprint.hash)
+	assertEqual("saw", lb.functionBricks[1].ability)
+	assertEqual(lb.ports[1], World.portAt(again.ctx.world, 13, 8))
 end)
 
 test("the character cannot walk into a placed building", function()
 	local game, input, c = launch()
-	Fake.tap(game, "1")
-	Fake.tap(game, "return")
+	Fake.pickDesign(game, "hall")
 	Fake.click(game, 1, pointAt(game, c, 12, 9)) -- footprint 12..13 x 9..10
 
 	Fake.holdFor(game, input, "d", 1)
@@ -157,8 +159,7 @@ end)
 
 test("R turns the ghost to the next facing before placing", function()
 	local game, _, c, world = launch()
-	Fake.tap(game, "1")
-	Fake.tap(game, "return")
+	Fake.pickDesign(game, "hall")
 	Fake.tap(game, "r")
 	Fake.tap(game, "r")
 	assertEqual("S", game.flow.world.placing.facing)
@@ -182,8 +183,7 @@ test("an invalid placement is refused, says why and costs nothing", function()
 	local game, _, c, world = launch()
 	World.setTerrain(world, 13, 10, "water")
 	local planks = stored(game, "plank")
-	Fake.tap(game, "1")
-	Fake.tap(game, "return")
+	Fake.pickDesign(game, "hall")
 	local sx, sy = pointAt(game, c, 12, 9)
 
 	local screen = game.flow.world
@@ -207,14 +207,12 @@ end)
 test("Esc or a right click leaves placement mode, and clicks harvest again", function()
 	local game, _, c, world = launch()
 	World.addNode(world, { id = 1, kind = "tree", tileX = 10, tileY = 9, variant = 1, stage = 1, amount = Config.nodes.tree.amount })
-	Fake.tap(game, "1")
-	Fake.tap(game, "return")
+	Fake.pickDesign(game, "hall")
 	Fake.tap(game, "escape")
 	assertEqual(nil, game.flow.world.placing)
 	assertEqual("world", game.flow.screen)
 
-	Fake.tap(game, "1")
-	Fake.tap(game, "return")
+	Fake.pickDesign(game, "hall")
 	local sx, sy = pointAt(game, c, 12, 9)
 	Fake.click(game, 2, sx, sy)
 	assertEqual(nil, game.flow.world.placing)
@@ -234,8 +232,7 @@ end)
 test("a click while placing never harvests", function()
 	local game, _, c, world = launch()
 	World.addNode(world, { id = 1, kind = "tree", tileX = 10, tileY = 9, variant = 1, stage = 1, amount = Config.nodes.tree.amount })
-	Fake.tap(game, "1")
-	Fake.tap(game, "return")
+	Fake.pickDesign(game, "hall")
 	local tx, ty = screenOf(c, 10.5, 9.5)
 	game:mousemoved(tx, ty, 0, 0)
 	game:mousepressed(tx, ty, 1)
@@ -247,57 +244,58 @@ test("a click while placing never harvests", function()
 	assertEqual(0, Inventory.count(c.inventory, "log"))
 end)
 
-local Library = require("src.game.designs.library")
 local SaveCodec = require("src.game.save.codec")
 
-local function design(id, name, versions)
-	local vs = {}
-	for i = 1, versions do
-		vs[i] = { width = i, depth = 1, bricks = { brick(2, 2), brick(6, 7, "output") } }
-	end
-	return { id = id, name = name, versions = vs }
-end
-
-local function launchWith(designs)
+-- A design named `name`: HALL, so each has a bed and can be placed.
+local function launchWith(names)
 	_G.love = LoveMock.new()
-	for _, d in ipairs(designs) do
-		assert(DesignStore.write(Config.designs.dir, d))
+	for _, name in ipairs(names) do
+		write(name, HALL)
 	end
 	local game = GameHarness.startSession(World.new(20, 20), { storage = Config.stockpile })
 	return game, game.ctx.pools.characters[1]
 end
 
-test("key 1 then Enter places the first design with a live version", function()
-	local game = launchWith({ design("d1", "A", 1), design("d2", "B", 1), design("d3", "C", 1) })
-	local lib = game.flow.library
-	Library.deleteVersion(lib, "d1", 1)
+test("key 1 then Enter places the first design by name, built-ins included", function()
+	local game = launchWith({ "b", "a", "c" })
 	Fake.tap(game, "1")
+	assertEqual("a,b,c,storage_facility", (function()
+		local names = {}
+		for i, d in ipairs(game.flow.world.picker.designs) do
+			names[i] = d.name
+		end
+		return table.concat(names, ",")
+	end)())
 	Fake.tap(game, "return")
-	assertEqual("d2", game.flow.world.placing.design.id)
+	assertEqual("a", game.flow.world.placing.design)
 end)
 
-test("picking a design places its newest live version", function()
-	local game = launchWith({ design("d1", "A", 3) })
-	Library.deleteVersion(game.flow.library, "d1", 3)
+test("a design file written while the game runs shows in the picker; one with no function role never does", function()
+	local game = launchWith({})
+	write("shed", "return group{ box{ size = { 1, 1, 1 } } }")
+	write("broken", "return group{")
+	write("mill", HALL)
 	Fake.tap(game, "1")
-	Fake.tap(game, "return")
-	assertEqual(2, game.flow.world.placing.version)
+	local names = {}
+	for _, d in ipairs(game.flow.world.picker.designs) do
+		names[#names + 1] = d.name
+	end
+	assertEqual("mill,storage_facility", table.concat(names, ","))
 end)
 
-test("a building placed from a deleted version survives save and load", function()
-	local game, c = launchWith({ design("d1", "A", 2) })
-	Fake.tap(game, "1")
-	Fake.tap(game, "return")
+test("a building whose design file is deleted survives save and load", function()
+	local game, c = launchWith({ "a" })
+	Fake.pickDesign(game, "a")
 	local sx, sy = pointAt(game, c, 12, 9)
 	Fake.click(game, 1, sx, sy)
 	GameHarness.completeSites(game)
-	Library.deleteVersion(game.flow.library, "d1", 2)
+	assertTrue(love.filesystem.remove(Config.designs.dir .. "/a.lua"), "fixture: the file is gone")
 	local b = game.ctx.pools.buildings[2]
-	assertEqual(2, b.version)
 	local text = SaveCodec.encode(game.ctx)
-	local ctx = SaveCodec.decode(text, Config)
+	local ctx = assert(SaveCodec.decode(text, Config))
 	assertEqual(2, #ctx.pools.buildings)
-	assertEqual(2, ctx.pools.buildings[2].version)
+	assertEqual("a", ctx.pools.buildings[2].design)
+	assertEqual(b.blueprint.hash, ctx.pools.buildings[2].blueprint.hash)
 	assertEqual(text, SaveCodec.encode(ctx))
 end)
 
@@ -310,7 +308,7 @@ local function rowCentre(i)
 end
 
 test("right-click, Build, type a name, click the row: placing that design", function()
-	local game = launchWith({ design("d1", "Hall", 1), design("d2", "Mill", 1), design("d3", "Hut", 1) })
+	local game = launchWith({ "hall", "mill", "hut" })
 	local screen = game.flow.world
 	Fake.click(game, 2, 300, 200)
 	assertTrue(screen.menu ~= nil, "menu opened")
@@ -321,11 +319,11 @@ test("right-click, Build, type a name, click the row: placing that design", func
 	assertEqual(1, #Picker.matches(screen.picker))
 	Fake.click(game, 1, rowCentre(1))
 	assertEqual(nil, screen.picker)
-	assertEqual("d2", screen.placing.design.id)
+	assertEqual("mill", screen.placing.design)
 end)
 
 test("a right-click outside the menu closes it", function()
-	local game = launchWith({ design("d1", "Hall", 1) })
+	local game = launchWith({ "hall" })
 	local screen = game.flow.world
 	Fake.click(game, 2, 300, 200)
 	Fake.click(game, 1, 900, 600)
@@ -334,7 +332,7 @@ test("a right-click outside the menu closes it", function()
 end)
 
 test("key 1 opens the picker without typing 1, and Esc or right-click closes it", function()
-	local game = launchWith({ design("d1", "Hall", 1) })
+	local game = launchWith({ "hall" })
 	local screen = game.flow.world
 	game:keypressed("1")
 	game:textinput("1")
@@ -351,7 +349,7 @@ test("key 1 opens the picker without typing 1, and Esc or right-click closes it"
 end)
 
 test("typing e, w, a, s, d in the search moves no one and harvests nothing", function()
-	local game, c = launchWith({ design("d1", "Hall", 1) })
+	local game, c = launchWith({ "hall" })
 	World.addNode(game.ctx.world, { id = 1, kind = "tree", tileX = 10, tileY = 10, variant = 1, stage = 1, amount = Config.nodes.tree.amount })
 	local screen = game.flow.world
 	local x, y = c.x, c.y
@@ -371,23 +369,24 @@ test("typing e, w, a, s, d in the search moves no one and harvests nothing", fun
 end)
 
 test("the wheel scrolls the picker, not the camera, and reaches the 15th design", function()
-	local designs = {}
+	local names = {}
 	for i = 1, 15 do
-		designs[i] = design("d" .. i, "Design " .. i, 1)
+		names[i] = string.format("design_%02d", i)
 	end
-	local game = launchWith(designs)
+	local game = launchWith(names)
 	local screen = game.flow.world
 	local zoom = screen.camera.zoom
 	Fake.tap(game, "1")
+	Fake.typeText(game, "design")
 	game:wheelmoved(0, -20)
 	assertEqual(zoom, screen.camera.zoom)
 	assertEqual(3, screen.picker.scroll)
 	Fake.click(game, 1, rowCentre(Picker.ROWS))
-	assertEqual("d15", screen.placing.design.id)
+	assertEqual("design_15", screen.placing.design)
 end)
 
 test("the hover card hides while the menu or picker is open", function()
-	local game = launchWith({ design("d1", "Hall", 1) })
+	local game = launchWith({ "hall" })
 	local screen = game.flow.world
 	local c = game.ctx.pools.characters[1]
 	game:mousemoved(640, 360, 0, 0)

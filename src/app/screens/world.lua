@@ -3,16 +3,15 @@
 --
 -- Right-clicking the world opens a context menu with "Build"; that, or the
 -- 1 key, opens the building picker (src/app/picker.lua), which lists the
--- library's designs and filters them as the player types. Picking one
--- starts placement mode (docs/CONTEXT.md "Building"): a ghost of it follows the
+-- library's placeable designs (Library.placeable: compiled, with a function
+-- role) and filters them as the player types. Picking one starts placement
+-- mode with its blueprint (docs/CONTEXT.md "Building"): a ghost of it follows the
 -- pointer, R turns it to the next facing, a left click places it, and Esc
 -- or a right click leaves the mode. While placing, left clicks never
 -- harvest.
 local Session = require("src.game.session")
 local CharacterSystem = require("src.game.systems.character_system")
 local Placement = require("src.game.buildings.placement")
-local Model = require("src.game.blocks.model")
-local Cost = require("src.game.builder.cost")
 local Input = require("src.app.input")
 local Camera = require("src.app.camera")
 local Screen = require("src.app.screen")
@@ -43,9 +42,9 @@ local function follow(camera, ctx, viewName, x, y)
 	Camera.follow(camera, Projection.new(ctx.config, 1, ctx.config.views[viewName]), x / tile, y / tile)
 end
 
--- library: the design library (src/game/designs/library.lua), shared with
--- the builder. viewName: a config.views key (default "topdown"), the view the
--- world draws in.
+-- library(): the design library (src/game/designs/library.lua) as it is
+-- now, read afresh each time the picker opens. viewName: a config.views key
+-- (default "topdown"), the view the world draws in.
 function WorldScreen.new(ctx, library, viewName)
 	local player = ctx.pools.characters[1]
 	viewName = viewName or "topdown"
@@ -59,7 +58,7 @@ function WorldScreen.new(ctx, library, viewName)
 		library = library,
 		-- The pointer's last screen position, once it has moved.
 		mouse = nil,
-		-- Placement mode: { design, version, facing }, or nil.
+		-- Placement mode: { design = <name>, blueprint, facing }, or nil.
 		placing = nil,
 		-- The context menu { x, y } while open, or nil.
 		menu = nil,
@@ -121,7 +120,7 @@ local function pointerTile(screen)
 end
 
 -- The ghost of the design being placed, centred on the pointer:
---   { request = { design, version, facing, tileX, tileY }, ok, reason }
+--   { request = { design, blueprint, facing, tileX, tileY }, ok, reason }
 -- (Placement.check's answer), or nil when not placing or the pointer has
 -- not moved yet.
 function WorldScreen.ghost(screen)
@@ -129,12 +128,11 @@ function WorldScreen.ghost(screen)
 	if not (placing and screen.mouse) then
 		return nil
 	end
-	local version = placing.design.versions[placing.version]
-	local width, depth = Placement.footprint(version, placing.facing)
+	local width, depth = Placement.footprint(placing.blueprint, placing.facing)
 	local wx, wy = worldAt(screen, screen.mouse.x, screen.mouse.y)
 	local request = {
 		design = placing.design,
-		version = placing.version,
+		blueprint = placing.blueprint,
 		facing = placing.facing,
 		tileX = math.floor(wx - width / 2 + 0.5),
 		tileY = math.floor(wy - depth / 2 + 0.5),
@@ -144,8 +142,8 @@ function WorldScreen.ghost(screen)
 end
 
 local NEXT_FACING = {}
-for i, facing in ipairs(Model.FACINGS) do
-	NEXT_FACING[facing] = Model.FACINGS[i % #Model.FACINGS + 1]
+for i, facing in ipairs(Placement.FACINGS) do
+	NEXT_FACING[facing] = Placement.FACINGS[i % #Placement.FACINGS + 1]
 end
 
 -- Whether a menu or the picker has the keyboard and pointer.
@@ -182,15 +180,16 @@ end
 -- Opens the building picker; `key` is the key that opened it, if any.
 local function openPicker(screen, key)
 	closeModal(screen)
-	screen.picker = Picker.new(Library.liveDesigns(screen.library))
+	screen.picker = Picker.new(Library.placeable(screen.library(), screen.ctx.config))
 	screen.pointer = nil
 	screen.dropText = key
 end
 
--- Starts placing `design` (its latest version).
+-- Starts placing `design` (a picker entry: { name, blueprint }), its
+-- blueprint frozen from here on.
 local function pick(screen, design)
 	closeModal(screen)
-	screen.placing = { design = design, version = Library.newestLive(design), facing = "N" }
+	screen.placing = { design = design.name, blueprint = design.blueprint, facing = "N" }
 	screen.message = nil
 end
 
@@ -407,7 +406,7 @@ end
 -- What the design being placed costs, or nil when not placing.
 function WorldScreen.cost(screen)
 	local placing = screen.placing
-	return placing and Cost.of(placing.design.versions[placing.version], screen.ctx.config)
+	return placing and placing.blueprint.cost
 end
 
 -- Why the ghost may not be placed (or the last refusal), for the player;

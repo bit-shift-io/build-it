@@ -2,6 +2,7 @@
 -- text of the save file and back, and a loaded session steps exactly like
 -- the one it was saved from.
 local Session = require("src.game.session")
+local Builtins = require("tests.support.builtins")
 local World = require("src.game.world")
 local Config = require("src.game.config")
 local SaveCodec = require("src.game.save.codec")
@@ -75,25 +76,17 @@ local Inventory = require("src.game.components.inventory")
 local Storage = require("src.game.components.storage")
 local NodeSystem = require("src.game.systems.node_system")
 
-local function brick(shape, x, y, f)
-	return { x = x, y = y, z = 0, width = f.width, depth = f.depth, height = 1, shape = shape, rotation = 0, material = "plank", paint = 1, ability = f.ability, port = f.port, storage = f.storage }
-end
+local Designs = require("tests.support.designs")
+local Blueprint = require("src.game.buildings.blueprint")
 
 -- A 2x1 tile works: a saw, a saw bench, storage, and an input and an output
 -- port on the south edge.
-local function works()
-	return { id = "d3", name = "Works", versions = { {
-		width = 2,
-		depth = 1,
-		bricks = {
-			brick("saw", 0, 0, { width = 4, depth = 2, ability = "saw" }),
-			brick("sawbench", 4, 0, { width = 4, depth = 2, ability = "sawbench" }),
-			brick("storage", 0, 2, { width = 2, depth = 1, storage = 8 }),
-			brick("input", 0, 3, { width = 2, depth = 1, port = "input" }),
-			brick("output", 4, 3, { width = 2, depth = 1, port = "output" }),
-		},
-	} } }
-end
+local WORKS = Designs.floor(2, 1,
+	Designs.ability("saw", 0.5, 0.25),
+	Designs.ability("sawbench", 1.5, 0.25),
+	Designs.storage(8, 0.25, 0.625),
+	Designs.port("input", 0.25, 1),
+	Designs.port("output", 1.25, 1))
 
 -- A session with a working, part-filled works facing E beside a few trees.
 local function busySession()
@@ -104,7 +97,7 @@ local function busySession()
 	local ctx = Session.new(world, Config, 3)
 	local c = ctx.pools.characters[1]
 	c.inventory = Inventory.new({ plank = 10000, stone = 10000, log = 5 })
-	local b = assert(Placement.build(ctx, { design = works(), version = 1, facing = "E", tileX = 10, tileY = 10 }))
+	local b = assert(Placement.build(ctx, Designs.request(WORKS, "E", 10, 10, "Works")))
 	for _, port in ipairs(b.ports) do
 		if port.kind == "input" then
 			Storage.add(port.buffer, "log")
@@ -122,10 +115,11 @@ test("buildings round-trip with their facing, buffers, storage, function bricks 
 	local loaded = roundTrip(ctx)
 	assertEqual(1, #loaded.pools.buildings)
 	local lb = loaded.pools.buildings[1]
-	for _, key in ipairs({ "id", "version", "facing", "tileX", "tileY", "width", "depth", "full" }) do
+	for _, key in ipairs({ "id", "design", "facing", "tileX", "tileY", "width", "depth", "full" }) do
 		assertEqual(b[key], lb[key], key)
 	end
-	assertEqual("d3", lb.design.id)
+	assertEqual("Works", lb.design)
+	assertEqual(b.blueprint.hash, lb.blueprint.hash)
 	assertEqual(b.traits.productivity, lb.traits.productivity)
 	assertEqual(Storage.total(b.storage), Storage.total(lb.storage))
 	assertEqual(b.storage.capacity, lb.storage.capacity)
@@ -158,16 +152,12 @@ test("buildings round-trip with their facing, buffers, storage, function bricks 
 	end
 end)
 
-local function forester()
-	return { id = "d4", name = "Forester", versions = { { width = 2, depth = 1, bricks = {
-		brick("planter", 0, 0, { width = 4, depth = 2, ability = "planter" }),
-	} } } }
-end
+local FORESTER = Designs.floor(2, 1, Designs.ability("planter", 0.5, 0.25))
 
 test("a loaded session steps exactly like the session it was saved from", function()
 	local ctx = busySession()
 	local c = ctx.pools.characters[1]
-	assert(Placement.build(ctx, { design = forester(), version = 1, facing = "N", tileX = 20, tileY = 20 }))
+	assert(Placement.build(ctx, Designs.request(FORESTER, "N", 20, 20, "Forester")))
 	-- Stand beside tree 4 (tile 12, 8) and hand-harvest it.
 	c.x, c.y = 12.5 * Config.tileSize, 9.2 * Config.tileSize
 	ctx.intents[1] = { x = 0, y = 0, harvest = true }
@@ -190,25 +180,39 @@ test("a loaded session steps exactly like the session it was saved from", functi
 	assertEqual(SaveCodec.encode(ctx), SaveCodec.encode(loaded))
 end)
 
-test("a building's design version loads from the save's own snapshot", function()
-	local ctx, b = busySession()
-	local text = SaveCodec.encode(ctx)
-	local original = works().versions[1]
-	b.design.versions = {} -- the library lost the design: nothing else to read it from
-
-	local loaded = assert(SaveCodec.decode(text, Config))
-	local lb = loaded.pools.buildings[1]
-	assertEqual("Works", lb.design.name)
-	local version = lb.design.versions[1]
-	assertEqual(original.width, version.width)
-	assertEqual(original.depth, version.depth)
-	assertEqual(nil, version.n)
-	assertEqual(#original.bricks, #version.bricks)
-	for i, brick in ipairs(original.bricks) do
-		for key, value in pairs(brick) do
-			assertEqual(value, version.bricks[i][key], key .. " of brick " .. i)
-		end
+-- Every field of `a` equals `b`'s, tables compared field by field.
+local function assertSame(a, b, path)
+	assertEqual(type(a), type(b), path)
+	if type(a) ~= "table" then
+		assertEqual(a, b, path)
+		return
 	end
+	for k, v in pairs(a) do
+		assertSame(v, b[k], path .. "." .. tostring(k))
+	end
+	for k in pairs(b) do
+		assertTrue(a[k] ~= nil, path .. "." .. tostring(k) .. " is extra")
+	end
+end
+
+test("a building's blueprint round-trips whole from the save itself, mesh and all", function()
+	local ctx, b = busySession()
+	local loaded = roundTrip(ctx)
+	local lb = loaded.pools.buildings[1]
+	assertSame(b.blueprint, lb.blueprint, "blueprint")
+	assertEqual(Blueprint.hash(lb.blueprint), lb.blueprint.hash, "its hash is its content's")
+end)
+
+test("buildings and sites placed from one blueprint share one saved blueprint", function()
+	local ctx, b = busySession()
+	local twin = assert(Placement.build(ctx, Designs.request(WORKS, "N", 20, 20, "Works")))
+	local text = SaveCodec.encode(ctx)
+	local _, count = text:gsub("\nblueprint ", "")
+	assertEqual(1, count)
+	local loaded = roundTrip(ctx)
+	assertTrue(loaded.pools.buildings[1].blueprint == loaded.pools.buildings[2].blueprint, "one table")
+	assertEqual(twin.blueprint.hash, loaded.pools.buildings[2].blueprint.hash)
+	assertEqual(b.blueprint.hash, loaded.pools.buildings[1].blueprint.hash)
 end)
 
 test("text that is not a readable save is refused with a reason", function()
@@ -217,7 +221,7 @@ test("text that is not a readable save is refused with a reason", function()
 	for _, text in ipairs({
 		"",
 		"build-it-design 1\n",
-		good:gsub("design=s:d3", "design=s:d9"),
+		good:gsub("blueprint=n:1", "blueprint=n:9"),
 		good:gsub("\nworld [^\n]*", ""),
 		good .. "mystery a=n:1\n",
 	}) do
@@ -227,26 +231,27 @@ test("text that is not a readable save is refused with a reason", function()
 	end
 end)
 
-test("a save from format 1 is refused as too old", function()
+test("a save from before blueprints (format 7 and older) is refused as too old", function()
 	local text = SaveCodec.encode(Session.new(World.new(20, 20), Config, 1))
-	local old = text:gsub("^build%-it%-save %d+", "build-it-save 1")
-
-	local loaded, reason = SaveCodec.decode(old, Config)
-	assertEqual(nil, loaded)
-	assertTrue(tostring(reason):find("older") ~= nil, "expected an older-format reason, got " .. tostring(reason))
+	for _, format in ipairs({ 1, 7 }) do
+		local old = text:gsub("^build%-it%-save %d+", "build-it-save " .. format)
+		local loaded, reason = SaveCodec.decode(old, Config)
+		assertEqual(nil, loaded)
+		assertEqual("save is from an older version of the game (format " .. format .. ")", reason)
+	end
 end)
 
 local Starter = require("src.game.designs.starter")
 local WorldGen = require("src.game.world_gen")
 
-test("a new game round-trips: the starter facility, its design snapshot and its stored stockpile", function()
-	local ctx = Session.newGame(WorldGen.generate(Config, 1), Config, 1)
+test("a new game round-trips: the starter facility, its blueprint and its stored stockpile", function()
+	local ctx = Session.newGame(WorldGen.generate(Config, 1), Config, 1, Builtins)
 	run(ctx, 0.5)
 
 	local loaded = roundTrip(ctx)
 	local b, lb = ctx.pools.buildings[1], loaded.pools.buildings[1]
-	assertEqual(Starter.ID, lb.design.id)
-	assertEqual(#b.design.versions[1].bricks, #lb.design.versions[1].bricks)
+	assertEqual(Starter.NAME, lb.design)
+	assertEqual(b.blueprint.hash, lb.blueprint.hash)
 	assertEqual(b.tileX, lb.tileX)
 	assertEqual(b.tileY, lb.tileY)
 	assertEqual(World.buildingAt(loaded.world, b.tileX, b.tileY), lb)
@@ -259,10 +264,11 @@ test("a new game round-trips: the starter facility, its design snapshot and its 
 	assertEqual(SaveCodec.encode(ctx), SaveCodec.encode(loaded))
 end)
 
+
 local Walker = require("src.game.components.walker")
 
 test("villagers round-trip with their position, animation and the rest of their walk path", function()
-	local ctx = Session.newGame(WorldGen.generate(Config, 1), Config, 1)
+	local ctx = Session.newGame(WorldGen.generate(Config, 1), Config, 1, Builtins)
 	local v = ctx.pools.villagers[2]
 	local b = ctx.pools.buildings[1]
 	assertTrue(Walker.goTo(v, ctx, b.tileX - 4, b.tileY + 1))
@@ -329,17 +335,15 @@ local function logs(ctx)
 	return n
 end
 
+-- A 1x1 cutter: a saw and an output port on its south edge.
+local CUTTER = Designs.floor(1, 1, Designs.ability("saw", 0.25, 0.25), Designs.port("output", 0.25, 1))
+-- A 1x1 store: a depot, storage for 8 and an input port on its south edge.
+local STORE = Designs.floor(1, 1, Designs.ability("depot", 0.25, 0.25), Designs.storage(8, 0.75, 0.25), Designs.port("input", 0.25, 1))
+
 test("saving and loading mid-haul loses no items; the hauler takes its load to storage", function()
 	local ctx = Session.new(World.new(30, 30), Config, 1)
-	local cutter = assert(Placement.build(ctx, { design = { id = "d5", name = "Cutter", versions = { { width = 1, depth = 1, bricks = {
-		brick("saw", 0, 0, { width = 2, depth = 2, ability = "saw" }),
-		brick("output", 0, 3, { width = 2, depth = 1, port = "output" }),
-	} } } }, version = 1, facing = "N", tileX = 3, tileY = 3 }))
-	local store = assert(Placement.build(ctx, { design = { id = "d6", name = "Store", versions = { { width = 1, depth = 1, bricks = {
-		brick("depot", 0, 0, { width = 2, depth = 2, ability = "depot" }),
-		brick("storage", 2, 0, { width = 2, depth = 2, storage = 8 }),
-		brick("input", 0, 3, { width = 2, depth = 1, port = "input" }),
-	} } } }, version = 1, facing = "N", tileX = 20, tileY = 3 }))
+	local cutter = assert(Placement.build(ctx, Designs.request(CUTTER, "N", 3, 3, "Cutter")))
+	local store = assert(Placement.build(ctx, Designs.request(STORE, "N", 20, 3, "Store")))
 	for _ = 1, 3 do
 		Storage.add(cutter.ports[1].buffer, "log")
 	end
@@ -384,16 +388,11 @@ end
 
 test("a converter's progress round-trips; its operator is dropped on load and keeps its load", function()
 	local ctx = Session.new(World.new(30, 30), Config, 1)
-	local mill = assert(Placement.build(ctx, { design = { id = "d7", name = "Mill", versions = { { width = 2, depth = 1, bricks = {
-		brick("sawbench", 0, 0, { width = 4, depth = 2, ability = "sawbench" }),
-		brick("input", 0, 3, { width = 2, depth = 1, port = "input" }),
-		brick("output", 4, 3, { width = 2, depth = 1, port = "output" }),
-	} } } }, version = 1, facing = "N", tileX = 5, tileY = 5 }))
-	assert(Placement.build(ctx, { design = { id = "d6", name = "Store", versions = { { width = 1, depth = 1, bricks = {
-		brick("depot", 0, 0, { width = 2, depth = 2, ability = "depot" }),
-		brick("storage", 2, 0, { width = 2, depth = 2, storage = 8 }),
-		brick("input", 0, 3, { width = 2, depth = 1, port = "input" }),
-	} } } }, version = 1, facing = "N", tileX = 20, tileY = 5 }))
+	local mill = assert(Placement.build(ctx, Designs.request(Designs.floor(2, 1,
+		Designs.ability("sawbench", 0.5, 0.25),
+		Designs.port("input", 0.25, 1),
+		Designs.port("output", 1.25, 1)), "N", 5, 5, "Mill")))
+	assert(Placement.build(ctx, Designs.request(STORE, "N", 20, 5, "Store")))
 	for _ = 1, 4 do
 		Storage.add(mill.ports[1].buffer, "log")
 	end
@@ -425,10 +424,9 @@ test("a harvester's node and progress round-trip; its operator is dropped on loa
 	local world = World.new(30, 30)
 	World.addNode(world, { id = 1, kind = "tree", tileX = 9, tileY = 10, variant = 1, stage = 1, amount = Config.nodes.tree.amount })
 	local ctx = Session.new(world, Config, 1)
-	local b = assert(Placement.build(ctx, { design = { id = "d8", name = "Cutter", versions = { { width = 2, depth = 1, bricks = {
-		brick("saw", 0, 0, { width = 3, depth = 1, ability = "saw" }),
-		brick("output", 4, 3, { width = 2, depth = 1, port = "output" }),
-	} } } }, version = 1, facing = "N", tileX = 10, tileY = 10 }))
+	local b = assert(Placement.build(ctx, Designs.request(Designs.floor(2, 1,
+		Designs.ability("saw", 0.375, 0.125),
+		Designs.port("output", 1.25, 1)), "N", 10, 10, "Cutter")))
 	ctx.pools.villagers = { Session.newVillager(1, 6.5 * Config.tileSize, 10.5 * Config.tileSize, Config) }
 	local fb = b.functionBricks[1]
 	for _ = 1, 60 * 30 do
@@ -453,27 +451,23 @@ test("a harvester's node and progress round-trip; its operator is dropped on loa
 end)
 
 local StorageFacility = require("src.game.components.storage_facility")
-local Cost = require("src.game.builder.cost")
 
-local HALL = { id = "d7", name = "Hall", versions = { { width = 2, depth = 1, bricks = {
-	brick("1x1", 0, 0, { width = 1, depth = 1 }),
-	brick("output", 6, 3, { width = 1, depth = 1, port = "output" }),
-} } } }
+-- A 2x1 hall: no function role, an output port on its south edge.
+local HALL = Designs.floor(2, 1, Designs.port("output", 1.625, 1))
 
 local function siteSession()
 	local ctx = Session.new(World.new(30, 30), Config, 1)
-	local store = assert(Placement.build(ctx, { design = { id = "d6", name = "Store", versions = { { width = 1, depth = 1, bricks = {
-		brick("depot", 0, 0, { width = 2, depth = 2, ability = "depot" }),
-		brick("storage", 2, 0, { width = 2, depth = 2, storage = 8 }),
-		brick("input", 0, 3, { width = 2, depth = 1, port = "input" }),
-		brick("output", 2, 3, { width = 2, depth = 1, port = "output" }),
-	} } } }, version = 1, facing = "N", tileX = 20, tileY = 3 }))
+	local store = assert(Placement.build(ctx, Designs.request(Designs.floor(1, 1,
+		Designs.ability("depot", 0.25, 0.25),
+		Designs.storage(8, 0.75, 0.25),
+		Designs.port("input", 0.25, 1),
+		Designs.port("output", 0.75, 1)), "N", 20, 3, "Store")))
 	store.storage.capacity = 1000
-	local cost = Cost.of(HALL.versions[1], Config).plank
+	local cost = Designs.blueprint(HALL).cost.plank
 	for _ = 1, cost + 5 do
 		Storage.add(store.storage, "plank")
 	end
-	local site = assert(Placement.place(ctx, { design = HALL, version = 1, facing = "N", tileX = 5, tileY = 5 }))
+	local site = assert(Placement.place(ctx, Designs.request(HALL, "N", 5, 5, "Hall")))
 	return ctx, site, store, cost
 end
 
@@ -495,7 +489,8 @@ test("a construction site round-trips with part of its materials delivered and i
 	assertEqual(SaveCodec.encode(ctx), SaveCodec.encode(loaded))
 	assertEqual(0, #loaded.pools.buildings - 1, "still a site")
 	local ls = loaded.pools.sites[1]
-	assertEqual(HALL.id, ls.design.id)
+	assertEqual("Hall", ls.design)
+	assertEqual(site.blueprint.hash, ls.blueprint.hash)
 	assertEqual(5, ls.tileX)
 	assertEqual(delivered, ls.delivered.counts.plank)
 	assertEqual(cost, ls.cost.plank)
@@ -524,43 +519,32 @@ test("a site's build progress round-trips", function()
 	assertEqual(0.75, loaded.pools.sites[1].progress)
 end)
 
-test("villager experience round-trips; a format 2 save loads with empty experience", function()
+test("villager experience round-trips", function()
 	local ctx = Session.new(World.new(20, 20), Config, 1)
 	local v = Session.newVillager(1, 40, 40, Config)
 	v.xp.haul, v.xp.saw = 3, 25
 	table.insert(ctx.pools.villagers, v)
 	table.insert(ctx.pools.villagers, Session.newVillager(2, 60, 60, Config))
 
-	local text = SaveCodec.encode(ctx)
 	local loaded = roundTrip(ctx)
 	assertEqual(3, loaded.pools.villagers[1].xp.haul)
 	assertEqual(25, loaded.pools.villagers[1].xp.saw)
 	assertEqual(nil, next(loaded.pools.villagers[2].xp))
-
-	local old = text:gsub("^build%-it%-save %d+", "build-it-save 2"):gsub("\nxp [^\n]*", "")
-	local back = assert(SaveCodec.decode(old, Config))
-	assertEqual(nil, next(back.pools.villagers[1].xp))
 end)
 
-test("names round-trip; a format 3 save loads with names", function()
+test("names round-trip", function()
 	local ctx = Session.new(World.new(20, 20), Config, 1)
 	local v = Session.newVillager(1, 40, 40, Config)
 	v.name = "Quin"
 	table.insert(ctx.pools.villagers, v)
 	ctx.pools.characters[1].name = "Zed"
 
-	local text = SaveCodec.encode(ctx)
 	local loaded = roundTrip(ctx)
 	assertEqual("Quin", loaded.pools.villagers[1].name)
 	assertEqual("Zed", loaded.pools.characters[1].name)
-
-	local old = text:gsub("^build%-it%-save %d+", "build-it-save 3"):gsub(" name=s:%S+", "")
-	local back = assert(SaveCodec.decode(old, Config))
-	assertTrue(back.pools.villagers[1].name ~= nil)
-	assertTrue(back.pools.characters[1].name ~= nil)
 end)
 
-test("needs round-trip for the player and villagers; a format 4 save loads with full needs", function()
+test("needs round-trip for the player and villagers", function()
 	local ctx = Session.new(World.new(20, 20), Config, 1)
 	local v = Session.newVillager(1, 40, 40, Config)
 	v.name = "Quin"
@@ -569,22 +553,15 @@ test("needs round-trip for the player and villagers; a format 4 save loads with 
 	local p = ctx.pools.characters[1]
 	p.needs.health, p.needs.hunger = 0.7, 0.3
 
-	local text = SaveCodec.encode(ctx)
 	local loaded = roundTrip(ctx)
 	assertEqual(0.4, loaded.pools.villagers[1].needs.health)
 	assertEqual(0.55, loaded.pools.villagers[1].needs.hunger)
 	assertEqual(0.25, loaded.pools.villagers[1].needs.tiredness)
 	assertEqual(0.7, loaded.pools.characters[1].needs.health)
 	assertEqual(0.3, loaded.pools.characters[1].needs.hunger)
-
-	local old = text:gsub("^build%-it%-save %d+", "build-it-save 4"):gsub(" health=n:%S+", ""):gsub(" hunger=n:%S+", ""):gsub(" tiredness=n:%S+", "")
-	local back = assert(SaveCodec.decode(old, Config))
-	assertEqual(1, back.pools.villagers[1].needs.health)
-	assertEqual(0, back.pools.villagers[1].needs.hunger)
-	assertEqual(1, back.pools.characters[1].needs.health)
 end)
 
-test("a refilling bush round-trips with its timer; format 5 saves still load", function()
+test("a refilling bush round-trips with its timer", function()
 	local world = World.new(20, 20)
 	World.addNode(world, { id = 1, kind = "bush", tileX = 5, tileY = 5, variant = 2, stage = 3, amount = 0, refilling = 41.5 })
 	local ctx = Session.new(world, Config, 1)
@@ -595,13 +572,9 @@ test("a refilling bush round-trips with its timer; format 5 saves still load", f
 	assertEqual("bush", n.kind)
 	assertEqual(0, n.amount)
 	assertEqual(41.5, n.refilling)
-
-	local old = text:gsub("^build%-it%-save %d+", "build-it-save 5"):gsub(" refilling=n:%S+", "")
-	local back = assert(SaveCodec.decode(old, Config))
-	assertEqual(nil, back.pools.nodes[1].refilling)
 end)
 
-test("herds and deer round-trip, and a loaded herd keeps breeding; format 6 saves load with no deer", function()
+test("herds and deer round-trip, and a loaded herd keeps breeding", function()
 	local AnimalSystem = require("src.game.systems.animal_system")
 	local ctx = Session.new(World.new(40, 40), Config, 1)
 	local herd = AnimalSystem.addHerd(ctx, 20, 20, 4)
@@ -611,7 +584,7 @@ test("herds and deer round-trip, and a loaded herd keeps breeding; format 6 save
 	ctx.pools.animals[2].animator.facing = 3
 
 	local text = SaveCodec.encode(ctx)
-	assertTrue(text:find("^build%-it%-save 7") ~= nil, "expected format 7")
+	assertTrue(text:find("^build%-it%-save 8") ~= nil, "expected format 8")
 	local loaded = roundTrip(ctx)
 	assertEqual(1, #loaded.pools.herds)
 	local h = loaded.pools.herds[1]
@@ -630,9 +603,4 @@ test("herds and deer round-trip, and a loaded herd keeps breeding; format 6 save
 	assertEqual(3, loaded.nextAnimalId)
 	run(loaded, Config.animals.deer.breedEvery)
 	assertEqual(3, #loaded.pools.animals)
-
-	local old = text:gsub("^build%-it%-save %d+", "build-it-save 6"):gsub("herd [^\n]*\n", ""):gsub("deer [^\n]*\n", "")
-	local back = assert(SaveCodec.decode(old, Config))
-	assertEqual(0, #back.pools.animals)
-	assertEqual(0, #back.pools.herds)
 end)

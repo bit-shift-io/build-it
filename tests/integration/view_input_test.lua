@@ -7,6 +7,7 @@ local Config = require("src.game.config")
 local World = require("src.game.world")
 local Projection = require("src.game.projection")
 local WorldScreen = require("src.app.screens.world")
+local Flow = require("src.app.flow")
 
 local TILE = Config.tileSize
 local VIEWS = { "iso2to1", "iso" }
@@ -16,7 +17,9 @@ local function start(view)
 	_G.love = LoveMock.new()
 	local game = GameHarness.startSession(World.new(20, 20))
 	game.flow.settings.view = view
-	game.flow.world = WorldScreen.new(game.ctx, game.flow.library, view)
+	game.flow.world = WorldScreen.new(game.ctx, function()
+		return Flow.library(game.flow)
+	end, view)
 	return game, Fake.FakeInput.new(), game.ctx.pools.characters[1], Projection.new(Config, 1, Config.views[view])
 end
 

@@ -11,6 +11,7 @@ local Screen = require("src.app.screen")
 local Placement = require("src.game.buildings.placement")
 local Storage = require("src.game.components.storage")
 local Site = require("src.game.buildings.site")
+local Designs = require("tests.support.designs")
 
 local GameHarness = {}
 
@@ -50,37 +51,20 @@ function GameHarness.startSession(world, opts)
 	return GameHarness.wrap(Flow.new(ctx, config), opts)
 end
 
--- A 1x1-tile storage facility: a depot, a storage brick, and input and
--- output ports on its north edge, so they face into the world from the
+-- A 1x1-tile storage facility: a depot, storage, and input and output
+-- ports on its north edge, so they face into the world from the
 -- south-east corner tile.
-local STORE = {
-	id = "test-storage",
-	name = "Test storage",
-	versions = {
-		{
-			width = 1,
-			depth = 1,
-			bricks = {
-				{ x = 0, y = 0, z = 0, width = 2, depth = 1, height = 1, shape = "input", rotation = 0, material = "plank", paint = 1, port = "input" },
-				{ x = 2, y = 0, z = 0, width = 2, depth = 1, height = 1, shape = "output", rotation = 0, material = "plank", paint = 1, port = "output" },
-				{ x = 0, y = 1, z = 0, width = 2, depth = 2, height = 3, shape = "depot", rotation = 0, material = "plank", paint = 1, ability = "depot" },
-				{ x = 2, y = 1, z = 0, width = 2, depth = 2, height = 2, shape = "storage", rotation = 0, material = "plank", paint = 1, storage = 8 },
-			},
-		},
-	},
-}
+local STORE = Designs.floor(1, 1,
+	Designs.port("input", 0.25, 0),
+	Designs.port("output", 0.75, 0),
+	Designs.ability("depot", 0.25, 0.5),
+	Designs.storage(8, 0.75, 0.5))
 
 -- Builds STORE free on the world's south-east corner tile (or tile x, y),
 -- holding `items` ({ [item] = n }) however many its bricks would fit.
 -- Returns the building, the first in ctx.pools.buildings when added first.
 function GameHarness.addStorage(ctx, items, x, y)
-	local b = Placement.build(ctx, {
-		design = STORE,
-		version = 1,
-		facing = "N",
-		tileX = x or ctx.world.width - 1,
-		tileY = y or ctx.world.height - 1,
-	})
+	local b = Placement.build(ctx, Designs.request(STORE, "N", x or ctx.world.width - 1, y or ctx.world.height - 1, "test_storage", ctx.config))
 	local total = 0
 	for _, n in pairs(items) do
 		total = total + n

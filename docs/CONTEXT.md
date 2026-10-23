@@ -6,7 +6,7 @@ Domain terms for Build-it. Code, docs and conversation use these words with thes
 
 ## Tile
 - **Definition:** One cell of the 2D world grid.
-- **Boundary:** Footprints, ports and resource nodes all align to tiles. One tile is 4×4 studs, or 16×16 voxels.
+- **Boundary:** Footprints, ports and resource nodes all align to tiles. One tile is 16×16 voxels.
 
 ## Resource node
 - **Definition:** A harvestable thing on a tile: a tree, a rock or a berry bush.
@@ -14,7 +14,7 @@ Domain terms for Build-it. Code, docs and conversation use these words with thes
 
 ## Item
 - **Definition:** A countable unit of a resource: log, stone, plank, or a food (berry, meat, fish).
-- **Boundary:** Items sit in an inventory, a buffer or storage. Logs are never a brick material.
+- **Boundary:** Items sit in an inventory, a buffer or storage. Logs are never a material.
 
 ## Inventory
 - **Definition:** The items the player's character carries.
@@ -42,21 +42,17 @@ Domain terms for Build-it. Code, docs and conversation use these words with thes
 
 # Blocks and baking
 
-## Stud
-- **Definition:** The grid unit of the builder. One tile is 4×4 studs.
-- **Boundary:** Bricks snap to studs horizontally and to brick layers vertically.
-
 ## Voxel
 - **Definition:** The grid unit of props and the character. One tile is 16×16 voxels.
-- **Boundary:** Never used in the builder.
+- **Boundary:** A design's geometry is counted in voxels at the same scale for its cost and traits. The builder never snaps to voxels.
 
 ## Block model
 - **Definition:** Plain data describing a 3D object as shaped cells (box, slope) on a grid, each with a colour and optional material.
-- **Boundary:** The only input to the baker. Designs, props and character poses all become block models. Holds no rendering state.
+- **Boundary:** Props and character poses become block models. Designs don't: they compile to a blueprint's triangle mesh. Holds no rendering state.
 
 ## Baker
-- **Definition:** The `app` module that renders a block model to a sprite through the world's 3/4 projection.
-- **Boundary:** The only place block models become pixels in the world. The builder renders live, without baking.
+- **Definition:** The `app` module that renders a block model or a blueprint's mesh to a sprite through the world's projection.
+- **Boundary:** The only place block models and blueprints become pixels in the world. The builder renders live, without baking.
 
 ## View
 - **Definition:** The fixed perspective the world is drawn and baked in: 3/4 top-down, skewed top-down (3/4 sheared so west faces show), 2:1 isometric or true isometric.
@@ -72,20 +68,16 @@ Domain terms for Build-it. Code, docs and conversation use these words with thes
 
 # Building design
 
-## Brick
-- **Definition:** A Lego-style piece placed in the builder: a shape, a material and a paint colour.
-- **Boundary:** Plain bricks give traits. Function bricks, ports and storage bricks are bricks with extra roles.
-
 ## Material
-- **Definition:** What a brick is made of: plank or stone.
-- **Boundary:** Sets the brick's cost and traits. Shows as surface texture. It's not the same thing as paint colour, which is free and cosmetic.
+- **Definition:** What a design's geometry is made of: plank or stone.
+- **Boundary:** Sets cost and traits by voxel volume. Shows as surface texture. It's not the same thing as colour or a texture variant, which are free and cosmetic.
 
 ## Function brick
-- **Definition:** A brick that gives a building an ability: saw (harvest trees), pickaxe (harvest rocks), planter (plant saplings), saw bench (logs → planks), forager (harvest berry bushes), fishing brick (fish water), hunter (hunt deer), bed (sleep one villager), canteen (an eating spot).
-- **Boundary:** Each one works independently and in parallel with the others, and only while an operator holds its operator job. The depot, bed and canteen are the exceptions and need no operator. Each costs resources. A design needs at least one to save.
+- **Definition:** A role that gives a building an ability: saw (harvest trees), pickaxe (harvest rocks), planter (plant saplings), saw bench (logs → planks), forager (harvest berry bushes), fishing brick (fish water), hunter (hunt deer), bed (sleep one villager), canteen (an eating spot). A design gets one from its role prefab.
+- **Boundary:** Each one works independently and in parallel with the others, and only while an operator holds its operator job. The depot, bed and canteen are the exceptions and need no operator. Each costs resources. A design needs at least one to appear in the building picker. A converting one, such as the saw bench, also needs an input port.
 
 ## Port
-- **Definition:** An input or output brick on the footprint edge at ground level. It faces one world tile, where the player delivers or collects items.
+- **Definition:** An input or output role on the footprint edge at ground level. It faces one world tile, where the player delivers or collects items.
 - **Boundary:** Each port has its own buffer. Port tiles rotate with the building's facing.
 
 ## Buffer
@@ -93,20 +85,16 @@ Domain terms for Build-it. Code, docs and conversation use these words with thes
 - **Boundary:** Capacity comes from config, raised by the capacity trait.
 
 ## Storage brick
-- **Definition:** A brick that adds internal item capacity to a building.
+- **Definition:** A role that adds internal item capacity to a building, placed by the storage role prefab.
 - **Note:** A storage brick doesn't make a building a storage facility. A depot does.
 - **Boundary:** Function bricks pull from input buffers and storage, and push to storage and output buffers.
 
-## Baseplate
-- **Definition:** The ground plate a design is built on. The player resizes it from 1×1 to 4×4 tiles.
-- **Boundary:** Costs resources per tile. Its size is the footprint.
-
 ## Footprint
 - **Definition:** The world tiles a building occupies.
-- **Boundary:** Equals the baseplate size, rotated by facing.
+- **Boundary:** The model's ground bounds rounded up to whole tiles, with no cap, rotated by facing.
 
 ## Trait
-- **Definition:** A numeric building property summed from its bricks: productivity, capacity, reach, health.
+- **Definition:** A numeric building property summed from its blueprint's voxels by material: productivity, capacity, reach, health.
 - **Boundary:** Productivity shortens cycles. Capacity grows buffers and storage. Reach sets the harvest radius and aura radius. Health has no effect yet.
 
 ## Aura
@@ -118,27 +106,23 @@ Domain terms for Build-it. Code, docs and conversation use these words with thes
 - **Boundary:** E acts on it: a port tile delivers or collects, water catches fish. The tile underfoot wins over it.
 
 ## Design
-- **Definition:** A named, player-made building plan: a baseplate and its bricks.
-- **Boundary:** Belongs to the player, not a world. Saves even when unaffordable. The name is a label only, and abilities come from function bricks.
-
-## Design version
-- **Definition:** One immutable saved state of a design.
-- **Boundary:** Editing a design creates a new version. A placed building keeps the version it was built from. Deleting a version retires its number for good.
+- **Definition:** A named building plan: one mutable design script with no versions, named by its file name.
+- **Boundary:** Belongs to the player, not a world. Saves even when unaffordable. Abilities come from role prefabs. Editing or deleting it never changes a placed building, which keeps its blueprint.
 
 ## Design library
-- **Definition:** All of the player's designs, stored one file per design.
-- **Boundary:** Shared across every world. A design with no versions left is deleted, and its id is never reused.
+- **Definition:** All the designs and prefabs: Lua files in a designs folder and a prefabs folder, named by file name, over the built-ins the game ships.
+- **Boundary:** Shared across every world. A saved file shadows the built-in of the same kind and name.
 
 ## Building
-- **Definition:** A placed instance of a design version in the world, with a facing, buffers and storage contents.
+- **Definition:** A placed blueprint of a design in the world, with a facing, buffers and storage contents.
 - **Boundary:** It starts as a construction site and works once villagers build it. It can't be edited in place.
 
 ## Building picker
-- **Definition:** The world-screen list of every live design, with thumbnail, name and cost, that starts placement.
+- **Definition:** The world-screen list of every design with at least one function brick, compiled, with thumbnail, name and voxel-derived cost, that starts placement.
 - **Boundary:** Opened from the context menu's Build entry or the 1 key. Scrolls and filters by name. It never edits designs; the builder does.
 
 ## Builder
-- **Definition:** The 3D screen where the player designs and saves designs.
+- **Definition:** The 3D screen where the player designs and saves design scripts.
 - **Boundary:** Designing is free. The builder never touches the world.
 
 # Colony
@@ -270,3 +254,61 @@ Domain terms for Build-it. Code, docs and conversation use these words with thes
 ## Herd
 - **Definition:** A group of deer sharing a home spot they wander near.
 - **Boundary:** Grows by breeding up to a cap.
+
+# Script builder
+
+## Design script
+- **Definition:** A sandboxed Lua file describing a node tree, like an SVG describes shapes. Every design and prefab is one.
+- **Boundary:** Reaches other files only through `prefab("name")` and `design("name")`. No file, OS or loader access.
+
+## Param
+- **Definition:** A value a design script declares with `UI.*`, e.g. `local radius = UI.number({ default = 3, step = 0.2 })`. The builder shows an input for it.
+- **Boundary:** An instance of a prefab can override its params.
+
+## Node
+- **Definition:** One object in a design script's tree: a shape, a path, an operation, a primitive, a group or a prefab instance. Has an id, a name, a transform and a material.
+- **Boundary:** Shown in the builder's tree panel. Children of a prefab instance are read-only.
+
+## Locked script
+- **Definition:** A design script holding code the builder can't regenerate, such as loops or functions.
+- **Boundary:** Its nodes are editable through params and the code panel only.
+
+## Shape
+- **Definition:** A closed 2D outline: rect, ellipse, polygon, or a path of hard and smooth points.
+- **Boundary:** Has no volume until an operation uses it.
+
+## Path
+- **Definition:** A curve a shape is swept along: line, polyline, Bézier, Catmull-Rom, arc or helix.
+- **Boundary:** Not closed, and never has volume on its own.
+
+## Operation
+- **Definition:** A node that turns a shape into a volume: extrude, sweep (with twist and scale) or lathe.
+
+## Work plane
+- **Definition:** The plane the builder draws shapes and paths on: the ground, a clicked face, or an axis plane at a height.
+- **Boundary:** Snaps to a grid of 1/4 tile by default.
+
+## Prefab
+- **Definition:** A reusable design script in the prefab folder, placed into designs as a linked instance.
+- **Boundary:** Editing a prefab changes every design that uses it, never a placed building.
+
+## Role prefab
+- **Definition:** A built-in prefab that gives a building a function, a port or storage: saw, bed, depot, input port, and so on.
+- **Boundary:** Can't be deleted, unlinked or stripped of its role. Its look is editable, and Reset to default restores it. A port role snaps to the nearest footprint edge at ground level.
+
+## Blueprint
+- **Definition:** A design compiled at placement: mesh, footprint, roles, port tiles, cost and traits.
+- **Boundary:** Frozen into its site or building and stored in the world save. The simulation reads only blueprints.
+
+## Texture variant
+- **Definition:** One look of a material, e.g. plank shingles or stone brick, with a per-object scale and rotation.
+- **Boundary:** Free and cosmetic. The material sets cost and traits.
+
+## Team palette
+- **Definition:** A player's colour slots (primary, secondary, their dark and light shades, and highlight), derived from two colours in Settings.
+- **Boundary:** A node colour is a literal RGB or a slot name. Slots resolve to the owner's palette at bake.
+
+## Replace
+- **Definition:** Turning a building back into a construction site for any design, paying only the missing materials.
+- **Boundary:** No refunds. Buffers and storage go to the nearest storage facility.
+

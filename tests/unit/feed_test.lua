@@ -11,23 +11,16 @@ local Status = require("src.game.components.status")
 local TILE = Config.tileSize
 local STEP = 1 / 60
 
-local function brick(shape, x, y, extra)
-	local b = { x = x, y = y, z = 0, width = 2, depth = 1, height = 1, shape = shape, rotation = 0, material = "plank", paint = 1 }
-	for k, v in pairs(extra or {}) do
-		b[k] = v
-	end
-	return b
-end
+local Designs = require("tests.support.designs")
 
-local STORE = { id = "d5", name = "Store", versions = { { width = 1, depth = 1, bricks = {
-	brick("depot", 0, 0, { ability = "depot" }),
-	brick("storage", 2, 0, { storage = 8 }),
-	brick("input", 0, 3, { port = "input" }),
-	brick("output", 2, 3, { port = "output" }),
-} } } }
+local STORE = Designs.floor(1, 1,
+	Designs.ability("depot", 0.25, 0.125),
+	Designs.storage(8, 0.75, 0.125),
+	Designs.port("input", 0.25, 1),
+	Designs.port("output", 0.75, 1))
 
 local function place(ctx, x, y)
-	return Placement.build(ctx, { design = STORE, version = 1, facing = "N", tileX = x, tileY = y })
+	return Placement.build(ctx, Designs.request(STORE, "N", x, y))
 end
 
 local function villager(ctx, tileX, tileY, name)

@@ -210,6 +210,7 @@ end)
 -- Isometric views: the same world, drawn through each view's projection.
 
 local WorldScreen = require("src.app.screens.world")
+local Flow = require("src.app.flow")
 local GhostRender = require("src.app.render.ghost")
 local Camera = require("src.app.camera")
 local Session = require("src.game.session")
@@ -226,7 +227,9 @@ local function startInView(view, opts)
 	opts.storage = opts.storage or { plank = 2 }
 	local game = GameHarness.startSession(world, opts)
 	game.flow.settings.view = view
-	game.flow.world = WorldScreen.new(game.ctx, game.flow.library, game.flow.settings.view)
+	game.flow.world = WorldScreen.new(game.ctx, function()
+		return Flow.library(game.flow)
+	end, game.flow.settings.view)
 	return game, config, world
 end
 
@@ -320,7 +323,7 @@ for _, view in ipairs(ISO_VIEWS) do
 		-- The building's own sprite pixels (not its port markers, which a
 		-- villager legitimately covers), by the sprite's alpha.
 		local BuildingsRender = require("src.app.render.buildings")
-		local sprite = BuildingsRender.sprite(config, b.design, b.version, b.facing, 1, view)
+		local sprite = BuildingsRender.sprite(config, b.blueprint, b.facing, 1, view)
 		local alpha = love.graphics.readbackTexture(sprite.image)
 		local p = Projection.new(config, 1, config.views[view])
 		local left, top = Projection.placeSprite(p, sprite.frame, b.tileX, b.tileY)
@@ -348,7 +351,7 @@ test("a ghost's outline sits on its footprint's tiles in an iso view", function(
 		local ctx = game.ctx
 		local w, h = love.graphics.getDimensions()
 		local b = ctx.pools.buildings[1]
-		local req = { design = b.design, version = b.version, facing = b.facing, tileX = 10, tileY = 10 }
+		local req = { design = b.design, blueprint = b.blueprint, facing = b.facing, tileX = 10, tileY = 10 }
 		local width, depth = b.width, b.depth
 		local p = lookAt(game, config, view, req.tileX + width, req.tileY + depth / 2)
 		game.camera.zoom = 1

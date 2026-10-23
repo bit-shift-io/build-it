@@ -2,6 +2,7 @@
 -- a villager with no job walks to a standable tile near the nearest storage
 -- facility, or to the nearest standable tile when there is none.
 local Session = require("src.game.session")
+local Builtins = require("tests.support.builtins")
 local World = require("src.game.world")
 local Config = require("src.game.config")
 local Walker = require("src.game.components.walker")
@@ -13,7 +14,7 @@ local TILE = Config.tileSize
 local STEP = 1 / 60
 
 local function newGame(seed)
-	local ctx = Session.newGame(World.new(60, 60), Config, seed or 1)
+	local ctx = Session.newGame(World.new(60, 60), Config, seed or 1, Builtins)
 	ctx.pools.villagers = {}
 	return ctx, ctx.pools.buildings[1]
 end
@@ -104,8 +105,7 @@ end)
 
 test("with two facilities a villager gathers at the one nearest where it stands", function()
 	local ctx, a = newGame()
-	local design = Starter.design(Config)
-	local req = { design = design, version = 1, facing = "N", tileX = 5, tileY = 5 }
+	local req = { design = Starter.NAME, blueprint = Starter.blueprint(Builtins, Config), facing = "N", tileX = 5, tileY = 5 }
 	assertTrue(Placement.fits(ctx, req))
 	local other = Placement.build(ctx, req)
 	local v = addVillager(ctx, other.tileX + 1, other.tileY + other.depth + 12)
@@ -404,7 +404,7 @@ test("a job assigned mid-wander takes over at once", function()
 end)
 
 local function placeStarter(ctx, x, y)
-	return Placement.build(ctx, { design = Starter.design(Config), version = 1, facing = "N", tileX = x, tileY = y })
+	return Placement.build(ctx, { design = Starter.NAME, blueprint = Starter.blueprint(Builtins, Config), facing = "N", tileX = x, tileY = y })
 end
 
 test("a lingering villager idles around its anchor, never on its footprint or ports", function()

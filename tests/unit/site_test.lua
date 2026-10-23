@@ -7,48 +7,25 @@ local World = require("src.game.world")
 local Storage = require("src.game.components.storage")
 local StorageFacility = require("src.game.components.storage_facility")
 local Placement = require("src.game.buildings.placement")
-local Cost = require("src.game.builder.cost")
+local Designs = require("tests.support.designs")
 local Site = require("src.game.buildings.site")
 
 local TILE = Config.tileSize
 
-local function brick(x, y, extra)
-	local t = { x = x, y = y, z = 0, width = 1, depth = 1, shape = "1x1", rotation = 0, material = "plank", paint = 1 }
-	for k, v in pairs(extra or {}) do
-		t[k] = v
-	end
-	return t
-end
-
 -- A 2x1 hall with an output port on its south edge under tile (1, 0).
-local HALL = {
-	id = "d1",
-	name = "Hall",
-	versions = { { width = 2, depth = 1, bricks = { brick(0, 0), brick(6, 3, { port = "output" }) } } },
-}
-local COST = Cost.of(HALL.versions[1], Config)
+local HALL = Designs.floor(2, 1, Designs.port("output", 1.625, 1))
+local COST = Designs.blueprint(HALL).cost
 
--- A 1x1-tile storage facility: a depot, storage bricks, and input and
--- output ports on its south edge.
-local STORE = {
-	id = "d9",
-	name = "Store",
-	versions = {
-		{
-			width = 1,
-			depth = 1,
-			bricks = {
-				{ x = 0, y = 0, z = 0, width = 2, depth = 2, shape = "depot", rotation = 0, material = "plank", paint = 1, ability = "depot" },
-				{ x = 2, y = 0, z = 0, width = 2, depth = 2, shape = "storage", rotation = 0, material = "plank", paint = 1, storage = 8 },
-				{ x = 0, y = 3, z = 0, width = 2, depth = 1, shape = "input", rotation = 0, material = "plank", paint = 1, port = "input" },
-				{ x = 2, y = 3, z = 0, width = 2, depth = 1, shape = "output", rotation = 0, material = "plank", paint = 1, port = "output" },
-			},
-		},
-	},
-}
+-- A 1x1-tile storage facility: a depot, storage, and input and output
+-- ports on its south edge.
+local STORE = Designs.floor(1, 1,
+	Designs.ability("depot", 0.25, 0.25),
+	Designs.storage(8, 0.75, 0.25),
+	Designs.port("input", 0.25, 1),
+	Designs.port("output", 0.75, 1))
 
 local function facility(ctx, x, y, items)
-	local f = Placement.build(ctx, { design = STORE, version = 1, facing = "N", tileX = x, tileY = y })
+	local f = Placement.build(ctx, Designs.request(STORE, "N", x, y, "Store"))
 	f.storage.capacity = 1000
 	for item, n in pairs(items) do
 		for _ = 1, n do
@@ -59,7 +36,7 @@ local function facility(ctx, x, y, items)
 end
 
 local function request(x, y)
-	return { design = HALL, version = 1, facing = "N", tileX = x, tileY = y }
+	return Designs.request(HALL, "N", x, y, "Hall")
 end
 
 local function newSession(planks)
@@ -187,7 +164,7 @@ test("a build job starts only once everything is delivered, then the site become
 	assertEqual(0, #ctx.pools.sites)
 	assertEqual(1, build.villager.xp.build, "the builder earned build experience")
 	local b = ctx.pools.buildings[2]
-	assertEqual(HALL, b.design)
+	assertEqual("Hall", b.design)
 	assertEqual(4, b.tileX)
 	assertEqual(4, b.tileY)
 	assertEqual(b, World.buildingAt(ctx.world, 4, 4))
@@ -202,23 +179,12 @@ end)
 local Ports = require("src.game.components.ports")
 local Inventory = require("src.game.components.inventory")
 
--- A 1x1 depot with an input port on its north edge and an output port on
--- its east edge, and no storage bricks.
-local PORTED = {
-	id = "d8",
-	name = "Ported store",
-	versions = {
-		{
-			width = 1,
-			depth = 1,
-			bricks = {
-				{ x = 0, y = 0, z = 0, width = 2, depth = 2, shape = "depot", rotation = 0, material = "plank", paint = 1, ability = "depot" },
-				{ x = 0, y = 3, z = 0, width = 2, depth = 1, shape = "input", rotation = 0, material = "plank", paint = 1, port = "input" },
-				{ x = 3, y = 0, z = 0, width = 1, depth = 2, shape = "output", rotation = 0, material = "plank", paint = 1, port = "output" },
-			},
-		},
-	},
-}
+-- A 1x1 depot with an input port on its south edge and an output port on
+-- its east edge, and no storage.
+local PORTED = Designs.floor(1, 1,
+	Designs.ability("depot", 0.25, 0.25),
+	Designs.port("input", 0.25, 1),
+	Designs.port("output", 1, 0.25))
 
 local function portOf(b, kind)
 	for _, port in ipairs(b.ports) do
@@ -230,7 +196,7 @@ end
 
 test("claimed items in a depot's buffers stay there: not stored, not collected", function()
 	local ctx = Session.new(World.new(20, 20), Config, 1)
-	local f = Placement.build(ctx, { design = PORTED, version = 1, facing = "N", tileX = 10, tileY = 10 })
+	local f = Placement.build(ctx, Designs.request(PORTED, "N", 10, 10))
 	local input, output = portOf(f, "input"), portOf(f, "output")
 	f.storage.capacity, input.buffer.capacity, output.buffer.capacity = 1000, 1000, 1000
 	for _ = 1, COST.plank - 1 do

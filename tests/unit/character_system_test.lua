@@ -11,22 +11,18 @@ local CharacterSystem = require("src.game.systems.character_system")
 
 local TILE = Config.tileSize
 
-local function brick(shape, x, y, f)
-	return { x = x, y = y, z = 0, width = f.width, depth = f.depth, height = 1, shape = shape, rotation = 0, material = "plank", paint = 1, ability = f.ability, port = f.port }
-end
+local Designs = require("tests.support.designs")
 
-local function design()
-	local bricks = {
-		brick("input", 0, 3, { width = 2, depth = 1, port = "input" }),
-		brick("output", 4, 3, { width = 2, depth = 1, port = "output" }),
-		brick("sawbench", 0, 0, { width = 4, depth = 2, ability = "sawbench" }),
-	}
-	return { id = "d1", name = "Mill", versions = { { width = 2, depth = 1, bricks = bricks } } }
-end
+-- A 2x1 mill: a saw bench, an input port on the south edge under tile 0
+-- and an output port under tile 1.
+local MILL = Designs.floor(2, 1,
+	Designs.port("input", 0.25, 1),
+	Designs.port("output", 1.25, 1),
+	Designs.ability("sawbench", 0.5, 0.25))
 
 local function setup()
 	local ctx = Session.new(World.new(30, 30), Config, 1)
-	local b = assert(Placement.build(ctx, { design = design(), version = 1, facing = "N", tileX = 10, tileY = 10 }))
+	local b = assert(Placement.build(ctx, Designs.request(MILL, "N", 10, 10)))
 	local input, output
 	for _, p in ipairs(b.ports) do
 		if p.kind == "input" then

@@ -122,21 +122,22 @@ local function spawnHerds(ctx)
 end
 
 -- A new game on `world` (src/game/world_gen.lua's): Session.new, plus the
--- free starting storage facility (src/game/designs/starter.lua) facing N
+-- free starting storage facility (src/game/designs/starter.lua), compiled
+-- from `library` (src/game/designs/library.lua: the built-ins, shadowed
+-- by any saved design of the same name), facing N
 -- with its footprint centred on the world's centre tile, the stockpile
 -- (config.stockpile) in its storage, the player moved to the tile just
 -- south of its middle port tile, so it starts outside the footprint, and
 -- the villagers around it (spawnVillagers), and the deer herds (spawnHerds).
-function Session.newGame(world, config, seed)
+function Session.newGame(world, config, seed, library)
 	local ctx = Session.new(world, config, seed)
-	local design = Starter.design(config)
-	local version = design.versions[1]
+	local blueprint = Starter.blueprint(assert(library, "Session.newGame needs the design library"), config)
 	local request = {
-		design = design,
-		version = 1,
+		design = Starter.NAME,
+		blueprint = blueprint,
 		facing = "N",
-		tileX = math.floor(world.width / 2) - math.floor(version.width / 2),
-		tileY = math.floor(world.height / 2) - math.floor(version.depth / 2),
+		tileX = math.floor(world.width / 2) - math.floor(blueprint.width / 2),
+		tileY = math.floor(world.height / 2) - math.floor(blueprint.depth / 2),
 	}
 	assert(Placement.fits(ctx, request))
 	local b = Placement.build(ctx, request)

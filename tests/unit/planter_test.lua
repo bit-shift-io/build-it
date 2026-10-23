@@ -11,16 +11,15 @@ local NodeSystem = require("src.game.systems.node_system")
 
 local STEP = 1 / 60
 
-local function brick(shape, x, y, f)
-	return { x = x, y = y, z = 0, width = f.width, depth = f.depth, height = 1, shape = shape, rotation = 0, material = "plank", paint = 1, ability = f.ability, port = f.port }
-end
+local Designs = require("tests.support.designs")
 
+-- A 2x1 forester: a planter, and with `withPort` an output port on the
+-- south edge under tile 0.
 local function design(withPort)
-	local bricks = { brick("planter", 0, 0, { width = 4, depth = 2, ability = "planter" }) }
 	if withPort then
-		table.insert(bricks, brick("output", 0, 3, { width = 2, depth = 1, port = "output" }))
+		return Designs.floor(2, 1, Designs.ability("planter", 0.5, 0.25), Designs.port("output", 0.25, 1))
 	end
-	return { id = "d1", name = "Forester", versions = { { width = 2, depth = 1, bricks = bricks } } }
+	return Designs.floor(2, 1, Designs.ability("planter", 0.5, 0.25))
 end
 
 local function setup(withPort, villagers)
@@ -30,7 +29,7 @@ local function setup(withPort, villagers)
 	end
 	local c = ctx.pools.characters[1]
 	c.inventory = Inventory.new({ plank = 10000, stone = 10000 })
-	local b = assert(Placement.build(ctx, { design = design(withPort), version = 1, facing = "N", tileX = 10, tileY = 10 }))
+	local b = assert(Placement.build(ctx, Designs.request(design(withPort), "N", 10, 10)))
 	return ctx, b
 end
 
@@ -101,7 +100,15 @@ test("the operator lets go of the job when no free tile is in reach", function()
 	local ctx, b = setup()
 	local reach = FunctionBrick.reach(b.traits, Config)
 	run(ctx, cycle(b) * 8)
-	assertTrue(b.functionBricks[1].operator ~= nil, "fixture: staffed while tiles are free")
+	local fb = b.functionBricks[1]
+	assertTrue(fb.operator ~= nil, "fixture: staffed while tiles are free")
+	-- Fill the tiles while the operator holds none, so none is left free.
+	for _ = 1, 60 * 60 do
+		if fb.operator.stage == "seeding" then
+			break
+		end
+		Session.advance(ctx, STEP)
+	end
 	for _, tile in ipairs(FunctionBrick.freeTiles(b, ctx)) do
 		NodeSystem.plant(ctx, "tree", tile[1], tile[2]) -- something else fills every tile
 	end

@@ -8,19 +8,18 @@ local Placement = require("src.game.buildings.placement")
 local Inventory = require("src.game.components.inventory")
 local Storage = require("src.game.components.storage")
 
-local function brick(shape, x, y, f)
-	return { x = x, y = y, z = 0, width = f.width, depth = f.depth, height = 1, shape = shape, rotation = 0, material = "plank", paint = 1, ability = f.ability, port = f.port }
-end
+local Designs = require("tests.support.designs")
 
 local function start()
 	_G.love = LoveMock.new()
 	local game = GameHarness.startSession(World.new(30, 30))
-	local design = { id = "d1", name = "Mill", versions = { { width = 2, depth = 1, bricks = {
-		brick("input", 0, 3, { width = 2, depth = 1, port = "input" }),
-		brick("output", 4, 3, { width = 2, depth = 1, port = "output" }),
-		brick("sawbench", 0, 0, { width = 4, depth = 2, ability = "sawbench" }),
-	} } } }
-	local b = assert(Placement.build(game.ctx, { design = design, version = 1, facing = "N", tileX = 10, tileY = 10 }))
+	-- A 2x1 mill: an input port on the south edge under tile 0, an output
+	-- port under tile 1, and a saw bench.
+	local design = Designs.floor(2, 1,
+		Designs.port("input", 0.25, 1),
+		Designs.port("output", 1.25, 1),
+		Designs.ability("sawbench", 0.5, 0.25))
+	local b = assert(Placement.build(game.ctx, Designs.request(design, "N", 10, 10, "mill", game.ctx.config)))
 	local input, output
 	for _, p in ipairs(b.ports) do
 		if p.kind == "input" then

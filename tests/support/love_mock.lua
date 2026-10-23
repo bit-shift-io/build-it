@@ -49,7 +49,9 @@ local function newFilesystem(saveDir)
 		return true
 	end
 	function fs.read(path)
-		local file = io.open(real(path), "rb")
+		-- Like LÖVE, a path missing from the save directory is read from the
+		-- game's own files (the repo, the tests' working directory).
+		local file = io.open(real(path), "rb") or io.open(path, "rb")
 		if not file then
 			return nil, "could not open " .. path
 		end

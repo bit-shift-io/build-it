@@ -7,27 +7,15 @@ local Fake = require("tests.support.fake_input")
 local Config = require("src.game.config")
 local World = require("src.game.world")
 local DesignStore = require("src.app.design_store")
+local Designs = require("tests.support.designs")
 local Session = require("src.game.session")
 
 local TILE = Config.tileSize
 
-local FORESTER = {
-	id = "d1",
-	name = "Forester",
-	versions = { { width = 2, depth = 1, bricks = {
-		{ x = 0, y = 0, z = 0, width = 3, depth = 1, height = 3, shape = "planter", rotation = 0, material = "plank", paint = 1, ability = "planter" },
-		{ x = 3, y = 3, z = 0, width = 2, depth = 1, height = 1, shape = "output", rotation = 0, material = "plank", paint = 2, port = "output" },
-	} } },
-}
-
-local WOODCUTTER = {
-	id = "d2",
-	name = "Woodcutter",
-	versions = { { width = 2, depth = 1, bricks = {
-		{ x = 0, y = 0, z = 0, width = 3, depth = 1, height = 3, shape = "saw", rotation = 0, material = "plank", paint = 1, ability = "saw" },
-		{ x = 3, y = 3, z = 0, width = 2, depth = 1, height = 1, shape = "output", rotation = 0, material = "plank", paint = 2, port = "output" },
-	} } },
-}
+-- A planter (or a saw) on the north row of a 2x1 tile floor and an output
+-- port on its south edge under tile (1, 0).
+local FORESTER = Designs.floor(2, 1, Designs.ability("planter", 0.375, 0.125), Designs.port("output", 1, 1))
+local WOODCUTTER = Designs.floor(2, 1, Designs.ability("saw", 0.375, 0.125), Designs.port("output", 1, 1))
 
 local function fastConfig()
 	local config = {}
@@ -46,8 +34,8 @@ end
 
 test("a forester replants and a woodcutter harvests the grown trees", function()
 	_G.love = LoveMock.new()
-	assert(DesignStore.write(Config.designs.dir, FORESTER))
-	assert(DesignStore.write(Config.designs.dir, WOODCUTTER))
+	assert(DesignStore.write(Config.designs, "designs", "forester", FORESTER))
+	assert(DesignStore.write(Config.designs, "designs", "woodcutter", WOODCUTTER))
 	local world = World.new(20, 20)
 	local config = fastConfig()
 	local game = GameHarness.startSession(world, { config = config, storage = config.stockpile })
@@ -58,12 +46,9 @@ test("a forester replants and a woodcutter harvests the grown trees", function()
 		table.insert(game.ctx.pools.villagers, Session.newVillager(i, (4 + i) * TILE, 12.5 * TILE, Config))
 	end
 
-	Fake.tap(game, "1")
-	Fake.tap(game, "return")
+	Fake.pickDesign(game, "forester")
 	Fake.click(game, 1, 640 + (13 * TILE - c.x), 360 + (7.5 * TILE - c.y))
-	Fake.tap(game, "1")
-	Fake.typeText(game, "wood")
-	Fake.tap(game, "return")
+	Fake.pickDesign(game, "wood")
 	Fake.click(game, 1, 640 + (13 * TILE - c.x), 360 + (10.5 * TILE - c.y))
 	GameHarness.completeSites(game)
 	local forester, cutter = game.ctx.pools.buildings[2], game.ctx.pools.buildings[3] -- after the storage facility

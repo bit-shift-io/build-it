@@ -1,11 +1,13 @@
 -- A construction site (docs/CONTEXT.md "Construction site"): a placed
--- design version not yet built, in ctx.pools.sites. Its cost stays in the
+-- blueprint not yet built, in ctx.pools.sites. Its cost stays in the
 -- storage facilities, claimed (Storage.claim), until haul jobs carry it
 -- here; once all of it is delivered a build job (src/game/jobs/build.lua)
 -- works for Site.buildTime, then BuildingSystem turns the site into a
 -- building. Plain data, pure -- no `love.*`.
 --
---   { design, version, facing, tileX, tileY, width, depth,
+--   { design,               -- the design's name, a label only
+--     blueprint,              -- frozen at placement (blueprint.lua)
+--     facing, tileX, tileY, width, depth,
 --     ports = {},             -- none: its port tiles stay open ground
 --     cost = { [item] = n },  -- what it takes, all of it
 --     delivered = <Storage>,  -- what haulers brought; capacity: the cost
@@ -16,16 +18,16 @@ local Storage = require("src.game.components.storage")
 
 local Site = {}
 
--- A new site for `request` (Placement's), footprint width x depth, taking
--- `cost` already claimed as `claims`.
-function Site.new(request, width, depth, cost, claims)
+-- A new site for `request` (Placement's) and its `blueprint`, footprint
+-- width x depth, taking `cost` already claimed as `claims`.
+function Site.new(request, blueprint, width, depth, cost, claims)
 	local total = 0
 	for _, n in pairs(cost) do
 		total = total + n
 	end
 	return {
 		design = request.design,
-		version = request.version,
+		blueprint = blueprint,
 		facing = request.facing,
 		tileX = request.tileX,
 		tileY = request.tileY,
@@ -39,9 +41,15 @@ function Site.new(request, width, depth, cost, claims)
 	}
 end
 
--- The placement request the site stands for.
+-- The placement request the site stands for, with its blueprint.
 function Site.request(site)
-	return { design = site.design, version = site.version, facing = site.facing, tileX = site.tileX, tileY = site.tileY }
+	return {
+		design = site.design,
+		blueprint = site.blueprint,
+		facing = site.facing,
+		tileX = site.tileX,
+		tileY = site.tileY,
+	}
 end
 
 -- Whether every item of the cost has been delivered.

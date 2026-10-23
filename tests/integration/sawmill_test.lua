@@ -9,39 +9,28 @@ local Config = require("src.game.config")
 local World = require("src.game.world")
 local Inventory = require("src.game.components.inventory")
 local DesignStore = require("src.app.design_store")
+local Designs = require("tests.support.designs")
 local Session = require("src.game.session")
 local Storage = require("src.game.components.storage")
 local Placement = require("src.game.buildings.placement")
 
 local TILE = Config.tileSize
 
-local function b(shape, x, y, w, d, extra)
-	local r = { x = x, y = y, z = 0, width = w, depth = d, height = 1, shape = shape, rotation = 0, material = "plank", paint = 1 }
-	for k, v in pairs(extra) do
-		r[k] = v
-	end
-	return r
-end
-
-local SAWMILL = {
-	id = "d1",
-	name = "Sawmill",
-	versions = { { width = 2, depth = 1, bricks = {
-		b("sawbench", 0, 0, 4, 2, { ability = "sawbench" }),
-		b("input", 0, 3, 2, 1, { port = "input" }),
-		b("output", 4, 3, 2, 1, { port = "output" }),
-	} } },
-}
+-- A saw bench on a 2x1 tile floor, an input port on its south edge under
+-- tile (0, 0) and an output port under tile (1, 0).
+local SAWMILL = Designs.floor(2, 1,
+	Designs.ability("sawbench", 0.5, 0.25),
+	Designs.port("input", 0.25, 1),
+	Designs.port("output", 1.25, 1))
 
 test("delivered logs become planks a villager makes and haulers store", function()
 	_G.love = LoveMock.new()
-	assert(DesignStore.write(Config.designs.dir, SAWMILL))
+	assert(DesignStore.write(Config.designs, "designs", "sawmill", SAWMILL))
 	local game = GameHarness.startSession(World.new(20, 20), { storage = Config.stockpile })
 	local input, c = Fake.FakeInput.new(), game.ctx.pools.characters[1]
 	Inventory.add(c.inventory, "log", 4)
 
-	Fake.tap(game, "1")
-	Fake.tap(game, "return")
+	Fake.pickDesign(game, "sawmill")
 	Fake.click(game, 1, 640 + (13 * TILE - c.x), 360 + (7.5 * TILE - c.y))
 	GameHarness.completeSites(game)
 	local facility, building = game.ctx.pools.buildings[1], game.ctx.pools.buildings[2]
@@ -87,7 +76,7 @@ test("the saw bench operator never hauls and stays the same villager while other
 	local game = GameHarness.startSession(World.new(20, 20), { storage = Config.stockpile })
 	local ctx = game.ctx
 	local facility = ctx.pools.buildings[1]
-	local building = Placement.build(ctx, { design = SAWMILL, version = 1, facing = "N", tileX = 13, tileY = 7 })
+	local building = Placement.build(ctx, Designs.request(SAWMILL, "N", 13, 7, "sawmill", ctx.config))
 	local inPort = building.ports[1].kind == "input" and building.ports[1] or building.ports[2]
 	for _ = 1, 4 do
 		Storage.add(inPort.buffer, "log")
@@ -127,7 +116,7 @@ test("the log route from storage to the saw bench is served by one villager acro
 	local game = GameHarness.startSession(World.new(20, 20), { storage = {} })
 	local ctx = game.ctx
 	local facility = ctx.pools.buildings[1]
-	local building = Placement.build(ctx, { design = SAWMILL, version = 1, facing = "N", tileX = 13, tileY = 7 })
+	local building = Placement.build(ctx, Designs.request(SAWMILL, "N", 13, 7, "sawmill", ctx.config))
 	for i = 1, 4 do
 		table.insert(ctx.pools.villagers, Session.newVillager(i, (5 + i + 0.5) * TILE, 12.5 * TILE, Config))
 	end

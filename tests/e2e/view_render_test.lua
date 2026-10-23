@@ -10,6 +10,7 @@ local Projection = require("src.game.projection")
 local Session = require("src.game.session")
 local AnimalSystem = require("src.game.systems.animal_system")
 local WorldScreen = require("src.app.screens.world")
+local Flow = require("src.app.flow")
 local GhostRender = require("src.app.render.ghost")
 local Camera = require("src.app.camera")
 
@@ -66,7 +67,9 @@ local function buildScene(view)
 	-- On the world's centre, which worldgen keeps clear grass.
 	GameHarness.addStorage(game.ctx, { plank = 2 }, world.width / 2, world.height / 2)
 	game.flow.settings.view = view
-	game.flow.world = WorldScreen.new(game.ctx, game.flow.library, view)
+	game.flow.world = WorldScreen.new(game.ctx, function()
+		return Flow.library(game.flow)
+	end, view)
 	local ctx = game.ctx
 	local tile = config.tileSize
 	local b = ctx.pools.buildings[1]
@@ -85,7 +88,7 @@ local function buildScene(view)
 	local herd = AnimalSystem.addHerd(ctx, b.tileX - 4, b.tileY + 3, 1)
 	AnimalSystem.spawn(ctx, herd, b.tileX - 4, b.tileY + 3)
 
-	local req = { design = b.design, version = b.version, facing = b.facing, tileX = b.tileX, tileY = b.tileY + b.depth + 2 }
+	local req = { design = b.design, blueprint = b.blueprint, facing = b.facing, tileX = b.tileX, tileY = b.tileY + b.depth + 2 }
 	local plainDraw = game.draw
 	game.draw = function(self)
 		plainDraw(self)

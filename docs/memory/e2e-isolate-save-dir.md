@@ -5,10 +5,10 @@ metadata:
   type: convention
 ---
 
-**Why:** e2e runs in a real LÖVE 12 window whose save directory is the player's real one (`~/Library/Application Support/LOVE/build-it`). A test using the default config reads or overwrites the player's designs, world save or prop cache, and its result depends on what happens to be there. One builder test already has to compare design counts before and after, because the real `designs` folder held designs.
-**How to apply:** Any e2e test that saves, loads or bakes to disk: the design library, the world save or the prop cache.
+**Why:** e2e runs in a real LÖVE 12 window whose save directory is the player's real one (`~/Library/Application Support/LOVE/build-it`). A test using the default config reads or overwrites the player's designs, prefabs, world save or prop cache, and its result depends on what happens to be there. A saved design or prefab also shadows the built-in of the same name, so a stray file there changes the starter or the picker.
+**How to apply:** Any e2e test that saves, loads or bakes to disk, or starts a game: the design library, the world save or the prop cache.
 
-- Give the test its own config table and set `config.designs.dir`, `config.save.file` and `config.props.cacheDir` to test-only names, such as `e2e_place_designs`.
+- Give the test its own config table and set `config.designs.dir`, `config.designs.prefabDir`, `config.save.file` and `config.props.cacheDir` to test-only names, such as `e2e_place_designs` and `e2e_place_prefabs`.
 - Clear those folders before the test runs, and clear the world save afterwards.
 - Use a fresh config table when a test needs a cold design cache, because `BuildingsRender` keeps one `DesignCache` per config.
 - Settings are covered for you: `GameHarness.startSession` and `launch` swap in `settings.file = "test_settings.cfg"` unless the config sets its own `settings` table. Without that, a session reads the player's real `settings.cfg`, and a saved `view=iso` fails the topdown e2e tests.

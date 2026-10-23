@@ -14,26 +14,10 @@ local Load = require("src.game.components.load")
 
 local STEP = 1 / 60
 
-local function brick(x, y, fields)
-	local b = { x = x, y = y, z = 0, width = 1, depth = 1, height = 1, shape = "1x1", rotation = 0, material = "plank", paint = 1 }
-	for k, v in pairs(fields or {}) do
-		b[k] = v
-	end
-	return b
-end
-
-local function saw(x, y)
-	return brick(x, y, { width = 3, height = 3, shape = "saw", ability = "saw" })
-end
+local Designs = require("tests.support.designs")
 
 -- A 1x1 tile cutter: one saw and an output port facing the tile south of it.
-local CUTTER = {
-	id = "d1",
-	name = "Cutter",
-	versions = {
-		{ width = 1, depth = 1, bricks = { saw(0, 0), brick(1, 3, { width = 2, shape = "output", port = "output" }) } },
-	},
-}
+local CUTTER = Designs.floor(1, 1, Designs.ability("saw", 0.375, 0.125), Designs.port("output", 0.5, 1))
 
 local function newSession()
 	local ctx = Session.new(World.new(30, 30), Config, 1)
@@ -43,7 +27,7 @@ local function newSession()
 end
 
 local function build(ctx, c, x, y)
-	return assert(Placement.build(ctx, { design = CUTTER, version = 1, facing = "N", tileX = x, tileY = y }))
+	return assert(Placement.build(ctx, Designs.request(CUTTER, "N", x, y)))
 end
 
 local function tree(ctx, x, y, amount)
@@ -134,18 +118,11 @@ test("removing a building releases its reservations and frees its tiles", functi
 end)
 
 -- A 1x1 tile storage facility with ports on its south edge.
-local DEPOT = {
-	id = "d2",
-	name = "Depot",
-	versions = {
-		{ width = 1, depth = 1, bricks = {
-			brick(0, 0, { width = 2, depth = 2, shape = "depot", ability = "depot" }),
-			brick(2, 0, { width = 2, depth = 2, shape = "storage", storage = 8 }),
-			brick(0, 3, { width = 2, shape = "input", port = "input" }),
-			brick(2, 3, { width = 2, shape = "output", port = "output" }),
-		} },
-	},
-}
+local DEPOT = Designs.floor(1, 1,
+	Designs.ability("depot", 0.25, 0.25),
+	Designs.storage(8, 0.75, 0.25),
+	Designs.port("input", 0.25, 1),
+	Designs.port("output", 0.75, 1))
 
 test("with every output and storage facility full, no free villager is left holding a load", function()
 	local ctx, c = newSession()
@@ -155,7 +132,7 @@ test("with every output and storage facility full, no free villager is left hold
 	for _ = 1, out.capacity - 1 do
 		Storage.add(out, "log")
 	end
-	local depot = assert(Placement.build(ctx, { design = DEPOT, version = 1, facing = "N", tileX = 20, tileY = 10 }))
+	local depot = assert(Placement.build(ctx, Designs.request(DEPOT, "N", 20, 10)))
 	for _, store in ipairs({ depot.storage, depot.ports[1].buffer, depot.ports[2].buffer }) do
 		while Storage.room(store) > 0 do
 			Storage.add(store, "stone")

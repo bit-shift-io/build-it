@@ -15,14 +15,11 @@ function Storage.size(base, traits, config)
 	return math.max(0, math.floor(grown + 1e-9))
 end
 
--- A building's internal storage: the sum of its storage bricks' `storage`,
--- grown by its capacity trait. 0 when it has no storage brick.
-function Storage.ofVersion(version, traits, config)
-	local base = 0
-	for _, b in ipairs(version.bricks) do
-		base = base + (b.storage or 0)
-	end
-	return Storage.new(Storage.size(base, traits, config))
+-- A building's internal storage: its blueprint's storage role
+-- (src/game/buildings/blueprint.lua), grown by its capacity trait. 0 when
+-- it has no storage brick.
+function Storage.ofBlueprint(blueprint, traits, config)
+	return Storage.new(Storage.size(blueprint.roles.storage, traits, config))
 end
 
 function Storage.total(store)

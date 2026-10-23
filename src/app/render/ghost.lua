@@ -4,7 +4,7 @@
 -- placement panel, in screen space.
 local Projection = require("src.game.projection")
 local Placement = require("src.game.buildings.placement")
-local Cost = require("src.game.builder.cost")
+local StorageFacility = require("src.game.components.storage_facility")
 local BuildingsRender = require("src.app.render.buildings")
 
 local GhostRender = {}
@@ -19,19 +19,19 @@ function GhostRender.draw(ctx, ghost, zoom, viewName)
 	viewName = viewName or "topdown"
 	local p = Projection.new(ctx.config, 1, ctx.config.views[viewName])
 	local req = ghost.request
-	local version = req.design.versions[req.version]
-	local width, depth = Placement.footprint(version, req.facing)
+	local blueprint = Placement.blueprint(req)
+	local width, depth = Placement.footprint(blueprint, req.facing)
 	local color = ghost.ok and VALID or INVALID
 	local outline = BuildingsRender.groundRect(p, req.tileX, req.tileY, 0, 0, width, depth)
 
 	love.graphics.push("all")
 	love.graphics.setColor(color[1], color[2], color[3], 0.35)
 	love.graphics.polygon("fill", outline)
-	for _, port in ipairs(Placement.ports(version, req.facing, req.tileX, req.tileY, ctx.config.builder)) do
+	for _, port in ipairs(Placement.ports(blueprint, req.facing, req.tileX, req.tileY)) do
 		BuildingsRender.drawPort(p, port)
 	end
 
-	local sprite = BuildingsRender.sprite(ctx.config, req.design, req.version, req.facing, Projection.bakeScale(zoom or 1), viewName)
+	local sprite = BuildingsRender.sprite(ctx.config, blueprint, req.facing, Projection.bakeScale(zoom or 1), viewName)
 	local left, top, s = Projection.placeSprite(p, sprite.frame, req.tileX, req.tileY)
 	-- Premultiplied, like every baked sprite: the tint carries the alpha.
 	local a = SPRITE_ALPHA
@@ -53,18 +53,19 @@ local WHITE, RED = { 1, 1, 1, 1 }, { 1, 0.45, 0.4, 1 }
 -- The placement panel, bottom-left in screen space: while placing, what is
 -- placed and how, and `status` (why the ghost or the last click is
 -- refused), in red.
---   placing: { design, version, facing } or nil; cost: { [item] = n } or nil
+--   placing: { design = <name>, blueprint, facing } or nil;
+--   cost: { [item] = n } or nil
 function GhostRender.drawPanel(placing, cost, status, totals)
 	local lines = {}
 	if placing then
-		local short = Cost.short(cost or {}, totals or {})
+		local short = StorageFacility.short(cost or {}, totals or {})
 		local items = {}
 		for item in pairs(cost or {}) do
 			table.insert(items, item)
 		end
 		table.sort(items)
 		-- Coloured text: { colour, text, colour, text, ... }
-		local text = { WHITE, string.format("Placing %s v%d, facing %s. Cost: ", placing.design.name, placing.version, placing.facing) }
+		local text = { WHITE, string.format("Placing %s, facing %s. Cost: ", placing.design, placing.facing) }
 		for i, item in ipairs(items) do
 			table.insert(text, short[item] and RED or WHITE)
 			table.insert(text, cost[item] .. " " .. item .. (i < #items and ", " or ""))

@@ -8,43 +8,26 @@ local Session = require("src.game.session")
 local World = require("src.game.world")
 local Config = require("src.game.config")
 
-local function brick(shape, x, y, extra)
-	local b = { x = x, y = y, z = 0, width = 2, depth = 2, shape = shape, rotation = 0, material = "plank", paint = 1 }
-	for k, v in pairs(extra or {}) do
-		b[k] = v
-	end
-	return b
+local Designs = require("tests.support.designs")
+
+-- A 1x1-tile design: a depot (or a saw), storage for 8 and an output port
+-- on the south edge.
+local function design(ability)
+	return Designs.floor(1, 1,
+		Designs.ability(ability, 0.25, 0.25),
+		Designs.storage(8, 0.75, 0.25),
+		Designs.port("output", 0.25, 1))
 end
 
--- A 1x1-tile design: a depot (or a saw), one storage brick and an output
--- port on the south edge.
-local function design(id, ability)
-	return {
-		id = id,
-		name = id,
-		versions = {
-			{
-				width = 1,
-				depth = 1,
-				bricks = {
-					brick(ability == "depot" and "depot" or "saw", 0, 0, { ability = ability }),
-					brick("storage", 2, 0, { storage = 8 }),
-					brick("output", 0, 3, { port = "output", width = 2, depth = 1 }),
-				},
-			},
-		},
-	}
-end
-
-local DEPOT = design("d1", "depot")
-local CUTTER = design("d2", "saw")
+local DEPOT = design("depot")
+local CUTTER = design("saw")
 
 local function newSession()
 	return Session.new(World.new(40, 40), Config, 1)
 end
 
 local function build(ctx, d, x, y)
-	return assert(Placement.build(ctx, { design = d, version = 1, facing = "N", tileX = x, tileY = y }))
+	return assert(Placement.build(ctx, Designs.request(d, "N", x, y)))
 end
 
 test("only buildings with a depot are storage facilities, in pool order", function()
@@ -110,21 +93,10 @@ local Inventory = require("src.game.components.inventory")
 
 test("a depot's input accepts every item", function()
 	local ctx = newSession()
-	local d = {
-		id = "d3",
-		name = "Store",
-		versions = {
-			{
-				width = 1,
-				depth = 1,
-				bricks = {
-					brick("depot", 0, 0, { ability = "depot" }),
-					brick("input", 0, 3, { port = "input", width = 2, depth = 1 }),
-					brick("output", 2, 0, { port = "output", width = 2, depth = 1 }),
-				},
-			},
-		},
-	}
+	local d = Designs.floor(1, 1,
+		Designs.ability("depot", 0.25, 0.25),
+		Designs.port("input", 0.25, 1),
+		Designs.port("output", 0.75, 0))
 	local b = build(ctx, d, 5, 5)
 	local input = b.ports[1]
 	assertEqual("input", input.kind)
@@ -139,21 +111,10 @@ end)
 
 test("a depot moves what reaches its input into the facility's storage, so the input frees up", function()
 	local ctx = newSession()
-	local d = {
-		id = "d4",
-		name = "Store",
-		versions = {
-			{
-				width = 1,
-				depth = 1,
-				bricks = {
-					brick("depot", 0, 0, { ability = "depot" }),
-					brick("storage", 2, 0, { storage = 8 }),
-					brick("input", 0, 3, { port = "input", width = 2, depth = 1 }),
-				},
-			},
-		},
-	}
+	local d = Designs.floor(1, 1,
+		Designs.ability("depot", 0.25, 0.25),
+		Designs.storage(8, 0.75, 0.25),
+		Designs.port("input", 0.25, 1))
 	local b = build(ctx, d, 10, 10)
 	local input = b.ports[1]
 	Storage.add(input.buffer, "log")
@@ -209,4 +170,12 @@ test("totalFill sums facilities before dividing, skipping other buildings and de
 	a.storage.capacity = 0
 	b.storage.capacity = 0
 	assertEqual(nil, StorageFacility.totalFill(ctx))
+end)
+
+test("short flags the items of a cost the totals can't cover, missing ones included", function()
+	local short = StorageFacility.short({ plank = 10, stone = 2, glass = 1 }, { plank = 3, stone = 2 })
+	assertEqual(true, short.plank)
+	assertEqual(true, short.glass)
+	assertEqual(nil, short.stone)
+	assertEqual(nil, next(StorageFacility.short({}, { plank = 1 })))
 end)

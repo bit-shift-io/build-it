@@ -14,24 +14,18 @@ local StorageFacility = require("src.game.components.storage_facility")
 
 local TILE = Config.tileSize
 
-local function b(shape, x, y, w, d, extra)
-	local r = { x = x, y = y, z = 0, width = w, depth = d, height = 1, shape = shape, rotation = 0, material = "plank", paint = 1 }
-	for k, v in pairs(extra) do
-		r[k] = v
-	end
-	return r
-end
+local Designs = require("tests.support.designs")
 
-local WOODCUTTER = { id = "d1", name = "Woodcutter", versions = { { width = 2, depth = 1, bricks = {
-	b("saw", 0, 0, 3, 1, { ability = "saw" }),
-	b("output", 3, 3, 2, 1, { port = "output" }),
-} } } }
+-- A saw on a 2x1 tile floor with an output port on its south edge under
+-- tile (1, 0).
+local WOODCUTTER = Designs.floor(2, 1, Designs.ability("saw", 0.375, 0.125), Designs.port("output", 1, 1))
 
-local SAWMILL = { id = "d2", name = "Sawmill", versions = { { width = 2, depth = 1, bricks = {
-	b("sawbench", 0, 0, 4, 2, { ability = "sawbench" }),
-	b("input", 0, 3, 2, 1, { port = "input" }),
-	b("output", 4, 3, 2, 1, { port = "output" }),
-} } } }
+-- A saw bench on a 2x1 tile floor, an input port on its south edge under
+-- tile (0, 0) and an output port under tile (1, 0).
+local SAWMILL = Designs.floor(2, 1,
+	Designs.ability("sawbench", 0.5, 0.25),
+	Designs.port("input", 0.25, 1),
+	Designs.port("output", 1.25, 1))
 
 local function port(building, kind)
 	for _, p in ipairs(building.ports) do
@@ -53,8 +47,8 @@ test("a woodcutter's logs reach a sawmill input with no player input", function(
 	end
 	local game = GameHarness.startSession(world, { storage = Config.stockpile })
 	local ctx = game.ctx
-	Placement.build(ctx, { design = WOODCUTTER, version = 1, facing = "N", tileX = 4, tileY = 6 })
-	local mill = Placement.build(ctx, { design = SAWMILL, version = 1, facing = "N", tileX = 14, tileY = 12 })
+	Placement.build(ctx, Designs.request(WOODCUTTER, "N", 4, 6))
+	local mill = Placement.build(ctx, Designs.request(SAWMILL, "N", 14, 12))
 	for i = 1, 2 do
 		table.insert(ctx.pools.villagers, Session.newVillager(i, (8 + i + 0.5) * TILE, 9.5 * TILE, Config))
 	end
@@ -138,7 +132,7 @@ test("a building placed on settled villagers leaves them standing on standable t
 
 	-- The mill's footprint lands on the first villager's tile.
 	local v1 = ctx.pools.villagers[1]
-	local mill = Placement.build(ctx, { design = SAWMILL, version = 1, facing = "N", tileX = math.floor(v1.x / TILE), tileY = math.floor(v1.y / TILE) })
+	local mill = Placement.build(ctx, Designs.request(SAWMILL, "N", math.floor(v1.x / TILE), math.floor(v1.y / TILE)))
 	assertTrue(World.buildingAt(ctx.world, math.floor(v1.x / TILE), math.floor(v1.y / TILE)) == mill, "fixture: the villager is under the footprint")
 
 	FrameStepper.step(game, FrameStepper.secondsToFrames(5))

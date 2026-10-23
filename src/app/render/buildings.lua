@@ -1,5 +1,5 @@
 -- Draw module for ctx.pools.buildings and ctx.pools.sites: each building
--- as its design version's baked sprite for its facing
+-- as its blueprint's baked sprite for its facing
 -- (src/app/bake/design_cache.lua), handed to the world's depth sort, and a
 -- marker on every port tile, drawn flat on the ground; each construction
 -- site as the same sprite, translucent, with how much of its cost has
@@ -16,12 +16,12 @@ local BuildingsRender = {}
 -- One design cache per config table, for the life of the process.
 local caches = setmetatable({}, { __mode = "k" })
 
--- The baked sprite of version `n` of `design` turned to `facing`, at whole
--- bake `scale`, in view `viewName` (a config.views key, default "topdown").
--- Shared by placed buildings and the placement ghost.
-function BuildingsRender.sprite(config, design, n, facing, scale, viewName)
+-- The baked sprite of `blueprint` turned to `facing`, at whole bake
+-- `scale`, in view `viewName` (a config.views key, default "topdown").
+-- Shared by placed buildings, the placement ghost and the picker.
+function BuildingsRender.sprite(config, blueprint, facing, scale, viewName)
 	caches[config] = caches[config] or DesignCache.new(config)
-	return DesignCache.sprite(caches[config], design, n, facing, scale, viewName)
+	return DesignCache.sprite(caches[config], blueprint, facing, scale, viewName)
 end
 
 local SITE_ALPHA = 0.45
@@ -31,14 +31,14 @@ local SITE_ALPHA = 0.45
 function BuildingsRender.addDraws(draws, ctx, scale, viewName)
 	for _, b in ipairs(ctx.pools.buildings) do
 		table.insert(draws, {
-			sprite = BuildingsRender.sprite(ctx.config, b.design, b.version, b.facing, scale, viewName),
+			sprite = BuildingsRender.sprite(ctx.config, b.blueprint, b.facing, scale, viewName),
 			tileX = b.tileX,
 			tileY = b.tileY,
 		})
 	end
 	for _, site in ipairs(ctx.pools.sites) do
 		table.insert(draws, {
-			sprite = BuildingsRender.sprite(ctx.config, site.design, site.version, site.facing, scale, viewName),
+			sprite = BuildingsRender.sprite(ctx.config, site.blueprint, site.facing, scale, viewName),
 			tileX = site.tileX,
 			tileY = site.tileY,
 			alpha = SITE_ALPHA,

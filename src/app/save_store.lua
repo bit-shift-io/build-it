@@ -16,6 +16,7 @@ function SaveStore.exists(config)
 end
 
 -- The saved session, tuned by `config`; or nil and why it could not load.
+-- It needs no design library: buildings carry their blueprints.
 function SaveStore.load(config)
 	local text = love.filesystem.read(config.save.file)
 	if not text then

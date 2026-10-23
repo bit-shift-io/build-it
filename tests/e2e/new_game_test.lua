@@ -15,7 +15,7 @@ local function testConfig()
 	for k, v in pairs(Config) do
 		config[k] = v
 	end
-	config.designs = { dir = "e2e_newgame_designs", maxNameLength = Config.designs.maxNameLength }
+	config.designs = { dir = "e2e_newgame_designs", prefabDir = "e2e_newgame_prefabs" }
 	config.save = { file = "e2e_newgame_world.save", seed = Config.save.seed }
 	config.props = {}
 	for k, v in pairs(Config.props) do
@@ -26,7 +26,7 @@ local function testConfig()
 end
 
 local function clear(config)
-	for _, dir in ipairs({ config.designs.dir, config.props.cacheDir }) do
+	for _, dir in ipairs({ config.designs.dir, config.designs.prefabDir, config.props.cacheDir }) do
 		for _, name in ipairs(love.filesystem.getDirectoryItems(dir)) do
 			love.filesystem.remove(dir .. "/" .. name)
 		end
@@ -44,7 +44,7 @@ test("a new game shows the storage facility with the stockpile and 20 villagers 
 
 	local ctx = game.ctx
 	local facility = ctx.pools.buildings[1]
-	assertEqual(Starter.ID, facility.design.id)
+	assertEqual(Starter.NAME, facility.design)
 	local totals = StorageFacility.totals(ctx)
 	assertEqual(50, totals.plank)
 	assertEqual(50, totals.stone)

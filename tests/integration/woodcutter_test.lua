@@ -8,33 +8,21 @@ local Config = require("src.game.config")
 local World = require("src.game.world")
 local Inventory = require("src.game.components.inventory")
 local DesignStore = require("src.app.design_store")
+local Designs = require("tests.support.designs")
 local Session = require("src.game.session")
 local Load = require("src.game.components.load")
 
 local TILE = Config.tileSize
 
--- Bricks as the builder saves them: a plank saw on the north row of a 2x1
--- tile baseplate and an output port on its south edge under tile (1, 0).
-local WOODCUTTER = {
-	id = "d1",
-	name = "Woodcutter",
-	versions = {
-		{
-			width = 2,
-			depth = 1,
-			bricks = {
-				{ x = 0, y = 0, z = 0, width = 3, depth = 1, height = 3, shape = "saw", rotation = 0, material = "plank", paint = 1, ability = "saw" },
-				{ x = 3, y = 3, z = 0, width = 2, depth = 1, height = 1, shape = "output", rotation = 0, material = "plank", paint = 2, port = "output" },
-			},
-		},
-	},
-}
+-- A saw on the north row of a 2x1 tile floor and an output port on its
+-- south edge under tile (1, 0).
+local WOODCUTTER = Designs.floor(2, 1, Designs.ability("saw", 0.375, 0.125), Designs.port("output", 1, 1))
 
 -- 20x20 world, character at its centre (px 320, 320) on tile (10, 10),
 -- trees in columns 11 and 14, rows 4..6.
 local function launch()
 	_G.love = LoveMock.new()
-	assert(DesignStore.write(Config.designs.dir, WOODCUTTER))
+	assert(DesignStore.write(Config.designs, "designs", "woodcutter", WOODCUTTER))
 	local world = World.new(20, 20)
 	local id = 0
 	for y = 4, 6 do
@@ -54,8 +42,7 @@ test("a woodcutter beside a forest is run by a villager and logs reach storage w
 	table.insert(game.ctx.pools.villagers, v)
 
 	-- Footprint (12..13, 7); the ghost centres on the pointer.
-	Fake.tap(game, "1")
-	Fake.tap(game, "return")
+	Fake.pickDesign(game, "woodcutter")
 	Fake.click(game, 1, 640 + (13 * TILE - c.x), 360 + (7.5 * TILE - c.y))
 	GameHarness.completeSites(game)
 	local b = game.ctx.pools.buildings[2] -- after the storage facility
@@ -75,8 +62,7 @@ end)
 
 test("a woodcutter with no villager harvests nothing", function()
 	local game, _, c = launch()
-	Fake.tap(game, "1")
-	Fake.tap(game, "return")
+	Fake.pickDesign(game, "woodcutter")
 	Fake.click(game, 1, 640 + (13 * TILE - c.x), 360 + (7.5 * TILE - c.y))
 	GameHarness.completeSites(game)
 	local b = game.ctx.pools.buildings[2]

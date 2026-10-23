@@ -1,6 +1,7 @@
 -- The hover card's text (src/game/components/status.lua) and the names
 -- sessions hand out.
 local Session = require("src.game.session")
+local Builtins = require("tests.support.builtins")
 local World = require("src.game.world")
 local Config = require("src.game.config")
 local Status = require("src.game.components.status")
@@ -78,7 +79,7 @@ end)
 test("newGame names every villager, the same way for the same seed", function()
 	local WorldGen = require("src.game.world_gen")
 	local function names(seed)
-		local ctx = Session.newGame(WorldGen.generate(Config, seed), Config, seed)
+		local ctx = Session.newGame(WorldGen.generate(Config, seed), Config, seed, Builtins)
 		local out = {}
 		for _, v in ipairs(ctx.pools.villagers) do
 			assertTrue(v.name ~= nil)

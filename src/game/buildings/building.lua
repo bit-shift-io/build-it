@@ -1,48 +1,56 @@
--- A building record (docs/CONTEXT.md "Building"): a placed design version,
--- in ctx.pools.buildings. Plain data, pure -- no `love.*`.
+-- A building record (docs/CONTEXT.md "Building"): a placed blueprint, in
+-- ctx.pools.buildings. Plain data, pure -- no `love.*`.
 --
---   { id, design = <library design>, version = <n>, facing,
+--   { id, design,           -- the design's name, a label only
+--     blueprint,              -- frozen at placement (blueprint.lua)
+--     facing,
 --     tileX, tileY,           -- the footprint's north-west tile
 --     width, depth,           -- the footprint in tiles, turned by facing
---     traits,                 -- Traits.of(the version)
---     aura,                   -- Traits.auras(the version): { walkSpeed, harvestRate }
+--     traits,                 -- the blueprint's traits
+--     aura,                   -- the blueprint's auras: { walkSpeed, harvestRate }
 --     functionBricks = { <function brick>, ... }, -- function_brick.lua;
---                             -- each with tileX, tileY: its brick's tile
+--                             -- each with tileX, tileY: its role's tile
 --     storage,                -- a Storage (src/game/components/storage.lua)
 --     full,                   -- true while it has no room for a product
 --     ports = { <port>, ... } }
 --   port = { kind = "input"|"output", side, x, y, -- the tile it faces
 --            buffer = <Storage> }
 --
--- A version is immutable, so design.versions[version] stays the plan this
--- building was built from however the design is edited later.
-local Traits = require("src.game.builder.traits")
+-- A blueprint is never changed, so it stays the plan this building was
+-- built from however its design is edited later (ADR 0007).
 local FunctionBrick = require("src.game.components.function_brick")
 local Storage = require("src.game.components.storage")
 local Ports = require("src.game.components.ports")
 
 local Building = {}
 
+local function copy(t)
+	local out = {}
+	for k, v in pairs(t) do
+		out[k] = v
+	end
+	return out
+end
+
 -- ports: Placement.ports's list; each gets an empty buffer sized by the
--- version's capacity trait. brickTile(brick) -> x, y: the world tile under
--- a brick (Placement.brickTile), set on each function brick record.
-function Building.new(id, request, width, depth, ports, config, brickTile)
-	local version = request.design.versions[request.version]
-	local traits = Traits.of(version, config)
+-- capacity trait. roleTile(role) -> x, y: the world tile under a role
+-- position (Placement.roleTile), set on each function brick record.
+function Building.new(id, request, blueprint, width, depth, ports, config, roleTile)
+	local traits = copy(blueprint.traits)
 	Ports.setup(ports, traits, config)
 	local building = {
 		id = id,
 		design = request.design,
-		version = request.version,
+		blueprint = blueprint,
 		facing = request.facing,
 		tileX = request.tileX,
 		tileY = request.tileY,
 		width = width,
 		depth = depth,
 		traits = traits,
-		aura = Traits.auras(version, config),
-		functionBricks = FunctionBrick.fromVersion(version, config, brickTile),
-		storage = Storage.ofVersion(version, traits, config),
+		aura = copy(blueprint.auras),
+		functionBricks = FunctionBrick.fromBlueprint(blueprint, config, roleTile),
+		storage = Storage.ofBlueprint(blueprint, traits, config),
 		full = false,
 		ports = ports,
 	}

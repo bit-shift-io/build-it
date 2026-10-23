@@ -1,199 +1,53 @@
+-- The design library (src/game/designs/library.lua): design and prefab
+-- scripts by name, the player's shadowing the built-ins, and the designs
+-- the building picker offers.
 local Library = require("src.game.designs.library")
-local Codec = require("src.game.designs.codec")
-local Draft = require("src.game.builder.draft")
 local Config = require("src.game.config")
+local builtins = require("tests.support.builtins")
 
-local CFG = Config.builder
+test("a saved script shadows the built-in of the same name and kind", function()
+	local base = { designs = { hut = "built-in hut", mill = "built-in mill" }, prefabs = { bed = "built-in bed" } }
+	local saved = { designs = { hut = "my hut", shed = "my shed" }, prefabs = { bed = "my bed", lamp = "my lamp" } }
+	local lib = Library.merge(base, saved)
+	assertEqual("my hut", lib.designs.hut)
+	assertEqual("built-in mill", lib.designs.mill)
+	assertEqual("my shed", lib.designs.shed)
+	assertEqual("my bed", lib.prefabs.bed)
+	assertEqual("my lamp", lib.prefabs.lamp)
+	assertEqual("built-in hut", base.designs.hut, "the built-ins are untouched")
+end)
 
-local function draftWith(n)
-	local d = Draft.new()
-	d.width = 2
-	for i = 1, n do
-		assert(Draft.place(d, (i - 1) * 2, 0, 0, CFG, { shape = "2x2", rotation = 0, material = "plank", paint = i }))
+local SHED = [[return group{ box{ size = { 1, 1, 1 } } }]]
+local MILL = [[return group{ box{ size = { 2, 1, 1 } }, prefab("saw", { transform = { move = { 0.25, 0.25, 0 } } }) }]]
+
+local function names(entries)
+	local out = {}
+	for i, e in ipairs(entries) do
+		out[i] = e.name
 	end
-	return d
+	return table.concat(out, ",")
 end
 
-test("saving a draft makes a new design with one version", function()
-	local lib = Library.new()
-	local design, n = Library.save(lib, nil, "Hut", draftWith(1))
-	assertEqual(1, n)
-	assertEqual("Hut", design.name)
-	assertEqual(1, #design.versions)
-	assertEqual(2, design.versions[1].width)
-	assertEqual(1, #design.versions[1].bricks)
-	assertEqual(design, Library.design(lib, design.id))
+test("the picker offers the designs with a function role, by name, each compiled", function()
+	local lib = Library.merge(builtins, { designs = { shed = SHED, mill = MILL } })
+	local entries = Library.placeable(lib, Config)
+	assertEqual("mill,storage_facility", names(entries))
+	local mill = entries[1].blueprint
+	assertEqual(2, mill.width)
+	assertEqual("saw", mill.roles.abilities[1].ability)
+	assertTrue(mill.cost.plank > 0, "it carries its voxel cost")
 end)
 
-test("saving again appends a version and never touches the older one", function()
-	local lib = Library.new()
-	local draft = draftWith(1)
-	local design = Library.save(lib, nil, "Hut", draft)
-	local v1 = design.versions[1]
-	local before = Codec.encode(design)
-
-	-- Edit the same draft in place: paint, place, resize.
-	Draft.paint(draft, draft.bricks[1], 9)
-	assert(Draft.place(draft, 2, 0, 0, CFG, { shape = "1x1", rotation = 0, material = "stone", paint = 3 }))
-	draft.depth = 2
-	assertEqual(before, Codec.encode(design), "expected editing the draft to leave version 1 alone")
-
-	local again, n = Library.save(lib, design.id, "Big hut", draft)
-	assertEqual(design, again)
-	assertEqual(2, n)
-	assertEqual(v1, design.versions[1])
-	assertEqual(1, #v1.bricks)
-	assertEqual(1, v1.bricks[1].paint)
-	assertEqual(1, v1.depth)
-	assertEqual(2, #design.versions[2].bricks)
-	assertEqual("Big hut", design.name, "the name is the design's label")
-	assertEqual(1, #lib.designs)
+test("a design that fails to compile or has a problem is not offered", function()
+	local bench = [[return group{ box{}, prefab("sawbench") }]]
+	local lib = Library.merge(builtins, { designs = { broken = "return group{", loop = 'return prefab("loop")', bench = bench } })
+	lib.prefabs.loop = 'return prefab("loop")'
+	assertEqual("storage_facility", names(Library.placeable(lib, Config)))
 end)
 
-test("opening a version hands out a draft copy, so editing it leaves the version alone", function()
-	local lib = Library.new()
-	local design = Library.save(lib, nil, "Hut", draftWith(2))
-	local draft = Library.toDraft(design.versions[1])
-	assertEqual(2, #draft.bricks)
-	assertEqual(2, draft.width)
-	Draft.remove(draft, draft.bricks[1])
-	Draft.paint(draft, draft.bricks[1], 12)
-	assertEqual(2, #design.versions[1].bricks)
-	assertEqual(2, design.versions[1].bricks[2].paint)
-end)
-
-test("new designs get fresh ids", function()
-	local lib = Library.new()
-	local a = Library.save(lib, nil, "A", draftWith(1))
-	local b = Library.save(lib, nil, "A", draftWith(1))
-	assertTrue(a.id ~= b.id)
-	assertEqual(2, #lib.designs)
-end)
-
-test("only a draft with at least one brick can be saved", function()
-	local ok, reason = Library.canSave(Draft.new(), CFG)
-	assertFalse(ok)
-	assertEqual("empty", reason)
-end)
-
-test("a draft breaking a design rule is refused with the first rule it breaks", function()
-	local d = draftWith(1)
-	local ok, reason = Library.canSave(d, CFG)
-	assertFalse(ok)
-	assertEqual("no function brick", reason)
-	assert(Draft.place(d, 0, 2, 0, CFG, { shape = "saw", rotation = 0, material = "plank", paint = 1 }))
-	ok, reason = Library.canSave(d, CFG)
-	assertEqual("no output port", reason)
-	assert(Draft.place(d, 4, 3, 0, CFG, { shape = "output", rotation = 0, material = "plank", paint = 1 }))
-	assertTrue(Library.canSave(d, CFG))
-end)
-
-test("a library rebuilds from its files, and a corrupt file is reported, not fatal", function()
-	local lib = Library.new()
-	local hut = Library.save(lib, nil, "Hut", draftWith(1))
-	Library.save(lib, hut.id, "Hut", draftWith(2))
-	local tower = Library.save(lib, nil, "Tower", draftWith(1))
-
-	local loaded, problems = Library.fromFiles({
-		{ name = "d1.design", text = Codec.encode(hut) },
-		{ name = "broken.design", text = "build-it-design 1\nversion width=n:1\n" },
-		{ name = "d2.design", text = Codec.encode(tower) },
-	})
-	assertEqual(2, #loaded.designs)
-	assertEqual("Hut", loaded.designs[1].name)
-	assertEqual(2, #Library.design(loaded, hut.id).versions)
-	assertEqual("Tower", Library.design(loaded, tower.id).name)
-	assertEqual(1, #problems)
-	assertEqual("broken.design", problems[1].name)
-	assertEqual("string", type(problems[1].reason))
-
-	-- The next new design never reuses a loaded id.
-	local fresh = Library.save(loaded, nil, "New", draftWith(1))
-	assertEqual("d3", fresh.id)
-end)
-
-test("two files claiming one design id: the second is reported", function()
-	local lib = Library.new()
-	local hut = Library.save(lib, nil, "Hut", draftWith(1))
-	local text = Codec.encode(hut)
-	local loaded, problems = Library.fromFiles({ { name = "d1.design", text = text }, { name = "copy.design", text = text } })
-	assertEqual(1, #loaded.designs)
-	assertEqual(1, #problems)
-	assertEqual("copy.design", problems[1].name)
-end)
-
-test("deleting a middle version retires it; the next save takes a fresh number", function()
-	local lib = Library.new()
-	local design = Library.save(lib, nil, "Hut", draftWith(1))
-	Library.save(lib, design.id, "Hut", draftWith(2))
-	Library.save(lib, design.id, "Hut", draftWith(3))
-	Library.deleteVersion(lib, design.id, 2)
-	assertFalse(Library.isLive(design, 2))
-	assertTrue(Library.isLive(design, 1))
-	assertTrue(Library.isLive(design, 3))
-	assertEqual(3, Library.newestLive(design))
-	local live = Library.liveVersions(design)
-	assertEqual(2, #live)
-	assertEqual(1, live[1])
-	assertEqual(3, live[2])
-	local _, n = Library.save(lib, design.id, "Hut", draftWith(1))
-	assertEqual(4, n)
-end)
-
-test("deleting every version drops the design from the live list; its id stays taken", function()
-	local lib = Library.new()
-	local hut = Library.save(lib, nil, "Hut", draftWith(1))
-	Library.save(lib, hut.id, "Hut", draftWith(2))
-	local tower = Library.save(lib, nil, "Tower", draftWith(1))
-	Library.deleteVersion(lib, hut.id, 1)
-	Library.deleteVersion(lib, hut.id, 2)
-	assertEqual(nil, Library.newestLive(hut))
-	assertEqual(0, #Library.liveVersions(hut))
-	local live = Library.liveDesigns(lib)
-	assertEqual(1, #live)
-	assertEqual(tower, live[1])
-	local fresh = Library.save(lib, nil, "New", draftWith(1))
-	assertEqual("d3", fresh.id)
-end)
-
-test("deleting the newest design's only version never frees its id", function()
-	local lib = Library.new()
-	Library.save(lib, nil, "Hut", draftWith(1))
-	local tower = Library.save(lib, nil, "Tower", draftWith(1))
-	Library.deleteVersion(lib, tower.id, 1)
-	local fresh = Library.save(lib, nil, "New", draftWith(1))
-	assertEqual("d3", fresh.id)
-end)
-
-test("a deleted version's data stays in the design for the rest of the session", function()
-	local lib = Library.new()
-	local design = Library.save(lib, nil, "Hut", draftWith(1))
-	Library.save(lib, design.id, "Hut", draftWith(2))
-	local v2 = design.versions[2]
-	Library.deleteVersion(lib, design.id, 2)
-	assertEqual(v2, design.versions[2])
-	assertEqual(2, #design.versions[2].bricks)
-end)
-
-test("retired numbers and ids stay taken across a relaunch", function()
-	local lib = Library.new()
-	local hut = Library.save(lib, nil, "Hut", draftWith(1))
-	Library.save(lib, hut.id, "Hut", draftWith(2))
-	Library.save(lib, hut.id, "Hut", draftWith(1))
-	local tower = Library.save(lib, nil, "Tower", draftWith(1))
-	Library.deleteVersion(lib, hut.id, 3)
-	Library.deleteVersion(lib, tower.id, 1)
-
-	local loaded, problems = Library.fromFiles({
-		{ name = "d1.design", text = Codec.encode(hut) },
-		{ name = "d2.design", text = Codec.encode(tower) },
-	})
-	assertEqual(0, #problems)
-	local again = Library.design(loaded, hut.id)
-	assertFalse(Library.isLive(again, 3))
-	assertEqual(2, Library.newestLive(again))
-	local _, n = Library.save(loaded, hut.id, "Hut", draftWith(1))
-	assertEqual(4, n)
-	assertEqual(1, #Library.liveDesigns(loaded))
-	assertEqual("d3", Library.save(loaded, nil, "New", draftWith(1)).id)
+test("a saved design shadowing a built-in is offered in its place", function()
+	local lib = Library.merge(builtins, { designs = { storage_facility = MILL } })
+	local entries = Library.placeable(lib, Config)
+	assertEqual("storage_facility", names(entries))
+	assertEqual("saw", entries[1].blueprint.roles.abilities[1].ability)
 end)

@@ -2,8 +2,7 @@
 -- a click landed. Geometry is pure arithmetic (testable); only draw* touch
 -- love.graphics. State lives in src/app/picker.lua and the world screen.
 local Picker = require("src.app.picker")
-local Cost = require("src.game.builder.cost")
-local Library = require("src.game.designs.library")
+local StorageFacility = require("src.game.components.storage_facility")
 local BuildingsRender = require("src.app.render.buildings")
 
 local PickerRender = {}
@@ -52,7 +51,7 @@ end
 -- A cost as sorted { text = "10 plank", short = bool } parts; short when
 -- `totals` can't cover that item.
 function PickerRender.costParts(cost, totals)
-	local short = Cost.short(cost, totals)
+	local short = StorageFacility.short(cost, totals)
 	local items = {}
 	for item in pairs(cost) do
 		table.insert(items, item)
@@ -65,16 +64,16 @@ function PickerRender.costParts(cost, totals)
 	return parts
 end
 
--- One picker row: the newest live version's sprite (facing N, fixed bake
--- scale 1) fitted into a square, the name, and the cost with short items
--- in red. ctx: { config, totals }.
+-- One picker row for `design` (Library.placeable's { name, blueprint }):
+-- its blueprint's sprite (facing N, fixed bake scale 1) fitted into a
+-- square, the name, and the cost with short items in red.
+-- ctx: { config, totals }.
 local function drawRow(design, rect, hover, ctx)
 	if hover then
 		love.graphics.setColor(1, 1, 1, 0.15)
 		love.graphics.rectangle("fill", rect.x, rect.y, rect.w, rect.h)
 	end
-	local n = Library.newestLive(design)
-	local sprite = BuildingsRender.sprite(ctx.config, design, n, "N", 1)
+	local sprite = BuildingsRender.sprite(ctx.config, design.blueprint, "N", 1)
 	local iw, ih = sprite.image:getDimensions()
 	local scale = math.min(THUMB / iw, THUMB / ih)
 	local tx = rect.x + PAD + (THUMB - iw * scale) / 2
@@ -89,7 +88,7 @@ local function drawRow(design, rect, hover, ctx)
 	love.graphics.setColor(WHITE)
 	love.graphics.print(design.name, textX, rect.y + 5)
 	local text = {}
-	for _, part in ipairs(PickerRender.costParts(Cost.of(design.versions[n], ctx.config), ctx.totals)) do
+	for _, part in ipairs(PickerRender.costParts(design.blueprint.cost, ctx.totals)) do
 		table.insert(text, part.short and RED or WHITE)
 		table.insert(text, part.text .. "  ")
 	end

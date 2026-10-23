@@ -11,45 +11,26 @@ local StorageFacility = require("src.game.components.storage_facility")
 local TILE = Config.tileSize
 local STEP = 1 / 60
 
-local function brick(shape, x, y, extra)
-	local b = { x = x, y = y, z = 0, width = 2, depth = 1, height = 1, shape = shape, rotation = 0, material = "plank", paint = 1 }
-	for k, v in pairs(extra or {}) do
-		b[k] = v
-	end
-	return b
-end
+local Designs = require("tests.support.designs")
+local ability, port, storage = Designs.ability, Designs.port, Designs.storage
 
 -- 1x1 tile buildings with their ports on the south edge. The cutter's saw
 -- has no trees in reach, so it never adds logs of its own.
-local CUTTER = { id = "d1", name = "Cutter", versions = { { width = 1, depth = 1, bricks = {
-	brick("saw", 0, 0, { ability = "saw" }),
-	brick("output", 0, 3, { port = "output" }),
-} } } }
-local MILL = { id = "d2", name = "Mill", versions = { { width = 1, depth = 1, bricks = {
-	brick("sawbench", 0, 0, { ability = "sawbench" }),
-	brick("input", 0, 3, { port = "input" }),
-} } } }
+local CUTTER = Designs.floor(1, 1, ability("saw", 0.25, 0.125), port("output", 0.25, 1))
+local MILL = Designs.floor(1, 1, ability("sawbench", 0.25, 0.125), port("input", 0.25, 1))
 -- Storage facilities: DEPOT takes drop-offs at its input port tile, STORE
 -- also gives pick-ups at its output port tile.
-local DEPOT = { id = "d3", name = "Depot", versions = { { width = 1, depth = 1, bricks = {
-	brick("depot", 0, 0, { ability = "depot" }),
-	brick("storage", 2, 0, { storage = 8 }),
-	brick("input", 0, 3, { port = "input" }),
-} } } }
-local STORE = { id = "d5", name = "Store", versions = { { width = 1, depth = 1, bricks = {
-	brick("depot", 0, 0, { ability = "depot" }),
-	brick("storage", 2, 0, { storage = 8 }),
-	brick("input", 0, 3, { port = "input" }),
-	brick("output", 2, 3, { port = "output" }),
-} } } }
+local DEPOT = Designs.floor(1, 1, ability("depot", 0.25, 0.125), storage(8, 0.75, 0.125), port("input", 0.25, 1))
+local STORE = Designs.floor(1, 1,
+	ability("depot", 0.25, 0.125),
+	storage(8, 0.75, 0.125),
+	port("input", 0.25, 1),
+	port("output", 0.75, 1))
 
-local CANTEEN = { id = "d6", name = "Canteen", versions = { { width = 1, depth = 1, bricks = {
-	brick("canteen", 0, 0, { ability = "canteen" }),
-	brick("input", 0, 3, { port = "input" }),
-} } } }
+local CANTEEN = Designs.floor(1, 1, ability("canteen", 0.25, 0.125), port("input", 0.25, 1))
 
 local function place(ctx, design, x, y)
-	return Placement.build(ctx, { design = design, version = 1, facing = "N", tileX = x, tileY = y })
+	return Placement.build(ctx, Designs.request(design, "N", x, y))
 end
 
 local function villager(ctx, tileX, tileY)
@@ -175,11 +156,7 @@ test("a busy villager is never pulled off its job for a nearer one", function()
 end)
 
 -- A storage facility with an output port on the south edge.
-local SHOP = { id = "d4", name = "Shop", versions = { { width = 1, depth = 1, bricks = {
-	brick("depot", 0, 0, { ability = "depot" }),
-	brick("storage", 2, 0, { storage = 8 }),
-	brick("output", 0, 3, { port = "output" }),
-} } } }
+local SHOP = Designs.floor(1, 1, ability("depot", 0.25, 0.125), storage(8, 0.75, 0.125), port("output", 0.25, 1))
 
 test("logs a hauler reserved in storage stay there for it, not flushed to the output", function()
 	local ctx = newCtx()
@@ -248,16 +225,14 @@ test("a sawmill input fed from a facility's storage is picked up at its output p
 end)
 
 -- A 2x1 hall with no function bricks: placing it leaves a site.
-local HALL = { id = "d6", name = "Hall", versions = { { width = 2, depth = 1, bricks = {
-	brick("2x2", 0, 0),
-} } } }
+local HALL = Designs.floor(2, 1)
 
 test("a site is supplied from a facility's storage at its output port tile, keeping the claim", function()
 	local ctx = newCtx()
 	local store = place(ctx, STORE, 4, 2)
 	store.storage.capacity = 100
 	fill(store.storage, "plank", 20)
-	local site = assert(Placement.place(ctx, { design = HALL, version = 1, facing = "N", tileX = 12, tileY = 2 }))
+	local site = assert(Placement.place(ctx, Designs.request(HALL, "N", 12, 2)))
 	villager(ctx, 4, 0)
 
 	run(ctx, STEP)
@@ -270,10 +245,7 @@ end)
 
 test("a facility with no input port takes no drop-offs; one with no output port gives no pick-ups", function()
 	local ctx = newCtx()
-	local closed = place(ctx, { id = "d7", name = "Closed", versions = { { width = 1, depth = 1, bricks = {
-		brick("depot", 0, 0, { ability = "depot" }),
-		brick("storage", 2, 0, { storage = 8 }),
-	} } } }, 4, 2)
+	local closed = place(ctx, Designs.floor(1, 1, ability("depot", 0.25, 0.125), storage(8, 0.75, 0.125)), 4, 2)
 	fill(closed.storage, "log", 1)
 	place(ctx, MILL, 12, 2)
 	local v = villager(ctx, 4, 4)
@@ -286,12 +258,11 @@ test("a facility with no input port takes no drop-offs; one with no output port 
 end)
 
 -- A 2x1 facility with an input port under each tile of its south edge.
-local WIDE = { id = "d8", name = "Wide", versions = { { width = 2, depth = 1, bricks = {
-	brick("depot", 0, 0, { ability = "depot" }),
-	brick("storage", 2, 0, { storage = 8 }),
-	brick("input", 0, 3, { port = "input" }),
-	brick("input", 4, 3, { port = "input" }),
-} } } }
+local WIDE = Designs.floor(2, 1,
+	ability("depot", 0.25, 0.125),
+	storage(8, 0.75, 0.125),
+	port("input", 0.25, 1),
+	port("input", 1.25, 1))
 
 test("a hauler drops off at the input port tile nearest it, ties to the first port", function()
 	for _, case in ipairs({ { x = 4, port = 1 }, { x = 9, port = 2 } }) do
@@ -416,7 +387,7 @@ test("a finished build job lingers beside the new building and takes the next bu
 	local store = place(ctx, STORE, 4, 2)
 	store.storage.capacity = 100
 	fill(store.storage, "plank", 40)
-	local siteA = assert(Placement.place(ctx, { design = HALL, version = 1, facing = "N", tileX = 12, tileY = 2 }))
+	local siteA = assert(Placement.place(ctx, Designs.request(HALL, "N", 12, 2)))
 	local v = villager(ctx, 4, 0)
 	local built = false
 	for _ = 1, 60 * 120 do
@@ -472,11 +443,7 @@ test("pick: lingering on the task beats any experience", function()
 	assertEqual(mine, JobSystem.pick({ expert, mine }, { kind = "build" }, 5, 5, TILE, EXP))
 end)
 
-local MILL_OUT = { id = "d9", name = "Mill", versions = { { width = 1, depth = 1, bricks = {
-	brick("sawbench", 0, 0, { ability = "sawbench" }),
-	brick("input", 0, 3, { port = "input" }),
-	brick("output", 2, 3, { port = "output" }),
-} } } }
+local MILL_OUT = Designs.floor(1, 1, ability("sawbench", 0.25, 0.125), port("input", 0.25, 1), port("output", 0.75, 1))
 
 test("a saw with a tree in reach and a saw bench with logs each get an operator", function()
 	local ctx = newCtx()
@@ -534,11 +501,7 @@ test("a job is never given to a collapsed villager while a healthy one is free",
 end)
 
 -- A sawmill with an output port, so its saw bench has work from logs in its input.
-local WORKSHOP = { id = "d6", name = "Workshop", versions = { { width = 1, depth = 1, bricks = {
-	brick("sawbench", 0, 0, { ability = "sawbench" }),
-	brick("input", 0, 3, { port = "input" }),
-	brick("output", 2, 3, { port = "output" }),
-} } } }
+local WORKSHOP = Designs.floor(1, 1, ability("sawbench", 0.25, 0.125), port("input", 0.25, 1), port("output", 0.75, 1))
 
 -- Hunger and jobs (ADR 0004): a hungry villager takes no new job, and an
 -- operator yields only at the end of a cycle.

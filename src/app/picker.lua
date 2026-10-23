@@ -6,7 +6,8 @@ local Picker = {}
 -- How many rows the picker shows at once.
 Picker.ROWS = 12
 
--- designs: the live designs, in library order.
+-- designs: the placeable designs, { name, blueprint } each, by name
+-- (src/game/designs/library.lua Library.placeable).
 function Picker.new(designs)
 	return { designs = designs, query = "", scroll = 0 }
 end
