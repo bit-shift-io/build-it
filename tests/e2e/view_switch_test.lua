@@ -31,12 +31,15 @@ local game = GameHarness.startSession(WorldGen.generate(config, 1), {
 	storage = { plank = 2 },
 })
 
--- Counts Baker.bake calls (passing through) for the rest of the file.
+-- Counts Baker.bake and Baker.bakeTurned calls (passing through) for the rest
+-- of the file. Props bake through bakeTurned.
 local bakes = 0
-local realBake = Baker.bake
-Baker.bake = function(...)
-	bakes = bakes + 1
-	return realBake(...)
+for _, name in ipairs({ "bake", "bakeTurned" }) do
+	local real = Baker[name]
+	Baker[name] = function(...)
+		bakes = bakes + 1
+		return real(...)
+	end
 end
 
 -- Opens the overlay and clicks `view`'s button.

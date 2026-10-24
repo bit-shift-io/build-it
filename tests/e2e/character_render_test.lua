@@ -10,6 +10,7 @@ local Registry = require("src.game.props.registry")
 local Character = require("src.game.props.character")
 local PropCache = require("src.app.bake.prop_cache")
 local CharacterRender = require("src.app.render.character")
+local Projection = require("src.game.projection")
 
 local function configWithCacheDir(dir)
 	local config = {}
@@ -123,6 +124,70 @@ test("the 8 directions of walk frame 2 all bake differently", function()
 	end
 	love.graphics.pop()
 	Capture.captureTexture("all_directions_all_frames", sheet)
+end)
+
+-- Scans `sprite`'s own pixels: how many are the eyes' near-black blue-grey
+-- (green under 0.1 and bluer than red, which shoes, hair, skin, trousers and
+-- shirt never are at any shading, ambient 0.45), the mean x of its opaque
+-- pixels, and its lowest opaque row.
+local function scan(sprite)
+	local _, _, qw, qh = sprite.quad:getViewport()
+	local own = love.graphics.newCanvas(qw, qh, { dpiscale = 1 })
+	love.graphics.push("all")
+	love.graphics.origin()
+	love.graphics.setCanvas(own)
+	love.graphics.clear(0, 0, 0, 0)
+	love.graphics.setBlendMode("replace", "premultiplied")
+	love.graphics.setColor(1, 1, 1, 1)
+	love.graphics.draw(sprite.image, sprite.quad, 0, 0)
+	love.graphics.pop()
+	local data = love.graphics.readbackTexture(own)
+	own:release()
+	local eyes, opaque, sumX, bottom = 0, 0, 0, -1
+	for y = 0, qh - 1 do
+		for x = 0, qw - 1 do
+			local r, g, b, a = data:getPixel(x, y)
+			if a > 0.9 then
+				opaque, sumX, bottom = opaque + 1, sumX + x, y
+				if g < 0.1 and b > r then
+					eyes = eyes + 1
+				end
+			end
+		end
+	end
+	return { eyes = eyes, meanX = sumX / opaque, bottom = bottom }
+end
+
+test("in iso the 8 facings bake 8 differently turned bodies, the S facing showing the eyes", function()
+	local config = configWithCacheDir("e2e_character_iso")
+	clearDir(config.props.cacheDir)
+	local scale = 4
+	local sprites = {}
+	for dir = 1, #Character.DIRECTIONS do
+		sprites[dir] = CharacterRender.sprite(config, dir, Character.IDLE, scale, "iso")
+	end
+	local strip, pixels = filmstrip(sprites, 8)
+	Capture.captureTexture("iso_idle_8_facings", strip)
+	for a = 1, #pixels do
+		for b = a + 1, #pixels do
+			assertTrue(pixels[a] ~= pixels[b], Character.DIRECTIONS[a].name .. " and " .. Character.DIRECTIONS[b].name .. " look the same")
+		end
+	end
+	assertTrue(scan(sprites[5]).eyes > 0, "facing S shows the eyes")
+	assertEqual(0, scan(sprites[1]).eyes, "facing N shows no eyes")
+	-- Every facing stays on its tile: the figure stands over the footprint
+	-- centre, measured from where the sprite puts the footprint origin.
+	local p = Projection.new(config, scale, config.views.iso)
+	local cx, cy = Projection.worldToScreen(p, 0.5, 0.5, 0)
+	local tile = p.pixelsPerTile
+	for dir, sprite in ipairs(sprites) do
+		local name = Character.DIRECTIONS[dir].name
+		local s = scan(sprite)
+		assertEqual(1, sprite.width)
+		assertEqual(1, sprite.depth)
+		assertTrue(math.abs(s.meanX - sprite.frame.anchorX - cx) < 0.1 * tile, name .. " stands over the footprint centre")
+		assertTrue(math.abs(s.bottom - sprite.frame.anchorY - cy) < 0.2 * tile, name .. " stands on the footprint centre")
+	end
 end)
 
 test("character frames cache with the props and rebake when the generator version changes", function()

@@ -108,6 +108,17 @@ local function tileBounds(model)
 	}
 end
 
+-- `model`'s meshed triangles in tiles (model-local), Mesher's vertex format.
+local function tileTriangles(model)
+	assert(#model.cells > 0, "cannot bake an empty block model")
+	local cpt = model.cellsPerTile
+	local triangles = {}
+	for i, v in ipairs(Mesher.mesh(model)) do
+		triangles[i] = { x = v.x / cpt, y = v.y / cpt, z = v.z / cpt, nx = v.nx, ny = v.ny, nz = v.nz, r = v.r, g = v.g, b = v.b, material = v.material }
+	end
+	return triangles
+end
+
 -- The nearest and farthest view depth over the bounds' 8 corners. Depth is
 -- affine, so a box's extremes are at its corners.
 local function depthRange(p, bounds)
@@ -201,13 +212,18 @@ end
 -- Projection.placeSprite.
 function Baker.bake(model, facing, config, scale, view)
 	local turned = Model.rotate(model, facing)
-	assert(#turned.cells > 0, "cannot bake an empty block model")
-	local cpt = turned.cellsPerTile
-	local triangles = {}
-	for i, v in ipairs(Mesher.mesh(turned)) do
-		triangles[i] = { x = v.x / cpt, y = v.y / cpt, z = v.z / cpt, nx = v.nx, ny = v.ny, nz = v.nz, r = v.r, g = v.g, b = v.b, material = v.material }
-	end
-	return render(triangles, cpt, tileBounds(turned), turned.width, turned.depth, config, scale, view)
+	local triangles = tileTriangles(turned)
+	return render(triangles, turned.cellsPerTile, tileBounds(turned), turned.width, turned.depth, config, scale, view)
+end
+
+-- Bakes `model` turned `degrees` clockwise seen from above about its
+-- footprint centre (Mesh.yaw), like Baker.bake otherwise: a figure's facing
+-- (Registry.turn). The turn is on the mesh, never the voxels, so any angle
+-- works; the footprint keeps the model's width and depth, and the sprite is
+-- framed on the turned mesh's bounds.
+function Baker.bakeTurned(model, degrees, config, scale, view)
+	local triangles = Mesh.yaw(tileTriangles(model), model.width, model.depth, degrees)
+	return render(triangles, model.cellsPerTile, Mesh.bounds(triangles), model.width, model.depth, config, scale, view)
 end
 
 -- Material patterns on a blueprint mesh run at the brick grid's scale.

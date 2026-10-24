@@ -63,8 +63,8 @@ Domain terms for Build-it. Code, docs and conversation use these words with thes
 - **Boundary:** Never part of a world save.
 
 ## Facing
-- **Definition:** One of 4 rotations of a building (N, E, S, W), or one of 8 directions of the character.
-- **Boundary:** Each facing has its own baked sprite.
+- **Definition:** One of 4 rotations of a building (N, E, S, W), or one of 8 directions of the character, a villager or a deer.
+- **Boundary:** Each facing has its own baked sprite. The character, villagers and deer are each built once and baked turned by 45° steps; buildings turn by quarter turns only.
 
 # Building design
 

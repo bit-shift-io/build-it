@@ -203,6 +203,16 @@ test("a building's blueprint round-trips whole from the save itself, mesh and al
 	assertEqual(Blueprint.hash(lb.blueprint), lb.blueprint.hash, "its hash is its content's")
 end)
 
+test("a textured building's blueprint round-trips with each vertex's texture", function()
+	local ctx = busySession()
+	local shed = 'return group{ box{ size = { 1, 1, 0.5 }, material = { name = "plank", variant = "bark", scale = 2, rotation = 90 } } }'
+	local b = assert(Placement.build(ctx, Designs.request(shed, "N", 20, 20, "Shed")))
+	assertTrue(b.blueprint.mesh[1].texture ~= nil, "expected a textured mesh")
+	local lb = roundTrip(ctx).pools.buildings[2].blueprint
+	assertSame(b.blueprint, lb, "blueprint")
+	assertEqual(b.blueprint.hash, lb.hash)
+end)
+
 test("a building's walk grid round-trips with its blueprint", function()
 	local ctx, b = busySession()
 	local walk = roundTrip(ctx).pools.buildings[1].blueprint.walk

@@ -32,6 +32,7 @@
 --   walk width=n:12 depth=n:8 cells=s:..x.. -- its walk grid
 --                                         -- (src/game/buildings/walk_grid.lua)
 --   vertex x=n:.. y=n:.. z=n:.. nx=n:.. ny=n:.. nz=n:.. r=n:.. g=n:.. b=n:..
+--          [material=s:.. slot=s:.. textureVariant=s:.. textureScale=n:.. textureRotation=n:..]
 --                                         -- its mesh, one vertex a record
 --   building id=n:2 design=s:mill blueprint=n:1 facing=s:N tileX=n:.. ...
 --   storage log=n:3                       -- the building above's storage
@@ -183,6 +184,31 @@ local function terrainRecords(lines, world)
 	flush()
 end
 
+-- A mesh vertex as a flat record: its texture ({ variant, scale, rotation })
+-- as textureVariant, textureScale and textureRotation.
+local function vertexRecord(v)
+	local t = v.texture
+	if not t then
+		return Codec.record("vertex", v)
+	end
+	local flat = {}
+	for k, value in pairs(v) do
+		flat[k] = value
+	end
+	flat.texture = nil
+	flat.textureVariant, flat.textureScale, flat.textureRotation = t.variant, t.scale, t.rotation
+	return Codec.record("vertex", flat)
+end
+
+-- A mesh vertex from its record's fields, its texture rebuilt.
+local function vertexFrom(f)
+	if f.textureVariant ~= nil then
+		f.texture = { variant = f.textureVariant, scale = f.textureScale, rotation = f.textureRotation }
+		f.textureVariant, f.textureScale, f.textureRotation = nil, nil, nil
+	end
+	return f
+end
+
 -- Every blueprint the buildings and sites in `placed` stand on, each once
 -- (by content hash), in first-use order. Returns blueprint number by hash.
 local function blueprintRecords(lines, placed)
@@ -204,7 +230,7 @@ local function blueprintRecords(lines, placed)
 			lines[#lines + 1] = Codec.record("auras", bp.auras)
 			lines[#lines + 1] = Codec.record("walk", bp.walk)
 			for _, v in ipairs(bp.mesh) do
-				lines[#lines + 1] = Codec.record("vertex", v)
+				lines[#lines + 1] = vertexRecord(v)
 			end
 		end
 	end
@@ -467,7 +493,7 @@ local function build(records, config)
 		elseif tag == "traits" or tag == "auras" or tag == "walk" then
 			last(blueprints, tag, r.line)[tag] = f
 		elseif tag == "vertex" then
-			table.insert(last(blueprints, tag, r.line).mesh, f)
+			table.insert(last(blueprints, tag, r.line).mesh, vertexFrom(f))
 		elseif tag == "building" then
 			buildings[#buildings + 1] = { fields = f, storage = {}, ports = {}, functions = {} }
 		elseif tag == "storage" then

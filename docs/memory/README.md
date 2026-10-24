@@ -11,3 +11,5 @@ Situational facts: true only when touching a particular area. One fact per file.
 - [e2e-isolate-save-dir.md](e2e-isolate-save-dir.md) — e2e shares the player's real save dir; give designs/save/prop-cache test-only names and clear them first
 - [world-screen-modal-input.md](world-screen-modal-input.md) — world-screen menus and text boxes must drop the opening key's textinput and suppress polled WASD/E/F intents
 - [projection-single-source.md](projection-single-source.md) — world/screen pixel math goes through `Projection` with the active view; no inline `tileSize` math
+- [tests-need-sandbox-off.md](tests-need-sandbox-off.md) — integration (`os.tmpname`) and e2e (launches LÖVE) fail inside the Claude sandbox; run them with it disabled
+- [e2e-spies-on-module-functions.md](e2e-spies-on-module-functions.md) — e2e tests count calls by replacing module functions like `Baker.bake`; when calls move to a new function, update the spies

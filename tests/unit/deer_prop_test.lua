@@ -31,13 +31,18 @@ end)
 
 test("facings and walk frames differ; the same input is identical", function()
 	assertEqual(signature(deer(3, 2)), signature(deer(3, 2)))
-	assertTrue(signature(deer(1, 1)) ~= signature(deer(3, 1)), "north and east differ")
 	assertTrue(signature(deer(3, 1)) ~= signature(deer(3, 2)), "walk differs from standing")
-	assertEqual(signature(deer(1, 1)), signature(deer(2, 1)), "a diagonal takes its cardinal base")
+	assertEqual(signature(deer(1, 1)), signature(deer(5, 1)), "the model is built once, facing N; turning happens at bake")
 end)
 
 test("the deer is registered with a variant per facing and a stage per frame", function()
 	assertEqual("deer", Registry.DEER.kind)
 	assertEqual(8, Registry.variants(Registry.DEER, { props = { variants = 3 } }))
 	assertEqual(Character.FRAMES, Registry.DEER.stages)
+end)
+
+test("deer variants bake turned in 45 degree steps", function()
+	for variant = 1, #Character.DIRECTIONS do
+		assertEqual((variant - 1) * 45, Registry.turn(Registry.DEER, variant))
+	end
 end)

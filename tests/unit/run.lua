@@ -58,6 +58,7 @@ local defaultTestFiles = {
 	"tests/unit/character_system_test.lua",
 	"tests/unit/sandbox_test.lua",
 	"tests/unit/geometry_test.lua",
+	"tests/unit/mesh_yaw_test.lua",
 	"tests/unit/voxelise_test.lua",
 	"tests/unit/compile_test.lua",
 	"tests/unit/walk_grid_test.lua",

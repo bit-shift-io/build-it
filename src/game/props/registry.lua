@@ -1,7 +1,8 @@
 -- Every prop kind and how to build its variants. Pure -- no `love.*`.
 --
 -- A kind: { kind = <name>, version = <generator version>, stages = <count>,
---           generate = function(rng, params) -> block model }
+--           generate = function(rng, params) -> block model,
+--           turns = <true: each variant is a facing, baked turned> }
 -- The baked-sprite cache (src/app/bake/prop_cache.lua) keys each kind's
 -- sprites by its version, so bumping one generator rebakes that kind only.
 local Rng = require("src.core.rng")
@@ -21,12 +22,13 @@ Registry.KINDS = {
 
 -- The character (src/game/props/character.lua): baked and cached like a
 -- prop, but never a resource node, so not in KINDS. Its variants are the 8
--- facing directions and its stages the idle and walk frames. `variants`
--- overrides config.props.variants.
+-- facing directions, one model turned (Registry.turn), and its stages the
+-- idle and walk frames. `variants` overrides config.props.variants.
 Registry.CHARACTER = {
 	kind = "character",
 	version = Character.VERSION,
 	variants = #Character.DIRECTIONS,
+	turns = true,
 	stages = Character.FRAMES,
 	generate = Character.generate,
 }
@@ -37,6 +39,7 @@ Registry.DEER = {
 	kind = "deer",
 	version = Deer.VERSION,
 	variants = #Character.DIRECTIONS,
+	turns = true,
 	stages = Character.FRAMES,
 	generate = Deer.generate,
 }
@@ -50,9 +53,10 @@ function Registry.villager(config)
 		kind = "villager",
 		version = Rng.hash(Character.VERSION, shirt[1], shirt[2], shirt[3]),
 		variants = #Character.DIRECTIONS,
+		turns = true,
 		stages = Character.FRAMES,
 		generate = function(_rng, params)
-			return Character.model(params.variant, params.stage, shirt)
+			return Character.model(params.stage, shirt)
 		end,
 	}
 end
@@ -71,6 +75,13 @@ end
 -- How many variants a kind has: its own count, else config.props.variants.
 function Registry.variants(def, config)
 	return def.variants or config.props.variants
+end
+
+-- Degrees a kind's variant bakes turned, clockwise seen from above: for a
+-- kind that `turns`, facing k (Character.DIRECTIONS) is (k - 1) x 45; any
+-- other kind is baked as generated, 0.
+function Registry.turn(def, variant)
+	return def.turns and (variant - 1) * 360 / #Character.DIRECTIONS or 0
 end
 
 return Registry

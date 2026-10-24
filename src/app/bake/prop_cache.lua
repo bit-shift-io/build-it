@@ -130,7 +130,8 @@ local function bake(cache, def, scale, viewName)
 	local x, y, shelfHeight, atlasW = PADDING, PADDING, 0, 0
 	for stage = 1, def.stages do
 		for variant = 1, Registry.variants(def, config) do
-			local sprite = Baker.bake(Registry.model(def, variant, stage, config), "N", config, scale, view)
+			local model = Registry.model(def, variant, stage, config)
+			local sprite = Baker.bakeTurned(model, Registry.turn(def, variant), config, scale, view)
 			local f = sprite.frame
 			entries[#entries + 1] = {
 				variant = variant,

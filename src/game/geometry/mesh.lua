@@ -108,6 +108,35 @@ function Mesh.turn(triangles, width, depth, facing)
 	return out, width, depth
 end
 
+-- `triangles` on a width x depth footprint (model space, its north-west
+-- corner on the origin) turned `degrees` clockwise seen from above about
+-- the footprint centre, normals with them: 90 on a square footprint is
+-- Mesh.turn's "E". The footprint keeps its size; a turned mesh may stick
+-- past it.
+function Mesh.yaw(triangles, width, depth, degrees)
+	local c, s = rotation(degrees)
+	local cx, cy = width / 2, depth / 2
+	local out = {}
+	for i, v in ipairs(triangles) do
+		local dx, dy = v.x - cx, v.y - cy
+		out[i] = {
+			x = cx + dx * c - dy * s,
+			y = cy + dx * s + dy * c,
+			z = v.z,
+			nx = v.nx * c - v.ny * s,
+			ny = v.nx * s + v.ny * c,
+			nz = v.nz,
+			r = v.r,
+			g = v.g,
+			b = v.b,
+			material = v.material,
+			texture = v.texture,
+			slot = v.slot,
+		}
+	end
+	return out
+end
+
 -- Every list in `lists` joined into one.
 function Mesh.merge(lists)
 	local out = {}
