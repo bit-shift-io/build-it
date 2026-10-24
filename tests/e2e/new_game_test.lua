@@ -46,8 +46,8 @@ test("a new game shows the storage facility with the stockpile and 20 villagers 
 	local facility = ctx.pools.buildings[1]
 	assertEqual(Starter.NAME, facility.design)
 	local totals = StorageFacility.totals(ctx)
-	assertEqual(50, totals.plank)
-	assertEqual(50, totals.stone)
+	assertEqual(Config.stockpile.plank, totals.plank)
+	assertEqual(Config.stockpile.stone, totals.stone)
 	assertEqual(config.villagers.count, #ctx.pools.villagers)
 
 	FrameStepper.step(game, 2)

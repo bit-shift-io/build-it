@@ -52,6 +52,7 @@ Builtins.DESIGNS = {
 	"hunter_lodge",
 	"bedhouse",
 	"canteen",
+	"forester",
 }
 
 -- Every built-in prefab name: role prefabs, then starter prefabs.

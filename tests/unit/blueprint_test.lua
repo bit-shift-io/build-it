@@ -78,8 +78,8 @@ test("the starter building's depot tile and storage come from its blueprint", fu
 	local b = Placement.build(newCtx(), { blueprint = starter(), facing = "N", tileX = 10, tileY = 10 })
 	assertEqual("depot", b.functionBricks[1].ability)
 	assertEqual(10, b.functionBricks[1].tileX)
-	assertEqual(10, b.functionBricks[1].tileY)
-	assertEqual(466, b.storage.capacity)
+	assertEqual(11, b.functionBricks[1].tileY)
+	assertEqual(264, b.storage.capacity)
 end)
 
 local Mesh = require("src.game.geometry.mesh")

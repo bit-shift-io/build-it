@@ -47,18 +47,6 @@ test("Mover.apply stops a record at a building footprint", function()
 	assertNear(96 - 8, r.x)
 end)
 
-test("Mover.apply walks a record through the one building in mover.enter, and stops at any other", function()
-	local ctx = footprintCtx()
-	local r = record(80, 48, 120)
-	r.mover.enter = World.buildingAt(ctx.world, 3, 0)
-	Mover.apply(r, { x = 1, y = 0 }, ctx)
-	assertNear(92, r.x)
-	local other = record(80, 48, 120)
-	other.mover.enter = { tileX = 7, tileY = 0, width = 1, depth = 1, ports = {} }
-	Mover.apply(other, { x = 1, y = 0 }, ctx)
-	assertNear(96 - 8, other.x)
-end)
-
 test("Mover.apply moves a record out of a footprint it overlaps but may not enter", function()
 	local ctx = footprintCtx()
 	-- Centre in the footprint (tile 3 spans x 96..128): walking east leaves it.
@@ -80,4 +68,99 @@ test("Mover.apply never lets a record overlapping one footprint into another", f
 		Mover.apply(r, { x = 1, y = 0 }, ctx)
 	end
 	assertTrue(r.x + 8 <= 128, "stopped at the second footprint, at " .. r.x)
+end)
+
+-- A finished 1x1 building on tile (3, 1) (px 96..128 x 32..64) facing N,
+-- its walk grid 4x4 studs of 8 px: walls round the edge, a 1-stud doorway
+-- in the north wall at stud x 1 (px 104..112).
+local ROOM = table.concat({
+	"x.xx",
+	"x..x",
+	"x..x",
+	"xxxx",
+})
+
+local function roomCtx()
+	local world = World.new(10, 10)
+	local blueprint = { width = 1, depth = 1, walk = { width = 4, depth = 4, cells = ROOM } }
+	local building = { tileX = 3, tileY = 1, width = 1, depth = 1, facing = "N", blueprint = blueprint, ports = {} }
+	World.addBuilding(world, building)
+	return { dt = 1 / 60, world = world, config = { tileSize = 32, walk = { cellsPerTile = 4 } } }, building
+end
+
+-- An 8 px record, as the player.
+local function walker(x, y, entersBuildings)
+	return { x = x, y = y, size = 8, mover = { speed = 120, entersBuildings = entersBuildings } }
+end
+
+local function walk(r, intent, ctx, frames)
+	for _ = 1, frames do
+		Mover.apply(r, intent, ctx)
+	end
+end
+
+test("Mover.apply walks a record that enters buildings through a doorway and stops it flush at a wall stud", function()
+	local ctx = roomCtx()
+	local r = walker(108, 20, true)
+	walk(r, { x = 0, y = 1 }, ctx, 60)
+	-- Stud row 3 (px 56..64) is wall: the record's south edge stops at 56.
+	assertNear(52, r.y)
+	assertNear(108, r.x)
+end)
+
+test("Mover.apply stops a record that may not enter at the footprint edge, doorway or not", function()
+	local ctx = roomCtx()
+	local r = walker(108, 20, nil)
+	walk(r, { x = 0, y = 1 }, ctx, 60)
+	assertNear(32 - 4, r.y)
+end)
+
+test("Mover.apply keeps a construction site solid to a record that enters buildings", function()
+	local ctx, building = roomCtx()
+	building.cost = { plank = 4 } -- a site: still to build
+	local r = walker(108, 20, true)
+	walk(r, { x = 0, y = 1 }, ctx, 60)
+	assertNear(32 - 4, r.y)
+end)
+
+test("Mover.apply lets a record that enters buildings walk around inside, walls stopping each axis", function()
+	local ctx = roomCtx()
+	-- Inside, in stud (1, 2) (px 104..112 x 48..56): east wall at stud x 3 (px 120).
+	local r = walker(108, 52, true)
+	walk(r, { x = 1, y = 0 }, ctx, 60)
+	assertNear(120 - 4, r.x)
+	walk(r, { x = 0, y = -1 }, ctx, 60)
+	-- Stud (2, 0) is north wall (px 32..40): stops at 40.
+	assertNear(40 + 4, r.y)
+end)
+
+test("Mover.apply lets a record standing in a wall stud walk out of it", function()
+	local ctx = roomCtx()
+	-- Centred in the west wall stud (0, 2), px 96..104 x 48..56.
+	local r = walker(100, 52, true)
+	walk(r, { x = 1, y = 0 }, ctx, 30)
+	assertTrue(r.x - 4 >= 104, "left the wall, at " .. r.x)
+	local out = walker(100, 52, true)
+	walk(out, { x = -1, y = 0 }, ctx, 30)
+	assertTrue(out.x + 4 <= 96, "walked out of the footprint west, at " .. out.x)
+end)
+
+test("Mover.apply walks a record with mover.enter into that one building by its walk grid, walls included", function()
+	local ctx, building = roomCtx()
+	local r = walker(108, 20, nil)
+	r.mover.enter = building
+	walk(r, { x = 0, y = 1 }, ctx, 60)
+	assertNear(52, r.y, 1e-6, "through the doorway, stopped by the south wall")
+	walk(r, { x = 1, y = 0 }, ctx, 60)
+	assertNear(120 - 4, r.x, 1e-6, "stopped by the east wall")
+
+	local blocked = walker(116, 20, nil)
+	blocked.mover.enter = building
+	walk(blocked, { x = 0, y = 1 }, ctx, 60)
+	assertNear(32 - 4, blocked.y, 1e-6, "the north wall beside the doorway stops it")
+
+	local other = walker(108, 20, nil)
+	other.mover.enter = { tileX = 7, tileY = 0, width = 1, depth = 1, ports = {} }
+	walk(other, { x = 0, y = 1 }, ctx, 60)
+	assertNear(32 - 4, other.y, 1e-6, "another building's footprint stays solid")
 end)

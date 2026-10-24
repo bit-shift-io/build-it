@@ -27,3 +27,10 @@ test("the sprite key holds the palette, so a new team colour rebakes", function(
 	assertTrue(DesignCache.key(bp, 2, "topdown", RED) ~= DesignCache.key(bp, 2, "iso", RED), "view in the key")
 	assertEqual("abc@x2", DesignCache.key(bp, 2, "topdown", nil), "no palette: the old key")
 end)
+
+test("a cutaway sprite keys by blueprint hash apart from the full one", function()
+	local bp = { hash = "abc" }
+	assertEqual("abc@x2@cutaway", DesignCache.key(bp, 2, "topdown", nil, true))
+	assertEqual(DesignCache.key({ hash = "abc" }, 2, "iso", RED, true), DesignCache.key(bp, 2, "iso", RED, true))
+	assertTrue(DesignCache.key(bp, 2, "iso", RED, true) ~= DesignCache.key(bp, 2, "iso", RED), "cutaway in the key")
+end)

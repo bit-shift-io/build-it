@@ -14,7 +14,8 @@
 -- FunctionBrick.hasWork. `operator` is never saved.
 --
 -- Every record of a placed building has tileX, tileY: the world tile
--- under its ability role.
+-- under its ability role, and pointX, pointY: the role's position in world
+-- tiles, fractional, which its operator or sleeper walks to beside.
 --
 -- A fishing brick ({ ability = "fishing", fishing = <item>, progress, state,
 -- operator }) does nothing by itself: its operator stands on land beside any
@@ -64,8 +65,9 @@ FunctionBrick.CANTEEN = "canteen"
 -- (src/game/buildings/blueprint.lua), in role order: a depot ({ ability,
 -- depot = true, state }), or one that harvests a node kind
 -- (config.production.abilities), plants or converts. roleTile(role) ->
--- x, y (optional) gives each record the world tile under its role
--- (tileX, tileY), where its operator works.
+-- x, y, px, py (optional; Placement.roleTile) gives each record the world
+-- tile under its role (tileX, tileY) and the role's position (pointX,
+-- pointY), where its operator works.
 function FunctionBrick.fromBlueprint(blueprint, config, roleTile)
 	local list = {}
 	for _, b in ipairs(blueprint.roles.abilities) do
@@ -94,7 +96,7 @@ function FunctionBrick.fromBlueprint(blueprint, config, roleTile)
 		end
 		if roleTile and #list > count then
 			local fb = list[#list]
-			fb.tileX, fb.tileY = roleTile(b)
+			fb.tileX, fb.tileY, fb.pointX, fb.pointY = roleTile(b)
 		end
 	end
 	return list

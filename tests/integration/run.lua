@@ -39,6 +39,7 @@ local defaultTestFiles = {
 	"tests/integration/library_panel_test.lua",
 	"tests/integration/hot_reload_test.lua",
 	"tests/integration/code_panel_test.lua",
+	"tests/integration/walk_into_building_test.lua",
 }
 
 local tests = {}

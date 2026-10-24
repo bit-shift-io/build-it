@@ -26,7 +26,7 @@ local function design(first, second, productive)
 	end
 	nodes[#nodes + 1] = Designs.port("output", 1, 1)
 	if productive then
-		nodes[#nodes + 1] = "box{ size = { 2, 1, 0.5 }, transform = { move = { 0, 0, 0.0625 } } }"
+		nodes[#nodes + 1] = "box{ size = { 2, 1, 0.0625 }, transform = { move = { 0, 0, 0.0625 } } }"
 	end
 	return Designs.floor(2, 1, unpack(nodes))
 end

@@ -1,6 +1,8 @@
--- A forester and a woodcutter side by side, through the real input path:
--- a villager runs the forester and plants saplings, they grow (growth time overridden to a few
+-- The shipped forester (content/designs/forester.lua) and a woodcutter
+-- side by side, through the real input path: a villager walks in through
+-- the forester's doorway to its planter and plants saplings, they grow (growth time overridden to a few
 -- seconds), and a villager runs the woodcutter's saw on the grown trees.
+-- No villager ever stands in a wall.
 local GameHarness = require("tests.support.game_harness")
 local LoveMock = require("tests.support.love_mock")
 local Fake = require("tests.support.fake_input")
@@ -9,12 +11,12 @@ local World = require("src.game.world")
 local DesignStore = require("src.app.design_store")
 local Designs = require("tests.support.designs")
 local Session = require("src.game.session")
+local Walls = require("tests.support.walls")
 
 local TILE = Config.tileSize
 
--- A planter (or a saw) on the north row of a 2x1 tile floor and an output
--- port on its south edge under tile (1, 0).
-local FORESTER = Designs.floor(2, 1, Designs.ability("planter", 0.375, 0.125), Designs.port("output", 1, 1))
+-- A saw on the north row of a 2x1 tile floor and an output port on its
+-- south edge under tile (1, 0).
 local WOODCUTTER = Designs.floor(2, 1, Designs.ability("saw", 0.375, 0.125), Designs.port("output", 1, 1))
 
 local function fastConfig()
@@ -34,7 +36,6 @@ end
 
 test("a forester replants and a woodcutter harvests the grown trees", function()
 	_G.love = LoveMock.new()
-	assert(DesignStore.write(Config.designs, "designs", "forester", FORESTER))
 	assert(DesignStore.write(Config.designs, "designs", "woodcutter", WOODCUTTER))
 	local world = World.new(20, 20)
 	local config = fastConfig()
@@ -54,9 +55,18 @@ test("a forester replants and a woodcutter harvests the grown trees", function()
 	local forester, cutter = game.ctx.pools.buildings[2], game.ctx.pools.buildings[3] -- after the storage facility
 	assert(forester and cutter, "both buildings were placed")
 
+	local planterInside = false
 	Fake.runUntil(game, function()
+		local inWall = Walls.villagerInWall(game.ctx)
+		assert(not inWall, inWall)
+		for _, v in ipairs(game.ctx.pools.villagers) do
+			planterInside = planterInside
+				or (v.job and v.job.building == forester
+					and World.buildingAt(world, math.floor(v.x / TILE), math.floor(v.y / TILE)) == forester)
+		end
 		return (facility.storage.counts.log or 0) > 0
 	end, 60 * 120)
+	assertTrue(planterInside, "the forester's operator walked in to its planter")
 	assertTrue(facility.storage.counts.log > 0, "a villager harvested a grown tree and storage holds the log")
 
 	for _, n in ipairs(game.ctx.pools.nodes) do

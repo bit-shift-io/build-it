@@ -26,6 +26,8 @@ local function pickName(ctx)
 	return names[ctx.rng:int(1, #names)]
 end
 
+-- A player's character walks into any finished building through its walk
+-- grid (mover.entersBuildings); construction sites stay solid to it.
 local function newCharacter(id, player, x, y, config)
 	return {
 		id = id,
@@ -33,7 +35,7 @@ local function newCharacter(id, player, x, y, config)
 		x = x,
 		y = y,
 		size = config.character.size,
-		mover = { speed = config.character.speed },
+		mover = { speed = config.character.speed, entersBuildings = true },
 		inventory = Inventory.new(),
 		harvester = { progress = 0 },
 		needs = Needs.new(),
@@ -42,8 +44,10 @@ local function newCharacter(id, player, x, y, config)
 end
 
 -- A villager record (docs/CONTEXT.md "Villager") at (x, y) px, standing
--- idle and empty-handed (load). Footprints are solid to it unless it
--- operates a brick there (mover.enter, set by src/game/jobs/operate.lua).
+-- idle and empty-handed (load). Footprints are solid to it, except the
+-- building whose brick it operates or bed it sleeps in, which it walks
+-- into through a doorway (mover.enter, set by src/game/jobs/operate.lua
+-- and src/game/jobs/sleep.lua).
 -- `job` is the job it holds, nil while free.
 function Session.newVillager(id, x, y, config)
 	local cfg = config.villagers

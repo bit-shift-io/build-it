@@ -1,0 +1,35 @@
+-- Starter building (docs/CONTEXT.md "Blueprint"): the forester, a planter that plants saplings nearby for a woodcutter to fell.
+-- Declarative: stone walls a little over body height with a 1-tile
+-- doorway in the south wall and framed windows, a plank gable roof and
+-- role prefabs inside, no code. Lengths in tiles; x east, y south, z up.
+-- Runs only through the sandbox.
+return group{ id = "root", name = "Forester",
+	group{ id = "walls", name = "Walls", material = { name = "stone" }, color = { 0.86, 0.8, 0.7 },
+		box{ id = "north_1", name = "North wall", size = { 0.75, 0.125, 0.875 } },
+		box{ id = "north_2", name = "North wall", size = { 0.5, 0.125, 0.375 }, transform = { move = { 0.75, 0, 0 } } },
+		box{ id = "north_3", name = "North wall", size = { 0.5, 0.125, 0.125 }, transform = { move = { 0.75, 0, 0.75 } } },
+		box{ id = "north_4", name = "North wall", size = { 0.75, 0.125, 0.875 }, transform = { move = { 1.25, 0, 0 } } },
+		box{ id = "south_1", name = "South wall", size = { 0.4375, 0.125, 0.875 }, transform = { move = { 0, 1.875, 0 } } },
+		box{ id = "south_2", name = "South wall", size = { 1.125, 0.125, 0.125 }, transform = { move = { 0.4375, 1.875, 0.75 } } },
+		box{ id = "south_3", name = "South wall", size = { 0.4375, 0.125, 0.875 }, transform = { move = { 1.5625, 1.875, 0 } } },
+		box{ id = "west_1", name = "West wall", size = { 0.125, 0.625, 0.875 }, transform = { move = { 0, 0.125, 0 } } },
+		box{ id = "west_2", name = "West wall", size = { 0.125, 0.5, 0.375 }, transform = { move = { 0, 0.75, 0 } } },
+		box{ id = "west_3", name = "West wall", size = { 0.125, 0.5, 0.125 }, transform = { move = { 0, 0.75, 0.75 } } },
+		box{ id = "west_4", name = "West wall", size = { 0.125, 0.625, 0.875 }, transform = { move = { 0, 1.25, 0 } } },
+		box{ id = "east_1", name = "East wall", size = { 0.125, 0.625, 0.875 }, transform = { move = { 1.875, 0.125, 0 } } },
+		box{ id = "east_2", name = "East wall", size = { 0.125, 0.5, 0.375 }, transform = { move = { 1.875, 0.75, 0 } } },
+		box{ id = "east_3", name = "East wall", size = { 0.125, 0.5, 0.125 }, transform = { move = { 1.875, 0.75, 0.75 } } },
+		box{ id = "east_4", name = "East wall", size = { 0.125, 0.625, 0.875 }, transform = { move = { 1.875, 1.25, 0 } } },
+		extrude{ id = "west_gable", name = "Gable", height = 0.125, shape{ points = { { 0, 0 }, { 2, 0 }, { 1, 0.5 } }, plane = { origin = { 0, 0, 0.875 }, u = { 0, 1, 0 }, v = { 0, 0, 1 } } } },
+		extrude{ id = "east_gable", name = "Gable", height = 0.125, shape{ points = { { 0, 0 }, { 2, 0 }, { 1, 0.5 } }, plane = { origin = { 1.875, 0, 0.875 }, u = { 0, 1, 0 }, v = { 0, 0, 1 } } } },
+	},
+	prefab("window_frame", { id = "north_window", material = { name = "plank" }, color = { 0.55, 0.36, 0.2 }, params = { width = 0.5, height = 0.375, bar = 0.0625, depth = 0.125 }, transform = { move = { 0.75, 0, 0.375 } } }),
+	box{ id = "north_window_glass", name = "Glass", size = { 0.375, 0.03125, 0.25 }, color = { 0.62, 0.8, 0.95 }, transform = { move = { 0.8125, 0.046875, 0.4375 } } },
+	prefab("door_frame", { id = "south_door", material = { name = "plank" }, color = { 0.55, 0.36, 0.2 }, params = { width = 1.125, height = 0.75, post = 0.0625, depth = 0.125 }, transform = { move = { 0.4375, 1.875, 0 } } }),
+	prefab("window_frame", { id = "west_window", material = { name = "plank" }, color = { 0.55, 0.36, 0.2 }, params = { width = 0.5, height = 0.375, bar = 0.0625, depth = 0.125 }, transform = { move = { 0.125, 0.75, 0.375 }, rotate = { 0, 0, 90 } } }),
+	box{ id = "west_window_glass", name = "Glass", size = { 0.03125, 0.375, 0.25 }, color = { 0.62, 0.8, 0.95 }, transform = { move = { 0.046875, 0.8125, 0.4375 } } },
+	prefab("window_frame", { id = "east_window", material = { name = "plank" }, color = { 0.55, 0.36, 0.2 }, params = { width = 0.5, height = 0.375, bar = 0.0625, depth = 0.125 }, transform = { move = { 2, 0.75, 0.375 }, rotate = { 0, 0, 90 } } }),
+	box{ id = "east_window_glass", name = "Glass", size = { 0.03125, 0.375, 0.25 }, color = { 0.62, 0.8, 0.95 }, transform = { move = { 1.921875, 0.8125, 0.4375 } } },
+	extrude{ id = "roof", name = "Roof", material = { name = "plank" }, color = { 0.66, 0.28, 0.2 }, height = 2, shape{ points = { { 0, 0 }, { 1, 0.5 }, { 2, 0 }, { 2, 0.125 }, { 1, 0.625 }, { 0, 0.125 } }, plane = { origin = { 0, 0, 0.875 }, u = { 0, 1, 0 }, v = { 0, 0, 1 } } } },
+	prefab("planter", { id = "planter_1", transform = { move = { 0.75, 0.25, 0 } } }),
+}

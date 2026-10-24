@@ -20,7 +20,7 @@ test("a saved script shadows the built-in of the same name and kind", function()
 end)
 
 local SHED = [[return group{ box{ size = { 1, 1, 1 } } }]]
-local MILL = [[return group{ box{ size = { 2, 1, 1 } }, prefab("saw", { transform = { move = { 0.25, 0.25, 0 } } }) }]]
+local MILL = [[return group{ box{ size = { 2, 1, 0.0625 } }, prefab("saw", { transform = { move = { 0.25, 0.25, 0 } } }) }]]
 
 local function names(entries)
 	local out = {}

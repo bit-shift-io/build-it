@@ -125,13 +125,21 @@ test("Session.step walks a villager sent across the map to its target, round the
 	for _ = 1, 60 * 30 do
 		Session.advance(ctx, 1 / 60)
 		crossed = crossed or World.buildingAt(ctx.world, math.floor(v.x / tile), math.floor(v.y / tile)) == b
-		if Walker.idle(v.walker) and v.animator.frame == 1 then
+		if Walker.idle(v.walker) then
 			break
 		end
 	end
 	assertFalse(crossed, "expected the villager to walk round the footprint")
-	assertNear((tx + 0.5) * tile, v.x)
-	assertNear((ty + 0.5) * tile, v.y)
+	-- Checked as the walk ends: it was settled before the walk, so crowd
+	-- mates' personal space may already nudge it on the step it lands.
+	assertNear((tx + 0.5) * tile, v.x, 1)
+	assertNear((ty + 0.5) * tile, v.y, 1)
+	for _ = 1, 60 * 5 do
+		if v.animator.frame == 1 then
+			break
+		end
+		Session.advance(ctx, 1 / 60)
+	end
 	assertEqual(1, v.animator.frame, "idle once there")
 end)
 

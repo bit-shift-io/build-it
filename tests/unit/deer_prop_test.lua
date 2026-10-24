@@ -23,7 +23,7 @@ test("a deer fits its 1x1 footprint, in every facing and frame", function()
 			local model = deer(variant, stage)
 			assertTrue(#model.cells > 20, "expected a body")
 			local b = Model.bounds(model)
-			assertTrue(b.minX >= 0 and b.minY >= 0 and b.maxX <= 16 and b.maxY <= 16, "inside the tile")
+			assertTrue(b.minX >= 0 and b.minY >= 0 and b.maxX <= 32 and b.maxY <= 32, "inside the tile")
 			assertEqual(0, b.minZ)
 		end
 	end

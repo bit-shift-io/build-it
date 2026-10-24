@@ -13,6 +13,8 @@
 --
 -- Tile size in pixels comes from config.tileSize, so the world itself holds
 -- no tuning numbers. Pure -- no `love.*` (docs/ARCHITECTURE.md "Layers").
+local WalkGrid = require("src.game.buildings.walk_grid")
+
 local World = {}
 
 -- An all-grass world with an empty node pool.
@@ -120,15 +122,69 @@ end
 
 -- True when nothing may stand on tile (x, y): water, a node or a building.
 -- Port tiles stay open. Tiles off the world are not blocked here; Mover
--- clamps to the world edge. Footprints are solid except `enter`, the one
--- building the asker may walk into (a brick's operator; nil for everyone
--- else, the player included).
-function World.isBlocked(world, x, y, enter)
+-- clamps to the world edge. Footprints are solid: whoever walks into a
+-- building walks by its stud cells instead (World.studBlocker,
+-- World.doorways).
+function World.isBlocked(world, x, y)
 	if World.terrainAt(world, x, y) == "water" or World.nodeAt(world, x, y) ~= nil then
 		return true
 	end
-	local b = World.buildingAt(world, x, y)
-	return b ~= nil and b ~= enter
+	return World.buildingAt(world, x, y) ~= nil
+end
+
+-- What blocks stud cell (sx, sy) (docs/CONTEXT.md "Walk grid"; `per` cells a
+-- tile side, 0-based from the world's north-west) for a record that walks
+-- into finished buildings: nil when nothing does, else the blocker -- the
+-- building whose footprint covers it, or the tile index of water or a node.
+-- gridOf(building) is the building's walk grid turned to its facing, nil
+-- when the record may not walk in (a construction site): then the whole
+-- footprint blocks, otherwise only its blocked cells.
+function World.studBlocker(world, sx, sy, per, gridOf)
+	local tx, ty = math.floor(sx / per), math.floor(sy / per)
+	if World.terrainAt(world, tx, ty) == "water" or World.nodeAt(world, tx, ty) ~= nil then
+		return ty * world.width + tx
+	end
+	local b = World.buildingAt(world, tx, ty)
+	if b == nil then
+		return nil
+	end
+	local grid = gridOf(b)
+	if grid == nil or not WalkGrid.open(grid, sx - b.tileX * per, sy - b.tileY * per) then
+		return b
+	end
+	return nil
+end
+
+-- The doorways of building b (docs/CONTEXT.md "Doorway"), whose walk grid
+-- turned to its facing is `grid`, `per` cells a tile side: every open cell
+-- on the footprint's edge with an open tile (World.isBlocked; port tiles
+-- count) just outside it, as
+--   { tileX, tileY,   -- that outside tile
+--     cellX, cellY,   -- the edge cell, 0-based on the grid
+--     outX, outY }    -- the cell across the edge from it, one off the grid
+-- North edge west to east, then the east, south and west edges.
+function World.doorways(world, b, grid, per)
+	local list = {}
+	local function try(cx, cy, ox, oy)
+		local tx, ty = b.tileX + math.floor(ox / per), b.tileY + math.floor(oy / per)
+		if WalkGrid.open(grid, cx, cy) and index(world, tx, ty) and not World.isBlocked(world, tx, ty) then
+			list[#list + 1] = { tileX = tx, tileY = ty, cellX = cx, cellY = cy, outX = ox, outY = oy }
+		end
+	end
+	local w, d = grid.width, grid.depth
+	for x = 0, w - 1 do
+		try(x, 0, x, -1)
+	end
+	for y = 0, d - 1 do
+		try(w - 1, y, w, y)
+	end
+	for x = 0, w - 1 do
+		try(x, d - 1, x, d)
+	end
+	for y = 0, d - 1 do
+		try(0, y, -1, y)
+	end
+	return list
 end
 
 -- True when a villager may stand still on tile (x, y): inside the world,
@@ -145,7 +201,7 @@ end
 -- The standable tile touching building b's footprint (corners included)
 -- nearest tile (x, y); ties go to the first in row order. Nil when the
 -- footprint is walled in. Where villagers stand to work on a site, since
--- nobody walks onto a footprint.
+-- nobody walks onto one.
 function World.tileBeside(world, b, x, y)
 	local best, bestD
 	for ty = b.tileY - 1, b.tileY + b.depth do

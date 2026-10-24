@@ -19,6 +19,14 @@ local STEP = 1 / 60
 local Designs = require("tests.support.designs")
 local ability, port = Designs.ability, Designs.port
 
+local Walls = require("tests.support.walls")
+
+local function fill(store, item, n)
+	for _ = 1, n do
+		Storage.add(store, item)
+	end
+end
+
 local MILL = Designs.floor(2, 1, ability("sawbench", 0.5, 0.25), port("input", 0.25, 1), port("output", 1.25, 1))
 
 local function setup()
@@ -87,18 +95,109 @@ test("an operator that cannot start (no route) does not keep the right to enter"
 	assertEqual(nil, v.mover.enter)
 end)
 
-test("a saw bench operator reaches its brick tile inside the footprint", function()
-	local ctx, mill, v = setup()
+-- A walled 2x2 mill, walls a voxel thick and body high: one 2-stud door
+-- in the middle of the south wall, an inner wall along row 4 from the west
+-- wall to column 5, and the saw bench (no geometry) at (0.5, 0.5) behind
+-- it; both ports on the south edge, either side of the door.
+--   xxxxxxxx
+--   x......x
+--   x......x
+--   x......x
+--   xxxxxx.x
+--   x......x
+--   x......x
+--   xxx..xxx
+local function wall(x, y, w, d)
+	return string.format("box{ size = { %g, %g, 0.5 }, transform = { move = { %g, %g, 0.0625 } } }", w, d, x, y)
+end
+local WALLED_MILL = Designs.floor(2, 2,
+	wall(0, 0, 2, 0.0625), wall(0, 0, 0.0625, 2), wall(1.9375, 0, 0.0625, 2),
+	wall(0, 1.9375, 0.75, 0.0625), wall(1.25, 1.9375, 0.75, 0.0625),
+	wall(0, 1, 1.5, 0.0625),
+	ability("sawbench", 0.5, 0.5), port("input", 0.25, 2), port("output", 1.75, 2))
+
+local function inWall(v, b)
+	return Walls.under(v, b, Config) ~= nil
+end
+
+test("a saw bench operator walks in through the door to beside its brick, never crossing a wall, and back out", function()
+	local ctx = Session.new(World.new(20, 20), Config, 1)
+	ctx.dt = STEP
+	local mill = Placement.build(ctx, Designs.request(WALLED_MILL, "N", 8, 8))
+	fill(mill.ports[1].buffer, "log", 2)
+	local v = Session.newVillager(1, 9.5 * TILE, 3.5 * TILE, Config)
 	local fb = mill.functionBricks[1]
 	local job = Operate.new(mill, fb)
-	Operate.start(job, v, ctx)
+	assertTrue(Operate.start(job, v, ctx))
+	local worked, wasInside = false, false
+	for _ = 1, 60 * 60 do
+		if job.dead or v.xp.sawbench then
+			break
+		end
+		Walker.step(v, ctx)
+		Operate.step(job, ctx)
+		assertFalse(inWall(v, mill), "overlaps a wall at " .. v.x .. "," .. v.y)
+		wasInside = wasInside or World.buildingAt(ctx.world, math.floor(v.x / TILE), math.floor(v.y / TILE)) == mill
+		if job.stage == "working" and not worked then
+			worked = true
+			-- The open cell nearest the brick point, first in row order.
+			assertNear((8 * 4 + 1.5) * TILE / 4, v.x)
+			assertNear((8 * 4 + 1.5) * TILE / 4, v.y)
+		end
+	end
+	assertTrue(worked, "reached the brick and worked")
+	assertTrue(wasInside)
+	assertEqual(1, v.xp.sawbench, "delivered the plank outside")
+	assertEqual(1, mill.ports[2].buffer.counts.plank)
+end)
+
+test("for every facing an operator walks in to beside its brick, its point inside the brick's tile", function()
+	for _, facing in ipairs(Placement.FACINGS) do
+		local ctx = Session.new(World.new(20, 20), Config, 1)
+		ctx.dt = STEP
+		local mill = Placement.build(ctx, Designs.request(WALLED_MILL, facing, 8, 8))
+		fill(mill.ports[1].buffer, "log", 2)
+		local fb = mill.functionBricks[1]
+		assertEqual(fb.tileX, math.floor(fb.pointX), facing)
+		assertEqual(fb.tileY, math.floor(fb.pointY), facing)
+		local v = Session.newVillager(1, 3.5 * TILE, 3.5 * TILE, Config)
+		local job = Operate.new(mill, fb)
+		assertTrue(Operate.start(job, v, ctx), facing)
+		run(ctx, job, v, 60 * 60, function()
+			assertFalse(inWall(v, mill), facing .. ": overlaps a wall at " .. v.x .. "," .. v.y)
+			return job.stage == "working"
+		end)
+		assertEqual("working", job.stage, facing)
+		local d = math.max(math.abs(v.x / TILE - fb.pointX), math.abs(v.y / TILE - fb.pointY))
+		assertTrue(d <= 0.25, facing .. ": beside the brick, " .. d .. " tiles off")
+	end
+end)
+
+test("an operator whose job ends inside its building walks back out through the door to linger", function()
+	local ctx = Session.new(World.new(20, 20), Config, 1)
+	ctx.dt = STEP
+	local mill = Placement.build(ctx, Designs.request(WALLED_MILL, "N", 8, 8))
+	fill(mill.ports[1].buffer, "log", 2)
+	local v = Session.newVillager(1, 9.5 * TILE, 12.5 * TILE, Config)
+	table.insert(ctx.pools.villagers, v)
+	local job = Operate.new(mill, mill.functionBricks[1])
+	assertTrue(Operate.start(job, v, ctx))
 	run(ctx, job, v, 60 * 60, function()
 		return job.stage == "working"
 	end)
-	assertEqual("working", job.stage)
-	assertEqual(fb.tileX, math.floor(v.x / TILE))
-	assertEqual(fb.tileY, math.floor(v.y / TILE))
-	assertTrue(World.buildingAt(ctx.world, fb.tileX, fb.tileY) == mill, "the brick tile is in the footprint")
+	assertEqual(mill, World.buildingAt(ctx.world, math.floor(v.x / TILE), math.floor(v.y / TILE)), "fixture: inside")
+
+	Operate.finish(job)
+	local out = false
+	for _ = 1, 60 * 20 do
+		Session.advance(ctx, STEP)
+		assertFalse(inWall(v, mill), "overlaps a wall at " .. v.x .. "," .. v.y)
+		if World.buildingAt(ctx.world, math.floor(v.x / TILE), math.floor(v.y / TILE)) == nil then
+			out = true
+			break
+		end
+	end
+	assertTrue(out, "walked out")
 end)
 
 test("an operator heading to the output reserves one room there and frees it when the job ends", function()
@@ -162,12 +261,6 @@ test("a harvester job whose node has no free neighbour ends at once and frees th
 	assertEqual(nil, tree.reservedBy)
 	assertEqual(nil, v.job)
 end)
-
-local function fill(store, item, n)
-	for _ = 1, n do
-		Storage.add(store, item)
-	end
-end
 
 test("a saw bench operator with no output room takes no logs; the job ends at once", function()
 	local ctx, mill, v = setup()

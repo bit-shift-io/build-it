@@ -14,9 +14,9 @@ local Character = require("src.game.props.character")
 local Deer = {}
 
 -- Bump on any change to the output: it invalidates baked deer sprites.
-Deer.VERSION = 1
+Deer.VERSION = 2
 
-local SIZE = 16 -- voxels per tile side
+local SIZE = 32 -- voxels per tile side
 local CENTRE = SIZE / 2
 
 local COAT = { 0.55, 0.36, 0.2 }

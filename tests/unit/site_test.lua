@@ -74,7 +74,6 @@ test("a site blocks its footprint for placement, the player and every villager",
 
 	assertEqual(site, World.buildingAt(ctx.world, 5, 4))
 	assertTrue(World.isBlocked(ctx.world, 4, 4))
-	assertTrue(World.isBlocked(ctx.world, 4, 4, {}), "only the one building named may be entered")
 	assertEqual(nil, World.portAt(ctx.world, 5, 5), "its port tile stays open ground")
 	local _, reason = Placement.check(ctx, request(5, 4))
 	assertEqual("building", reason)

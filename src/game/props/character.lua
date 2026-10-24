@@ -20,7 +20,7 @@ local Model = require("src.game.blocks.model")
 local Character = {}
 
 -- Bump on any change to the output: it invalidates baked character frames.
-Character.VERSION = 1
+Character.VERSION = 2
 
 -- The 8 facings, clockwise from north: the unit-grid step (x east, y south)
 -- it walks along, the cardinal its body is laid out on, and its turn from
@@ -49,7 +49,7 @@ Character.IDLE = 1
 Character.WALK = { 2, 3, 4, 5 }
 Character.FRAMES = 5
 
-local SIZE = 16 -- voxels per tile side
+local SIZE = 32 -- voxels per tile side
 local CENTRE = SIZE / 2
 
 local SKIN = { 0.94, 0.76, 0.6 }

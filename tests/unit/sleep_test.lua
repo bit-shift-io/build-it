@@ -9,6 +9,7 @@ local Placement = require("src.game.buildings.placement")
 local Storage = require("src.game.components.storage")
 local Status = require("src.game.components.status")
 local FunctionBrick = require("src.game.components.function_brick")
+local Walls = require("tests.support.walls")
 
 local TILE = Config.tileSize
 local STEP = 1 / 60
@@ -93,6 +94,56 @@ test("a tired villager walks into a free bed, sleeps and wakes at 0 tiredness", 
 	assertTrue(v.needs.tiredness <= 0.001, "rested")
 	assertEqual(nil, fb.occupant)
 	assertEqual(nil, v.mover.enter)
+end)
+
+-- A walled 2x2 bedroom, walls a voxel thick and body high, one 2-stud
+-- door in the middle of the south wall, and the bed prefab in the
+-- north-west corner behind an inner wall along row 4 (columns 0..5).
+local function wall(x, y, w, d)
+	return string.format("box{ size = { %g, %g, 0.5 }, transform = { move = { %g, %g, 0.0625 } } }", w, d, x, y)
+end
+local WALLED_BED = Designs.floor(2, 2,
+	wall(0, 0, 2, 0.0625), wall(0, 0, 0.0625, 2), wall(1.9375, 0, 0.0625, 2),
+	wall(0, 1.9375, 0.75, 0.0625), wall(1.25, 1.9375, 0.75, 0.0625),
+	wall(0, 1, 1.5, 0.0625),
+	'prefab("bed", { transform = { move = { 0.25, 0.25, 0.0625 } } })')
+
+local function inWall(v, b)
+	return Walls.under(v, b, Config) ~= nil
+end
+
+test("a tired villager walks through the door to its bed, never crossing a wall, and walks out after", function()
+	local ctx = newCtx()
+	local b = place(ctx, WALLED_BED, 4, 2)
+	local fb = b.functionBricks[1]
+	local v = villager(ctx, 5, 0)
+	v.needs.tiredness = NEEDS.tiredAt
+
+	local asleep
+	for _ = 1, 30 * 60 do
+		Session.advance(ctx, STEP)
+		assertFalse(inWall(v, b), "overlaps a wall at " .. v.x .. "," .. v.y)
+		if v.job and v.job.stage == "sleeping" then
+			asleep = true
+			break
+		end
+	end
+	assertTrue(asleep, "reached the bed")
+	assertEqual(b, World.buildingAt(ctx.world, math.floor(v.x / TILE), math.floor(v.y / TILE)))
+	local d = math.max(math.abs(v.x / TILE - fb.pointX), math.abs(v.y / TILE - fb.pointY))
+	assertTrue(d <= 0.5, "beside the bed, " .. d .. " tiles off")
+
+	v.needs.tiredness = 0.001
+	local out
+	for _ = 1, 30 * 60 do
+		Session.advance(ctx, STEP)
+		assertFalse(inWall(v, b), "overlaps a wall at " .. v.x .. "," .. v.y)
+		if not v.job and World.buildingAt(ctx.world, math.floor(v.x / TILE), math.floor(v.y / TILE)) == nil then
+			out = true
+			break
+		end
+	end
+	assertTrue(out, "woke and walked out")
 end)
 
 test("sleeping in a bed takes about a minute from the tired threshold", function()

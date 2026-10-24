@@ -102,7 +102,7 @@ return {
 	-- every wanderEvery seconds (a range). A herd under its cap adds a deer
 	-- every breedEvery seconds. size and speed are in px and px/s.
 	animals = {
-		deer = { size = 14, speed = 45, wanderRadius = 4, wanderEvery = { 3, 8 }, breedEvery = 60 },
+		deer = { size = 7, speed = 45, wanderRadius = 4, wanderEvery = { 3, 8 }, breedEvery = 60 },
 	},
 
 	-- Resource nodes: what a fresh node of each kind holds, the item one
@@ -163,7 +163,10 @@ return {
 	-- The stockpile: the items a new game's starting storage facility
 	-- (src/game/designs/starter.lua) holds. The player's inventory starts
 	-- empty.
-	stockpile = { plank = 50, stone = 50, berry = 20 },
+	-- Sized so it pays for the first chain together (woodcutter, sawmill,
+	-- forester, fishing hut, quarry: about 74 plank and 78 stone); a test
+	-- (tests/unit/starter_content_test.lua) keeps that true.
+	stockpile = { plank = 100, stone = 100, berry = 20 },
 
 	-- Materials (docs/CONTEXT.md "Material", "Texture variant"): what a
 	-- design's nodes may be made of, each with its texture variants in menu
@@ -197,7 +200,7 @@ return {
 	-- side, counted by material. Geometry with no material is
 	-- defaultMaterial.
 	--   voxelsPerItem[material][item]: voxels per item they cost, rounded
-	--     up per material. 64 is a stud cube, which cost a plank as a brick.
+	--     up per material. 256 is about one brick.
 	--   traitVoxels: voxels of a material per point of its traits
 	--     (config.traits) and auras (config.auras); 256 is about one brick.
 	--   roleCosts: what each role adds on top (docs/CONTEXT.md "Role
@@ -205,7 +208,7 @@ return {
 	blueprints = {
 		voxelsPerTile = 16,
 		defaultMaterial = "plank",
-		voxelsPerItem = { plank = { plank = 64 }, stone = { stone = 64 } },
+		voxelsPerItem = { plank = { plank = 256 }, stone = { stone = 256 } },
 		traitVoxels = 256,
 		roleCosts = {
 			abilities = {
@@ -293,8 +296,17 @@ return {
 	-- file in the save directory, shared by every world.
 	settings = { file = "settings.cfg" },
 
+	-- Walk grid (docs/adr/0008, src/game/buildings/walk_grid.lua): a
+	-- blueprint's footprint split into cellsPerTile stud cells a tile side.
+	-- A cell blocks when a voxel's centre lies in the body-height band, from
+	-- floorClearance up to bodyHeight (tiles): lower geometry (floors, short
+	-- fences) is stepped over, higher (roofs, lintels) walked under.
+	-- bodyHeight is a figure's height, 15 voxels on the 32-per-tile figure
+	-- grid.
+	walk = { cellsPerTile = 4, floorClearance = 0.25, bodyHeight = 15 / 32 },
+
 	character = {
-		size = 16, -- placeholder square side, px
+		size = 8, -- placeholder square side, px
 		speed = 160, -- walk speed, px/s
 		-- px walked per walk-cycle frame (src/game/components/animator.lua);
 		-- the 4-frame cycle repeats every 4 * walkFrameDistance px.
@@ -315,7 +327,7 @@ return {
 		buildTime = 1,
 		count = 20,
 		spawnRadius = 6,
-		size = 16,
+		size = 8,
 		speed = 120,
 		shirt = { 0.72, 0.36, 0.2 },
 		pathMaxExpansions = 4000,

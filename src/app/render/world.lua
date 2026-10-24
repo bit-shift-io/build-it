@@ -14,14 +14,18 @@ local AnimalsRender = require("src.app.render.animals")
 
 local WorldRender = {}
 
--- Draws each { sprite, tileX, tileY } back to front: by the view's depth at
--- its footprint's nearest corner (south-east), then west to east. A sprite with a quad draws
--- that region of its image (an atlas). A draw with `alpha` (0..1) is
--- translucent: a construction site. A draw with `tint` ({ r, g, b }) is
--- darkened by it.
-local function drawSprites(draws, p)
+-- Sorts `draws` ({ sprite, tileX, tileY }) back to front: by the view's
+-- depth at each footprint's nearest corner (south-east), then west to
+-- east. A draw with `cutaway` (the building the player stands in) sorts by
+-- its north-west corner instead, so the figures inside draw over its cut
+-- walls and bricks.
+function WorldRender.sortDraws(draws, p)
 	for _, d in ipairs(draws) do
-		d.order = Projection.depth(p, d.tileX + d.sprite.width, d.tileY + d.sprite.depth, 0)
+		if d.cutaway then
+			d.order = Projection.depth(p, d.tileX, d.tileY, 0)
+		else
+			d.order = Projection.depth(p, d.tileX + d.sprite.width, d.tileY + d.sprite.depth, 0)
+		end
 	end
 	table.sort(draws, function(a, b)
 		if a.order ~= b.order then
@@ -29,6 +33,14 @@ local function drawSprites(draws, p)
 		end
 		return a.tileX < b.tileX
 	end)
+end
+
+-- Draws each sprite in WorldRender.sortDraws order. A sprite with a quad
+-- draws that region of its image (an atlas). A draw with `alpha` (0..1) is
+-- translucent: a construction site. A draw with `tint` ({ r, g, b }) is
+-- darkened by it.
+local function drawSprites(draws, p)
+	WorldRender.sortDraws(draws, p)
 
 	love.graphics.push("all")
 	-- Baked pixels are opaque or fully clear, so the canvas is effectively

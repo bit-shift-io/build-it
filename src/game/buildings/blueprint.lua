@@ -13,6 +13,9 @@
 --     cost = { [item] = n },
 --     traits,                -- { productivity, capacity, reach, health }
 --     auras,                 -- { walkSpeed, harvestRate }
+--     walk,                  -- the walk grid, unturned: { width, depth,
+--                            -- cells } in stud cells
+--                            -- (src/game/buildings/walk_grid.lua)
 --     hash }                 -- Blueprint.hash: the content hash
 --
 -- Role positions are model space in tile fractions, before any facing:

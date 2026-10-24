@@ -16,7 +16,7 @@ end
 
 test("an ability role sits where its node is, in tile fractions", function()
 	local bp = compile([[
-		return group{ box{ size = { 2, 2, 1 } },
+		return group{ box{ size = { 2, 2, 0.0625 } },
 			role{ ability = "saw", transform = { move = { 0.5, 1.5, 0 } } } }
 	]])
 	assertEqual(1, #bp.roles.abilities)
@@ -31,7 +31,7 @@ local Mesh = require("src.game.geometry.mesh")
 test("model space puts the footprint's north-west corner on the origin", function()
 	local bp = compile([[
 		return group{ transform = { move = { 1, 2, 0 } },
-			box{ size = { 2.5, 1, 1 } },
+			box{ size = { 2.5, 1, 0.0625 } },
 			role{ ability = "saw", transform = { move = { 0.5, 0.5, 0 } } } }
 	]])
 	assertEqual(3, bp.width)
@@ -106,12 +106,13 @@ local COST_TUNING = {
 
 test("a design costs its voxels plus its roles", function()
 	local bp = assert(Compile.design([[
-		return group{ box{},
+		return group{ box{ size = { 4, 4, 0.0625 } },
 			role{ ability = "saw" },
 			role{ port = "input" },
 			role{ storage = 8 } }
 	]], "design", { prefabs = {} }, tuned(COST_TUNING)))
-	-- 4096 plank voxels at 64 a plank, a saw, an input port, 8 storage.
+	-- 64 x 64 x 1 = 4096 plank voxels at 64 a plank, a saw, an input port,
+	-- 8 storage.
 	assertEqual(64 + 1 + 4, bp.cost.plank)
 	assertEqual(4, bp.cost.stone)
 end)
@@ -145,7 +146,7 @@ end)
 
 test("prefab(name) places a library prefab, moved by its transform", function()
 	local bp = compile([[
-		return group{ box{ size = { 2, 1, 1 } },
+		return group{ box{ size = { 2, 1, 0.0625 } },
 			prefab("saw", { id = "saw1", transform = { move = { 1, 0, 0 } } }) }
 	]], {
 		saw = 'return group{ box{ size = { 0.5, 0.5, 0.5 } }, role{ ability = "saw", transform = { move = { 0.25, 0.25, 0 } } } }',
@@ -222,15 +223,15 @@ end)
 test("a blueprint with no function role is a problem to place", function()
 	local bp = compile([[return group{ box{}, role{ port = "output", transform = { move = { 0.5, 1, 0 } } } }]])
 	assertEqual("no function role", Compile.problems(bp, Config)[1])
-	local saw = compile([[return group{ box{}, role{ ability = "saw", transform = { move = { 0.5, 0.5, 0 } } } }]])
+	local saw = compile([[return group{ box{ size = { 1, 1, 0.0625 } }, role{ ability = "saw", transform = { move = { 0.5, 0.5, 0 } } } }]])
 	assertEqual(0, #Compile.problems(saw, Config))
 end)
 
 test("a converting role with no input port is a problem to place", function()
 	local bench = [[role{ ability = "sawbench", transform = { move = { 0.5, 0.5, 0 } } }]]
-	local bp = compile("return group{ box{ size = { 1, 1, 1 } }, " .. bench .. " }")
+	local bp = compile("return group{ box{ size = { 1, 1, 0.0625 } }, " .. bench .. " }")
 	assertEqual("sawbench without input", Compile.problems(bp, Config)[1])
-	local fed = compile("return group{ box{ size = { 1, 1, 1 } }, " .. bench
+	local fed = compile("return group{ box{ size = { 1, 1, 0.0625 } }, " .. bench
 		.. [[, role{ port = "input", transform = { move = { 0.5, 1, 0 } } } }]])
 	assertEqual(0, #Compile.problems(fed, Config))
 end)
@@ -265,4 +266,51 @@ test("changing a variant, scale or rotation never changes cost; changing materia
 	local plank = cost('{ name = "plank", variant = "logs" }')
 	assertEqual(nil, plank.stone)
 	assertEqual(polished.stone, plank.plank)
+end)
+
+-- A function brick prefab: a bench 0.75 x 0.25 tiles, tall enough to block
+-- its own walk cells, with its role at its centre.
+local SAW = [[
+	return group{ id = "saw",
+		box{ size = { 0.75, 0.25, 0.375 } },
+		role{ ability = "saw", transform = { move = { 0.375, 0.125, 0 } } } }
+]]
+
+-- A 2 x 2 room with full-height walls and a saw inside; `gap`, when true,
+-- leaves a doorway in the south wall from x = 0.75 to 1.25.
+local function sawRoom(gap)
+	local south = gap and [[
+		box{ size = { 0.75, 0.0625, 1 }, transform = { move = { 0, 1.9375, 0 } } },
+		box{ size = { 0.75, 0.0625, 1 }, transform = { move = { 1.25, 1.9375, 0 } } },
+	]] or [[
+		box{ size = { 2, 0.0625, 1 }, transform = { move = { 0, 1.9375, 0 } } },
+	]]
+	return [[
+		return group{
+			box{ size = { 2, 2, 0.0625 } },
+			box{ size = { 2, 0.0625, 1 } },
+			box{ size = { 0.0625, 2, 1 } },
+			box{ size = { 0.0625, 2, 1 }, transform = { move = { 1.9375, 0, 0 } } },
+			]] .. south .. [[
+			prefab("saw", { id = "saw_1", transform = { move = { 0.5, 0.75, 0 } } }),
+		}
+	]]
+end
+
+test("a walled-in function brick fails to compile, named", function()
+	local bp, message = Compile.design(sawRoom(false), "design", { prefabs = { saw = SAW } }, Config)
+	assertEqual(nil, bp)
+	assertEqual("saw_1 can't be reached from outside", message)
+end)
+
+test("a doorway to a function brick lets it compile", function()
+	local bp = compile(sawRoom(true), { saw = SAW })
+	assertEqual(1, #bp.roles.abilities)
+end)
+
+test("a walled-in bed fails to compile, named", function()
+	local bed = SAW:gsub('ability = "saw"', 'ability = "bed"')
+	local bp, message = Compile.design(sawRoom(false):gsub('"saw_1"', '"bed_1"'), "design", { prefabs = { saw = bed } }, Config)
+	assertEqual(nil, bp)
+	assertEqual("bed_1 can't be reached from outside", message)
 end)

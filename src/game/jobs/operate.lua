@@ -15,11 +15,12 @@
 --   work.begin(job, ctx)     -- starts a cycle: sets job.stage, walks
 --   work[job.stage](job, ctx) -- each step once the villager stands still
 --   work.release(job)        -- (optional) frees what the job holds
--- A step calls Operate.walkTo to move on and Operate.done when a cycle is
--- over. The villager keeps whatever it carries when the job ends, and the
--- brick's `operator` is the job while it is held. While it holds the job the
--- villager may walk into the job's building (villager.mover.enter); every
--- other footprint stays solid to it.
+-- A step calls Operate.walkTo or Operate.walkToBrick to move on and
+-- Operate.done when a cycle is over. The villager keeps whatever it carries
+-- when the job ends, and the brick's `operator` is the job while it is
+-- held. While it holds the job the villager may walk into the job's
+-- building (villager.mover.enter), through a doorway and stopped by its
+-- walls; every other footprint stays solid to it.
 local FunctionBrick = require("src.game.components.function_brick")
 local Walker = require("src.game.components.walker")
 local Storage = require("src.game.components.storage")
@@ -60,6 +61,18 @@ end
 function Operate.walkTo(job, ctx, stage, x, y)
 	job.stage = stage
 	if not Walker.goTo(job.villager, ctx, x, y) then
+		Operate.finish(job)
+		return false
+	end
+	return true
+end
+
+-- Sends the operator through a doorway into its building, beside its
+-- brick, under `stage`. False (and the job ended) when there is no route.
+function Operate.walkToBrick(job, ctx, stage)
+	job.stage = stage
+	local fb = job.brick
+	if not Walker.goInside(job.villager, ctx, job.building, fb.pointX, fb.pointY) then
 		Operate.finish(job)
 		return false
 	end
@@ -109,7 +122,7 @@ function Operate.step(job, ctx)
 end
 
 -- Converter work (a saw bench): take the recipe input from an input
--- buffer, carry it to the brick's tile, wait one cycle, carry the product
+-- buffer, carry it to beside the brick, wait one cycle, carry the product
 -- to an output buffer. One output room (job.out) is reserved before the
 -- operator heads for the input, so it never holds an item with nowhere to
 -- put it; the input is taken on pick-up, not reserved on the way.
@@ -157,7 +170,7 @@ function Convert.toInput(job, ctx)
 		Storage.remove(store, item)
 	end
 	Load.add(job.villager.load, item, n)
-	Operate.walkTo(job, ctx, "toBrick", job.brick.tileX, job.brick.tileY)
+	Operate.walkToBrick(job, ctx, "toBrick")
 end
 
 function Convert.toBrick(job, ctx)
@@ -209,8 +222,8 @@ end
 local Harvest = {}
 
 -- The tile beside node `n` the villager walks to: the free neighbour nearest
--- the villager, inside the job's own building or on no footprint at all; ties
--- go to the first in row order. Nil when walled in.
+-- the villager, on no footprint; ties go to the first in row order. Nil
+-- when walled in.
 local function standTile(job, ctx, n)
 	local tile, v = ctx.config.tileSize, job.villager
 	local best, bestD
@@ -218,7 +231,7 @@ local function standTile(job, ctx, n)
 		for dx = -1, 1 do
 			local x, y = n.tileX + dx, n.tileY + dy
 			if (dx ~= 0 or dy ~= 0) and x >= 0 and y >= 0 and x < ctx.world.width and y < ctx.world.height
-				and not World.isBlocked(ctx.world, x, y, job.building)
+				and not World.isBlocked(ctx.world, x, y)
 			then
 				local d = (v.x - (x + 0.5) * tile) ^ 2 + (v.y - (y + 0.5) * tile) ^ 2
 				if not bestD or d < bestD then
@@ -354,7 +367,7 @@ end
 local Plant = {}
 
 function Plant.begin(job, ctx)
-	Operate.walkTo(job, ctx, "toBrick", job.brick.tileX, job.brick.tileY)
+	Operate.walkToBrick(job, ctx, "toBrick")
 end
 
 function Plant.toBrick(job)
@@ -388,7 +401,7 @@ function Plant.toTile(job, ctx)
 	then
 		NodeSystem.plant(ctx, job.brick.plants, x, y)
 	end
-	Operate.walkTo(job, ctx, "back", job.brick.tileX, job.brick.tileY)
+	Operate.walkToBrick(job, ctx, "back")
 end
 
 function Plant.back(job, ctx)
@@ -407,8 +420,8 @@ end
 local Fish = {}
 
 -- The standable land tile beside a water tile in reach nearest the villager,
--- inside the job's own building or on no footprint (never water, a node or a
--- port tile); ties go to the first in row order. Nil when there is none.
+-- on no footprint (never water, a node or a port tile); ties go to the
+-- first in row order. Nil when there is none.
 local function shoreTile(job, ctx)
 	local tile, v, world = ctx.config.tileSize, job.villager, ctx.world
 	local best, bestD
@@ -417,7 +430,7 @@ local function shoreTile(job, ctx)
 			for dx = -1, 1 do
 				local x, y = w[1] + dx, w[2] + dy
 				if (dx ~= 0 or dy ~= 0) and x >= 0 and y >= 0 and x < world.width and y < world.height
-					and not World.isBlocked(world, x, y, job.building) and not World.portAt(world, x, y)
+					and not World.isBlocked(world, x, y) and not World.portAt(world, x, y)
 				then
 					local d = (v.x - (x + 0.5) * tile) ^ 2 + (v.y - (y + 0.5) * tile) ^ 2
 					if not bestD or d < bestD then

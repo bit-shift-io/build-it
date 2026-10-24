@@ -10,24 +10,47 @@ local Mesh = require("src.game.geometry.mesh")
 local Footprint = require("src.game.geometry.footprint")
 local Voxelise = require("src.game.geometry.voxelise")
 local Blueprint = require("src.game.buildings.blueprint")
+local WalkGrid = require("src.game.buildings.walk_grid")
 
 local Compile = {}
 
 -- Every role node under `node`, with where its origin lands once every
--- transform above it applies: { { role, x, y, z }, ... } appended to `out`.
+-- transform above it applies: { { role, x, y, z, name, brick }, ... }
+-- appended to `out`. `brick` is the geometry of the node holding the role
+-- (a role prefab's group: the function brick), as placed; `name` the id of
+-- the nearest prefab instance holding it, else its own.
 local function roles(node, out)
 	local own = {}
 	if node.kind == "role" then
-		own[1] = { role = node.role, x = 0, y = 0, z = 0 }
+		own[1] = { role = node.role, x = 0, y = 0, z = 0, name = node.id }
 	end
 	for _, child in ipairs(node.children or {}) do
 		roles(child, own)
 	end
 	for _, r in ipairs(own) do
 		r.x, r.y, r.z = Mesh.transformPoint(node.transform, r.x, r.y, r.z)
+		if r.brick then
+			r.brick = Mesh.transform(r.brick, node.transform)
+		elseif node.kind ~= "role" then
+			r.brick = Mesh.ofTree(node)
+		end
+		if node.kind == "prefab" and not r.inPrefab then
+			r.name, r.inPrefab = node.id or r.name, true
+		end
 		out[#out + 1] = r
 	end
 	return out
+end
+
+-- The ground a function brick role `r` (Compile's roles) stands on, in
+-- model space shifted by (ox, oy): its brick's bounds, or its own point
+-- when the brick has no geometry.
+local function brickArea(r, ox, oy)
+	local b = r.brick and Mesh.bounds(r.brick)
+	if not b then
+		return { minX = r.x - ox, minY = r.y - oy, maxX = r.x - ox, maxY = r.y - oy }
+	end
+	return { minX = b.minX - ox, minY = b.minY - oy, maxX = b.maxX - ox, maxY = b.maxY - oy }
 end
 
 -- `triangles` moved by (dx, dy).
@@ -139,6 +162,10 @@ local function materialParts(root, cfg)
 end
 
 -- The blueprint of the resolved tree under `root`, or nil and a message.
+-- Its walk grid (src/game/buildings/walk_grid.lua) comes from its voxels;
+-- a function brick or bed no doorway leads to fails as "<id> can't be
+-- reached from outside" (docs/CONTEXT.md "Doorway"), <id> its prefab
+-- instance's.
 function Compile.blueprint(root, config)
 	local cfg = config.blueprints
 	local parts = materialParts(root, cfg)
@@ -153,10 +180,12 @@ function Compile.blueprint(root, config)
 	end
 	local ox, oy = footprint.x, footprint.y
 	local found = { abilities = {}, ports = {}, storage = 0 }
+	local bricks = {}
 	for _, r in ipairs(roles(root, {})) do
 		local x, y = r.x - ox, r.y - oy
 		if r.role.ability then
 			table.insert(found.abilities, { ability = r.role.ability, x = x, y = y })
+			bricks[#bricks + 1] = { name = r.name or r.role.ability, area = brickArea(r, ox, oy) }
 		elseif r.role.port then
 			local edge, px, py = snapPort(x, y, footprint.width, footprint.depth)
 			table.insert(found.ports, { kind = r.role.port, edge = edge, x = px, y = py })
@@ -168,11 +197,21 @@ function Compile.blueprint(root, config)
 	if not cost then
 		return nil, message
 	end
-	local voxels = Voxelise.of(parts, cfg.voxelsPerTile)
+	local voxels, centres = Voxelise.of(parts, cfg.voxelsPerTile)
 	add(cost, voxelCost(voxels, cfg), 1)
+	for _, v in ipairs(centres) do
+		v.x, v.y = v.x - ox, v.y - oy
+	end
+	local walk = WalkGrid.of(centres, footprint.width, footprint.depth, config.walk)
+	for _, brick in ipairs(bricks) do
+		if not WalkGrid.reaches(walk, brick.area, config.walk.cellsPerTile) then
+			return nil, brick.name .. " can't be reached from outside"
+		end
+	end
 	local blueprint = {
 		width = footprint.width,
 		depth = footprint.depth,
+		walk = walk,
 		mesh = shifted(triangles, -ox, -oy),
 		roles = found,
 		cost = cost,

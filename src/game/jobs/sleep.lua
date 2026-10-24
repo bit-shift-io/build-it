@@ -1,7 +1,7 @@
 -- The sleep job (docs/CONTEXT.md "Bed", "Tiredness"): a tired villager
 -- sleeps until its tiredness reaches 0. With a free bed it reserves the
--- nearest one, walks into the bed's building (`mover.enter`, as an operator
--- does) and sleeps there; with none it sleeps where it stands, at the slower
+-- nearest one, walks into the bed's building through a doorway
+-- (`mover.enter`, as an operator does) and sleeps beside it; with none it sleeps where it stands, at the slower
 -- ground rate. A bed is the exception to ADR 0003: it needs no operator, so
 -- the brick's `occupant` is the sleep job, not an operator job. Plain data
 -- in ctx.pools.jobs; src/game/systems/job_system.lua creates, assigns and
@@ -86,7 +86,7 @@ function Sleep.start(job, v, ctx)
 		return sleepRough(job, ctx)
 	end
 	v.mover.enter = job.building
-	if not Walker.goTo(v, ctx, job.brick.tileX, job.brick.tileY) then
+	if not Walker.goInside(v, ctx, job.building, job.brick.pointX, job.brick.pointY) then
 		sleepRough(job, ctx)
 	end
 end

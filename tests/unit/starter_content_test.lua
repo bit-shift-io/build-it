@@ -23,6 +23,7 @@ local BUILDINGS = {
 	hunter_lodge = { abilities = { "hunter" }, output = 1 },
 	bedhouse = { abilities = { "bed", "bed" } },
 	canteen = { abilities = { "canteen" } },
+	forester = { abilities = { "planter" } },
 }
 
 local function abilities(bp)
@@ -118,14 +119,107 @@ test("the picker offers every starter building", function()
 	end
 end)
 
+test("the five first-chain starters fit the stockpile together", function()
+	local total = {}
+	for _, name in ipairs({ "woodcutter", "sawmill", "forester", "fishing_hut", "quarry" }) do
+		local bp = assert(Compile.design(library.designs[name], name, library, Config))
+		for item, n in pairs(bp.cost) do
+			total[item] = (total[item] or 0) + n
+		end
+	end
+	for item, n in pairs(total) do
+		assertTrue(n <= (Config.stockpile[item] or 0), item .. " " .. n .. " > " .. tostring(Config.stockpile[item]))
+	end
+end)
+
 test("every starter building can be placed in a new game, whichever way it faces", function()
+	local config = Config
 	for name in pairs(BUILDINGS) do
 		for _, facing in ipairs(Placement.FACINGS) do
-			local ctx = Session.newGame(World.new(40, 40), Config, 1, library)
+			local ctx = Session.newGame(World.new(40, 40), config, 1, library)
 			local bp = assert(Compile.design(library.designs[name], name, library, Config))
 			local request = { design = name, blueprint = bp, facing = facing, tileX = 4, tileY = 4 }
 			local ok, why = Placement.check(ctx, request)
 			assertTrue(ok, name .. " " .. facing .. ": " .. tostring(why))
+		end
+	end
+end)
+
+local WalkGrid = require("src.game.buildings.walk_grid")
+
+-- The runs of open cells round `grid`'s edge, walked clockwise from the
+-- north-west corner: { length, ... }. A run crossing the start is joined.
+local function edgeRuns(grid)
+	local w, d = grid.width, grid.depth
+	local ring = {}
+	for x = 0, w - 1 do
+		ring[#ring + 1] = WalkGrid.open(grid, x, 0)
+	end
+	for y = 1, d - 1 do
+		ring[#ring + 1] = WalkGrid.open(grid, w - 1, y)
+	end
+	for x = w - 2, 0, -1 do
+		ring[#ring + 1] = WalkGrid.open(grid, x, d - 1)
+	end
+	for y = d - 2, 1, -1 do
+		ring[#ring + 1] = WalkGrid.open(grid, 0, y)
+	end
+	local start
+	for i, open in ipairs(ring) do
+		if not open then
+			start = i
+			break
+		end
+	end
+	local runs, n = {}, 0
+	if not start then
+		return { #ring }
+	end
+	for k = 1, #ring do
+		local open = ring[(start + k - 1) % #ring + 1]
+		if open then
+			n = n + 1
+		elseif n > 0 then
+			runs[#runs + 1], n = n, 0
+		end
+	end
+	if n > 0 then
+		runs[#runs + 1] = n
+	end
+	return runs
+end
+
+test("every starter building and the storage facility is walled in but for doorways at least a tile wide", function()
+	local per = Config.walk.cellsPerTile
+	local names = { "storage_facility" }
+	for name in pairs(BUILDINGS) do
+		names[#names + 1] = name
+	end
+	for _, name in ipairs(names) do
+		local bp = assert(Compile.design(library.designs[name], name, library, Config))
+		local runs = edgeRuns(bp.walk)
+		assertTrue(#runs >= 1, name .. " has a doorway")
+		for _, n in ipairs(runs) do
+			assertTrue(n >= per, name .. " doorway " .. n .. " studs wide, under a tile")
+			assertTrue(n <= 2 * per, name .. " opening " .. n .. " studs wide: not walled in")
+		end
+	end
+end)
+
+test("no starter building's port sits in front of its doorway", function()
+	local per = Config.walk.cellsPerTile
+	for name in pairs(BUILDINGS) do
+		for _, facing in ipairs(Placement.FACINGS) do
+			local world = World.new(20, 20)
+			local bp = assert(Compile.design(library.designs[name], name, library, Config))
+			local b = { tileX = 8, tileY = 8 }
+			local doors = {}
+			for _, d in ipairs(World.doorways(world, b, Placement.walkGrid(bp, facing), per)) do
+				doors[d.tileX .. "," .. d.tileY] = true
+			end
+			for _, p in ipairs(Placement.ports(bp, facing, b.tileX, b.tileY)) do
+				assertFalse(doors[p.x .. "," .. p.y], name .. " " .. facing .. " port at " .. p.x .. "," .. p.y .. " blocks a doorway")
+			end
 		end
 	end
 end)

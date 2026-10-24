@@ -147,7 +147,7 @@ test("villagers haul a placed woodcutter's cost from storage and build it, then 
 	assertEqual(lb.ports[1], World.portAt(again.ctx.world, 13, 8))
 end)
 
-test("the character cannot walk into a placed building", function()
+test("the character cannot walk into a construction site", function()
 	local game, input, c = launch()
 	Fake.pickDesign(game, "hall")
 	Fake.click(game, 1, pointAt(game, c, 12, 9)) -- footprint 12..13 x 9..10

@@ -145,7 +145,11 @@ function GameHarness.wrap(flow, opts)
 		Flow.keypressed(flow, key)
 	end
 
+	-- Dropped while text input is off, as LÖVE does: no textinput event.
 	function game:textinput(text)
+		if not love.keyboard.hasTextInput() then
+			return
+		end
 		Flow.textinput(flow, text)
 	end
 

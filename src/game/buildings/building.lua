@@ -9,7 +9,8 @@
 --     traits,                 -- the blueprint's traits
 --     aura,                   -- the blueprint's auras: { walkSpeed, harvestRate }
 --     functionBricks = { <function brick>, ... }, -- function_brick.lua;
---                             -- each with tileX, tileY: its role's tile
+--                             -- each with tileX, tileY: its role's tile,
+--                             -- and pointX, pointY: its role's position
 --     storage,                -- a Storage (src/game/components/storage.lua)
 --     full,                   -- true while it has no room for a product
 --     ports = { <port>, ... } }
@@ -33,8 +34,9 @@ local function copy(t)
 end
 
 -- ports: Placement.ports's list; each gets an empty buffer sized by the
--- capacity trait. roleTile(role) -> x, y: the world tile under a role
--- position (Placement.roleTile), set on each function brick record.
+-- capacity trait. roleTile(role) -> x, y, px, py: the world tile under a
+-- role position and that position (Placement.roleTile), set on each
+-- function brick record.
 function Building.new(id, request, blueprint, width, depth, ports, config, roleTile)
 	local traits = copy(blueprint.traits)
 	Ports.setup(ports, traits, config)

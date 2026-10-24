@@ -1,4 +1,4 @@
--- Voxel counts of a design's geometry (docs/CONTEXT.md "Voxel", ADR 0006:
+-- Voxels of a design's geometry (docs/CONTEXT.md "Voxel", ADR 0006:
 -- cost and traits come from voxelising, never from analytic volume). Pure;
 -- plain LuaJIT.
 --
@@ -63,8 +63,9 @@ local SPAN = 65536
 
 -- Marks the voxels inside `triangles` (one closed part) in `filled`;
 -- voxels already filled keep their material.
--- Counts new voxels into counts[material].
-local function fill(triangles, material, perTile, filled, counts)
+-- Counts new voxels into counts[material] and appends their centres to
+-- `centres`.
+local function fill(triangles, material, perTile, filled, counts, centres)
 	for i, column in pairs(columns(triangles, perTile)) do
 		for j, hits in pairs(column) do
 			table.sort(hits)
@@ -79,6 +80,7 @@ local function fill(triangles, material, perTile, filled, counts)
 					if not filled[key] then
 						filled[key] = true
 						counts[material] = (counts[material] or 0) + 1
+						centres[#centres + 1] = { x = (i + 0.5) / perTile, y = (j + 0.5) / perTile, z = (k + 0.5) / perTile }
 					end
 				end
 			end
@@ -87,14 +89,15 @@ local function fill(triangles, material, perTile, filled, counts)
 end
 
 -- The voxels, `perTile` to a tile side, inside `parts` ({ { triangles,
--- material }, ... }), each counted once: { [material] = count }. Where
--- parts overlap, the earlier part's material wins.
+-- material }, ... }), each counted once: { [material] = count }, and
+-- every voxel's centre in tiles: { { x, y, z }, ... }. Where parts
+-- overlap, the earlier part's material wins.
 function Voxelise.of(parts, perTile)
-	local filled, counts = {}, {}
+	local filled, counts, centres = {}, {}, {}
 	for _, part in ipairs(parts) do
-		fill(part.triangles, part.material, perTile, filled, counts)
+		fill(part.triangles, part.material, perTile, filled, counts, centres)
 	end
-	return counts
+	return counts, centres
 end
 
 return Voxelise

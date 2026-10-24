@@ -9,6 +9,7 @@ local World = require("src.game.world")
 local Building = require("src.game.buildings.building")
 local StorageFacility = require("src.game.components.storage_facility")
 local Site = require("src.game.buildings.site")
+local WalkGrid = require("src.game.buildings.walk_grid")
 
 local Placement = {}
 
@@ -41,21 +42,31 @@ function Placement.footprint(blueprint, facing)
 	return blueprint.width, blueprint.depth
 end
 
+-- The walk grid of `blueprint` turned to `facing` (src/game/buildings/
+-- walk_grid.lua): cells over the turned footprint, its north-west cell
+-- first.
+function Placement.walkGrid(blueprint, facing)
+	return WalkGrid.turn(blueprint.walk, turns(facing))
+end
+
 local CLOCKWISE = { N = "E", E = "S", S = "W", W = "N" }
 local STEP = { N = { 0, -1 }, E = { 1, 0 }, S = { 0, 1 }, W = { -1, 0 } }
 
 -- The world tile under role position `role` ({ x, y }, model space in tile
 -- fractions) of `blueprint` turned to `facing` with its footprint's
--- north-west tile on (tileX, tileY): where a function brick's operator
--- stands, or the footprint tile behind a port.
+-- north-west tile on (tileX, tileY): a function brick's tile, or the
+-- footprint tile behind a port. Then the role position itself in world
+-- tiles, fractional: what a function brick's operator stands beside.
 function Placement.roleTile(blueprint, facing, tileX, tileY, role)
 	local x, y = math.floor(role.x), math.floor(role.y)
+	local px, py = role.x, role.y
 	local width, depth = blueprint.width, blueprint.depth
 	for _ = 1, turns(facing) do
 		x, y = depth - 1 - y, x
+		px, py = depth - py, px
 		width, depth = depth, width
 	end
-	return tileX + x, tileY + y
+	return tileX + x, tileY + y, tileX + px, tileY + py
 end
 
 -- The ports of `blueprint` turned to `facing`, with its footprint's

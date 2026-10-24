@@ -1,11 +1,13 @@
 -- A* over the tile grid (docs/CONTEXT.md "Tile"). 8-way: a straight step
 -- costs 10, a diagonal 14, and a diagonal never cuts a corner -- both tiles
--- beside it must be open too. Blocked tiles are World.isBlocked's: water and
--- nodes, and building footprints except the one in opts.enter.
+-- beside it must be open too. Blocked tiles are World.isBlocked's: water,
+-- nodes and building footprints. The same search runs over one building's
+-- walk grid at stud resolution (Pathfind.studs).
 -- Deterministic: open tiles leave the heap by cost, then by the heuristic,
 -- then in the order they were first reached, and neighbours are tried in a
 -- fixed order. Pure -- no `love.*`.
 local World = require("src.game.world")
+local WalkGrid = require("src.game.buildings.walk_grid")
 
 local Pathfind = {}
 
@@ -75,26 +77,11 @@ local function pop(heap)
 	end
 end
 
--- The tiles from (fromX, fromY) to (toX, toY), start excluded and target
--- last, as { { x, y }, ... }; an empty list when already there. nil when
--- the target is blocked, off the world, or out of reach within
--- opts.maxExpansions tiles taken off the open list (unlimited when nil).
--- The start tile may itself be blocked, so a walker can step out of one:
--- the footprint it starts in is open for the walk, so it can cross it to
--- the edge.
--- opts = { enter = <building>, maxExpansions = <n> }, optional.
-function Pathfind.find(world, fromX, fromY, toX, toY, opts)
-	opts = opts or {}
-	local enter = opts.enter
-	local startIn = World.buildingAt(world, fromX, fromY)
-	local w, h = world.width, world.height
-	local function open(x, y)
-		return x >= 0
-			and y >= 0
-			and x < w
-			and y < h
-			and (not World.isBlocked(world, x, y, enter) or (startIn ~= nil and not World.isBlocked(world, x, y, startIn)))
-	end
+-- A* over a w x h grid of cells where open(x, y) says which may be
+-- entered, from (fromX, fromY) to (toX, toY): the cells after the start,
+-- target last, or nil when out of reach within maxExpansions cells taken
+-- off the open list (unlimited when nil). The start is never tested.
+local function search(w, open, fromX, fromY, toX, toY, maxExpansions)
 	if not open(toX, toY) then
 		return nil
 	end
@@ -121,7 +108,7 @@ function Pathfind.find(world, fromX, fromY, toX, toY, opts)
 				return path
 			end
 			expansions = expansions + 1
-			if opts.maxExpansions and expansions > opts.maxExpansions then
+			if maxExpansions and expansions > maxExpansions then
 				return nil
 			end
 			for i, s in ipairs(STEPS) do
@@ -142,6 +129,42 @@ function Pathfind.find(world, fromX, fromY, toX, toY, opts)
 		end
 	end
 	return nil
+end
+
+-- The tiles from (fromX, fromY) to (toX, toY), start excluded and target
+-- last, as { { x, y }, ... }; an empty list when already there. nil when
+-- the target is blocked, off the world, or out of reach within
+-- opts.maxExpansions tiles taken off the open list (unlimited when nil).
+-- Every footprint is solid; the walk grid inside one is Pathfind.studs'.
+-- The start tile may itself be blocked, so a walker can step out of one:
+-- the footprint it starts in is open for the walk, so it can cross it to
+-- the edge (a construction site, which has no walk grid).
+-- opts = { maxExpansions = <n> }, optional.
+function Pathfind.find(world, fromX, fromY, toX, toY, opts)
+	opts = opts or {}
+	local startIn = World.buildingAt(world, fromX, fromY)
+	local w, h = world.width, world.height
+	local function open(x, y)
+		return x >= 0
+			and y >= 0
+			and x < w
+			and y < h
+			and (not World.isBlocked(world, x, y) or (startIn ~= nil and World.buildingAt(world, x, y) == startIn))
+	end
+	return search(w, open, fromX, fromY, toX, toY, opts.maxExpansions)
+end
+
+-- The stud cells of walk grid `grid` (src/game/buildings/walk_grid.lua)
+-- from cell (fromX, fromY) to (toX, toY), 0-based on the grid, as for
+-- Pathfind.find: start excluded, target last, nil when the target is
+-- blocked or walled off. Only open cells of the one grid are entered,
+-- so the walk stays inside its footprint. The search is capped at the
+-- grid's cell count, never the tile search's pathMaxExpansions.
+function Pathfind.studs(grid, fromX, fromY, toX, toY)
+	local function open(x, y)
+		return WalkGrid.open(grid, x, y)
+	end
+	return search(grid.width, open, fromX, fromY, toX, toY, grid.width * grid.depth)
 end
 
 return Pathfind

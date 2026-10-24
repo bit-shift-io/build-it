@@ -1,7 +1,7 @@
 -- The A* tile pathfinder (src/game/pathfind.lua): 8-way paths that go
--- around water and nodes, never cut a blocked corner, and cross building
--- footprints, except the one building a caller may enter (and the one it
--- starts inside, to walk out).
+-- around water and nodes, never cut a blocked corner, and never cross building
+-- footprints (except the one it starts inside, to walk out). Inside one
+-- building, Pathfind.studs walks its walk grid stud by stud.
 local Pathfind = require("src.game.pathfind")
 local World = require("src.game.world")
 
@@ -74,27 +74,14 @@ local function footprintWorld()
 	return world
 end
 
-test("Pathfind.find goes around a footprint, and through the one building in opts.enter", function()
+test("Pathfind.find goes around a footprint and never onto one", function()
 	local world = World.new(10, 5)
 	-- A 1-wide building wall at x = 4 with a gap only at y = 4.
 	local wall = { tileX = 4, tileY = 0, width = 1, depth = 4, ports = {} }
 	World.addBuilding(world, wall)
 	local around = Pathfind.find(world, 1, 2, 8, 2)
 	assertTrue(around ~= nil and onPath(around, 4, 4) and not onPath(around, 4, 2), "expected a route round the wall")
-	local through = Pathfind.find(world, 1, 2, 8, 2, { enter = wall })
-	assertTrue(through ~= nil and onPath(through, 4, 2), "expected a straight route through the footprint")
-	assertEqual(7, #through)
-end)
-
-test("Pathfind.find with enter = a building still stops at any other footprint", function()
-	local world = World.new(10, 5)
-	local mine = { tileX = 2, tileY = 0, width = 1, depth = 5, ports = {} }
-	local other = { tileX = 5, tileY = 0, width = 1, depth = 5, ports = {} }
-	World.addBuilding(world, mine)
-	World.addBuilding(world, other)
-	assertTrue(Pathfind.find(world, 0, 2, 3, 2, { enter = mine }) ~= nil)
-	assertEqual(nil, Pathfind.find(world, 0, 2, 8, 2, { enter = mine }))
-	assertEqual(nil, Pathfind.find(world, 0, 2, 5, 2, { enter = mine }), "the target may not be another footprint")
+	assertEqual(nil, Pathfind.find(world, 1, 2, 4, 2), "the target may not be a footprint")
 end)
 
 test("Pathfind.find lets a walker that starts inside a footprint walk out of it", function()
@@ -120,4 +107,40 @@ test("Pathfind.find gives the same path for the same input", function()
 		assertEqual(a[i].x, b[i].x)
 		assertEqual(a[i].y, b[i].y)
 	end
+end)
+
+-- A walk grid (src/game/buildings/walk_grid.lua) from rows, north first.
+local function grid(rows)
+	return { width = #rows[1], depth = #rows, cells = table.concat(rows) }
+end
+
+test("Pathfind.studs goes round an inner wall cell by cell, never through a blocked cell", function()
+	local g = grid({
+		"......",
+		".xxxx.",
+		".x..x.",
+		".x.xx.",
+		"......",
+	})
+	local path = Pathfind.studs(g, 0, 0, 3, 2)
+	assertTrue(path ~= nil, "expected a route round the wall")
+	for _, p in ipairs(path) do
+		assertEqual(".", g.cells:sub(p.y * g.width + p.x + 1, p.y * g.width + p.x + 1), "path crosses " .. p.x .. "," .. p.y)
+	end
+	assertEqual(3, path[#path].x)
+	assertEqual(2, path[#path].y)
+	assertTrue(onPath(path, 2, 4) and onPath(path, 2, 3), "it enters the pocket from below")
+end)
+
+test("Pathfind.studs finds no way into a sealed room", function()
+	local g = grid({
+		"......",
+		".xxxx.",
+		".x..x.",
+		".xxxx.",
+		"......",
+	})
+	assertEqual(nil, Pathfind.studs(g, 0, 0, 2, 2))
+	assertEqual(nil, Pathfind.studs(g, 0, 0, 1, 1), "nor onto a blocked cell")
+	assertEqual(nil, Pathfind.studs(g, 0, 0, 6, 0), "nor off the grid")
 end)

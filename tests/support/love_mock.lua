@@ -111,8 +111,12 @@ function LoveMock.new(opts)
 		isDown = function(key)
 			return state.keysDown[key] == true
 		end,
+		-- Off until the app turns it on, as under SDL3 (LÖVE 12).
 		setTextInput = function(enabled)
 			state.textInput = enabled
+		end,
+		hasTextInput = function()
+			return state.textInput == true
 		end,
 		setKeyRepeat = function(enabled)
 			state.keyRepeat = enabled

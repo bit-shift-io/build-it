@@ -5,7 +5,7 @@
 -- Line based, one record per line (src/game/save/records.lua: `tag
 -- key=n:1 key=s:text ...`):
 --
---   build-it-save 8
+--   build-it-save 9
 --   session seed=n:1 time=n:12.5 rng=n:<rng state> [nextNodeId=n:..] [nextAnimalId=n:..]
 --   world width=n:128 height=n:128
 --   character player=n:1 name=s:Ada x=n:.. y=n:.. facing=n:.. frame=n:.. health=n:..
@@ -14,7 +14,7 @@
 --   villager id=n:1 name=s:Bram x=n:.. y=n:.. facing=n:.. frame=n:.. distance=n:..
 --   load item=s:log count=n:3             -- what the villager above carries,
 --                                         -- only when it carries something
---   waypoint x=n:.. y=n:..                -- the villager's path, next first
+--   waypoint x=n:.. y=n:.. stud=b:true    -- the villager's path, next first; stud: a stud cell, not a tile
 --   herd id=n:1 tileX=n:.. tileY=n:.. cap=n:4 breed=n:..   -- a deer herd
 --   deer id=n:1 herd=n:1 x=n:.. y=n:.. facing=n:.. frame=n:.. distance=n:..
 --                                         -- its path and wander timer are
@@ -29,6 +29,8 @@
 --   price plank=n:12                      -- its cost
 --   traits productivity=n:.. capacity=n:.. reach=n:.. health=n:..
 --   auras walkSpeed=n:.. harvestRate=n:..
+--   walk width=n:12 depth=n:8 cells=s:..x.. -- its walk grid
+--                                         -- (src/game/buildings/walk_grid.lua)
 --   vertex x=n:.. y=n:.. z=n:.. nx=n:.. ny=n:.. nz=n:.. r=n:.. g=n:.. b=n:..
 --                                         -- its mesh, one vertex a record
 --   building id=n:2 design=s:mill blueprint=n:1 facing=s:N tileX=n:.. ...
@@ -99,8 +101,12 @@ local SaveCodec = {}
 -- Format 8 (designs are Lua scripts, ADR 0006 and 0007): buildings and
 -- sites carry blueprints, not design versions. Every older save is
 -- refused, never migrated, so the fallbacks above no longer run.
-local FORMAT = 8
-local OLDEST = 8
+--
+-- Format 9 (ADR 0008): each blueprint carries its walk grid as a `walk`
+-- record. It can't be rebuilt from a saved merged mesh, so format 8 saves
+-- are refused.
+local FORMAT = 9
+local OLDEST = 9
 local HEADER = "build-it-save " .. FORMAT
 
 local function sessionRecord(ctx)
@@ -151,7 +157,7 @@ local function villagerRecords(lines, v)
 		lines[#lines + 1] = Codec.record("xp", v.xp)
 	end
 	for _, p in ipairs(v.walker.path) do
-		lines[#lines + 1] = Codec.record("waypoint", { x = p.x, y = p.y })
+		lines[#lines + 1] = Codec.record("waypoint", { x = p.x, y = p.y, stud = p.stud })
 	end
 end
 
@@ -196,6 +202,7 @@ local function blueprintRecords(lines, placed)
 			lines[#lines + 1] = Codec.record("price", bp.cost)
 			lines[#lines + 1] = Codec.record("traits", bp.traits)
 			lines[#lines + 1] = Codec.record("auras", bp.auras)
+			lines[#lines + 1] = Codec.record("walk", bp.walk)
 			for _, v in ipairs(bp.mesh) do
 				lines[#lines + 1] = Codec.record("vertex", v)
 			end
@@ -457,7 +464,7 @@ local function build(records, config)
 			table.insert(last(blueprints, tag, r.line).roles.ports, f)
 		elseif tag == "price" then
 			last(blueprints, tag, r.line).cost = f
-		elseif tag == "traits" or tag == "auras" then
+		elseif tag == "traits" or tag == "auras" or tag == "walk" then
 			last(blueprints, tag, r.line)[tag] = f
 		elseif tag == "vertex" then
 			table.insert(last(blueprints, tag, r.line).mesh, f)
@@ -497,7 +504,7 @@ local function build(records, config)
 		elseif tag == "xp" then
 			last(villagers, tag, r.line).xp = f
 		elseif tag == "waypoint" then
-			table.insert(last(villagers, tag, r.line).walker.path, { x = f.x, y = f.y })
+			table.insert(last(villagers, tag, r.line).walker.path, { x = f.x, y = f.y, stud = f.stud })
 		else
 			error("line " .. r.line .. " has an unknown record " .. tag)
 		end

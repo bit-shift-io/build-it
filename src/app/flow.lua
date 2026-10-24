@@ -32,6 +32,9 @@ local SCREENS = {
 }
 
 local function newFlow(config)
+	-- SDL3 (LÖVE 12) starts with text input off: no love.textinput, so the
+	-- picker search, the builder's text boxes and code panel get no typing.
+	love.keyboard.setTextInput(true)
 	-- The built-in design scripts (src/game/designs/builtins.lua), read once
 	-- per launch; they ship with the game, so a missing one is a bug.
 	local builtins = assert(Builtins.load(function(path)

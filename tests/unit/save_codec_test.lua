@@ -203,6 +203,14 @@ test("a building's blueprint round-trips whole from the save itself, mesh and al
 	assertEqual(Blueprint.hash(lb.blueprint), lb.blueprint.hash, "its hash is its content's")
 end)
 
+test("a building's walk grid round-trips with its blueprint", function()
+	local ctx, b = busySession()
+	local walk = roundTrip(ctx).pools.buildings[1].blueprint.walk
+	assertEqual(b.blueprint.walk.width, walk.width)
+	assertEqual(b.blueprint.walk.depth, walk.depth)
+	assertEqual(b.blueprint.walk.cells, walk.cells)
+end)
+
 test("buildings and sites placed from one blueprint share one saved blueprint", function()
 	local ctx, b = busySession()
 	local twin = assert(Placement.build(ctx, Designs.request(WORKS, "N", 20, 20, "Works")))
@@ -231,9 +239,9 @@ test("text that is not a readable save is refused with a reason", function()
 	end
 end)
 
-test("a save from before blueprints (format 7 and older) is refused as too old", function()
+test("a save from before walk grids (format 8 and older) is refused as too old", function()
 	local text = SaveCodec.encode(Session.new(World.new(20, 20), Config, 1))
-	for _, format in ipairs({ 1, 7 }) do
+	for _, format in ipairs({ 1, 7, 8 }) do
 		local old = text:gsub("^build%-it%-save %d+", "build-it-save " .. format)
 		local loaded, reason = SaveCodec.decode(old, Config)
 		assertEqual(nil, loaded)
@@ -299,6 +307,28 @@ test("villagers round-trip with their position, animation and the rest of their 
 	-- Idle state (timers, phase) is not saved, so once the walk ends the two
 	-- sessions draw different idle rolls: only the walk itself must match.
 end)
+
+test("a walk saved mid-way keeps which waypoints are stud cells inside a building", function()
+	local ctx = Session.newGame(WorldGen.generate(Config, 1), Config, 1, Builtins)
+	local v = ctx.pools.villagers[2]
+	local b = ctx.pools.buildings[1]
+	assertTrue(Walker.goInside(v, ctx, b, b.tileX + b.width / 2, b.tileY + b.depth / 2))
+	run(ctx, 0.3)
+	local studs = 0
+	for _, p in ipairs(v.walker.path) do
+		studs = studs + (p.stud and 1 or 0)
+	end
+	assertTrue(studs > 0, "fixture: stud waypoints still ahead when saved")
+
+	local lv = roundTrip(ctx).pools.villagers[2]
+	assertEqual(#v.walker.path, #lv.walker.path)
+	for k, p in ipairs(v.walker.path) do
+		assertEqual(p.x, lv.walker.path[k].x)
+		assertEqual(p.y, lv.walker.path[k].y)
+		assertEqual(p.stud, lv.walker.path[k].stud)
+	end
+end)
+
 
 test("a villager's load round-trips", function()
 	local ctx = Session.new(World.new(20, 20), Config, 1)
@@ -452,8 +482,8 @@ end)
 
 local StorageFacility = require("src.game.components.storage_facility")
 
--- A 2x1 hall: no function role, an output port on its south edge.
-local HALL = Designs.floor(2, 1, Designs.port("output", 1.625, 1))
+-- A 6x4 hall (costing several planks): no function role, an output port on its south edge.
+local HALL = Designs.floor(6, 4, Designs.port("output", 1.625, 4))
 
 local function siteSession()
 	local ctx = Session.new(World.new(30, 30), Config, 1)
@@ -584,7 +614,7 @@ test("herds and deer round-trip, and a loaded herd keeps breeding", function()
 	ctx.pools.animals[2].animator.facing = 3
 
 	local text = SaveCodec.encode(ctx)
-	assertTrue(text:find("^build%-it%-save 8") ~= nil, "expected format 8")
+	assertTrue(text:find("^build%-it%-save 9") ~= nil, "expected format 9")
 	local loaded = roundTrip(ctx)
 	assertEqual(1, #loaded.pools.herds)
 	local h = loaded.pools.herds[1]

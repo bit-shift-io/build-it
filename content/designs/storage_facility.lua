@@ -1,36 +1,59 @@
 -- The starting storage facility (docs/CONTEXT.md "Storage facility"): a
--- new game places it free at the world centre (Session.newGame). Walls, a
--- stepped gable roof and a chimney on a 3 x 2 tile footprint, with a depot
--- and storage inside and an input and an output port in the south wall.
--- Lengths are in tiles; x east, y south, z up. Runs only through the
--- sandbox (src/game/script/sandbox.lua).
-local W, D = 3, 2
-local WALL, HEIGHT = 0.125, 1.5
-local STEP = 0.25
-
+-- new game places it free at the world centre (Session.newGame). Stone
+-- walls with framed windows, a plank gable roof and a chimney on a 3 x 2
+-- tile footprint, with a depot and storage inside, an input and an output
+-- port in the south wall, and a 1-tile doorway in it, west of the ports,
+-- to the depot. Lengths are in tiles; x east, y south, z up. Runs only
+-- through the sandbox (src/game/script/sandbox.lua).
 return group{ id = "root", name = "Storage facility",
-	box{ id = "north_wall", name = "North wall", size = { W, WALL, HEIGHT } },
-	box{ id = "south_wall", name = "South wall", size = { W, WALL, HEIGHT }, transform = { move = { 0, D - WALL, 0 } } },
-	box{ id = "west_wall", name = "West wall", size = { WALL, D, HEIGHT } },
-	box{ id = "east_wall", name = "East wall", size = { WALL, D, HEIGHT }, transform = { move = { W - WALL, 0, 0 } } },
-
-	box{ id = "roof_1", name = "Roof", size = { W, D, STEP }, transform = { move = { 0, 0, HEIGHT } } },
-	box{ id = "roof_2", name = "Roof", size = { W, D - 2 * STEP, STEP }, transform = { move = { 0, STEP, HEIGHT + STEP } } },
-	box{ id = "roof_3", name = "Roof", size = { W, D - 4 * STEP, STEP }, transform = { move = { 0, 2 * STEP, HEIGHT + 2 * STEP } } },
-	box{ id = "ridge", name = "Ridge", size = { W, D - 6 * STEP, STEP }, transform = { move = { 0, 3 * STEP, HEIGHT + 3 * STEP } } },
-	box{ id = "chimney", name = "Chimney", size = { 0.375, 0.375, 1 }, transform = { move = { 2.25, 0.8125, HEIGHT + STEP } } },
-
-	prefab("depot", { id = "depot", transform = { move = { 0.25, 0.25, 0 } } }),
+	group{ id = "walls", name = "Walls", color = { 0.86, 0.8, 0.7 },
+		box{ id = "north_1", name = "North wall", size = { 0.5, 0.125, 1 } },
+		box{ id = "north_2", name = "North wall", size = { 0.5, 0.125, 0.375 }, transform = { move = { 0.5, 0, 0 } } },
+		box{ id = "north_3", name = "North wall", size = { 0.5, 0.125, 0.25 }, transform = { move = { 0.5, 0, 0.75 } } },
+		box{ id = "north_4", name = "North wall", size = { 1, 0.125, 1 }, transform = { move = { 1, 0, 0 } } },
+		box{ id = "north_5", name = "North wall", size = { 0.5, 0.125, 0.375 }, transform = { move = { 2, 0, 0 } } },
+		box{ id = "north_6", name = "North wall", size = { 0.5, 0.125, 0.25 }, transform = { move = { 2, 0, 0.75 } } },
+		box{ id = "north_7", name = "North wall", size = { 0.5, 0.125, 1 }, transform = { move = { 2.5, 0, 0 } } },
+		box{ id = "south_1", name = "South wall", size = { 0.1875, 0.125, 1 }, transform = { move = { 0, 1.875, 0 } } },
+		box{ id = "south_2", name = "South wall", size = { 1.125, 0.125, 0.25 }, transform = { move = { 0.1875, 1.875, 0.75 } } },
+		box{ id = "south_3", name = "South wall", size = { 0.4375, 0.125, 1 }, transform = { move = { 1.3125, 1.875, 0 } } },
+		box{ id = "south_4", name = "South wall", size = { 0.5, 0.125, 0.375 }, transform = { move = { 1.75, 1.875, 0 } } },
+		box{ id = "south_5", name = "South wall", size = { 0.5, 0.125, 0.25 }, transform = { move = { 1.75, 1.875, 0.75 } } },
+		box{ id = "south_6", name = "South wall", size = { 0.75, 0.125, 1 }, transform = { move = { 2.25, 1.875, 0 } } },
+		box{ id = "west_1", name = "West wall", size = { 0.125, 0.625, 1 }, transform = { move = { 0, 0.125, 0 } } },
+		box{ id = "west_2", name = "West wall", size = { 0.125, 0.5, 0.375 }, transform = { move = { 0, 0.75, 0 } } },
+		box{ id = "west_3", name = "West wall", size = { 0.125, 0.5, 0.25 }, transform = { move = { 0, 0.75, 0.75 } } },
+		box{ id = "west_4", name = "West wall", size = { 0.125, 0.625, 1 }, transform = { move = { 0, 1.25, 0 } } },
+		box{ id = "east_1", name = "East wall", size = { 0.125, 0.625, 1 }, transform = { move = { 2.875, 0.125, 0 } } },
+		box{ id = "east_2", name = "East wall", size = { 0.125, 0.5, 0.375 }, transform = { move = { 2.875, 0.75, 0 } } },
+		box{ id = "east_3", name = "East wall", size = { 0.125, 0.5, 0.25 }, transform = { move = { 2.875, 0.75, 0.75 } } },
+		box{ id = "east_4", name = "East wall", size = { 0.125, 0.625, 1 }, transform = { move = { 2.875, 1.25, 0 } } },
+		extrude{ id = "west_gable", name = "Gable", height = 0.125, shape{ points = { { 0, 0 }, { 2, 0 }, { 1, 0.5 } }, plane = { origin = { 0, 0, 1 }, u = { 0, 1, 0 }, v = { 0, 0, 1 } } } },
+		extrude{ id = "east_gable", name = "Gable", height = 0.125, shape{ points = { { 0, 0 }, { 2, 0 }, { 1, 0.5 } }, plane = { origin = { 2.875, 0, 1 }, u = { 0, 1, 0 }, v = { 0, 0, 1 } } } },
+	},
+	prefab("window_frame", { id = "north_window", color = { 0.55, 0.36, 0.2 }, params = { width = 0.5, height = 0.375, bar = 0.0625, depth = 0.125 }, transform = { move = { 0.5, 0, 0.375 } } }),
+	box{ id = "north_window_glass", name = "Glass", size = { 0.375, 0.03125, 0.25 }, color = { 0.62, 0.8, 0.95 }, transform = { move = { 0.5625, 0.046875, 0.4375 } } },
+	prefab("window_frame", { id = "north_window2", color = { 0.55, 0.36, 0.2 }, params = { width = 0.5, height = 0.375, bar = 0.0625, depth = 0.125 }, transform = { move = { 2, 0, 0.375 } } }),
+	box{ id = "north_window2_glass", name = "Glass", size = { 0.375, 0.03125, 0.25 }, color = { 0.62, 0.8, 0.95 }, transform = { move = { 2.0625, 0.046875, 0.4375 } } },
+	prefab("door_frame", { id = "south_door", color = { 0.55, 0.36, 0.2 }, params = { width = 1.125, height = 0.75, post = 0.0625, depth = 0.125 }, transform = { move = { 0.1875, 1.875, 0 } } }),
+	prefab("window_frame", { id = "south_window2", color = { 0.55, 0.36, 0.2 }, params = { width = 0.5, height = 0.375, bar = 0.0625, depth = 0.125 }, transform = { move = { 1.75, 1.875, 0.375 } } }),
+	box{ id = "south_window2_glass", name = "Glass", size = { 0.375, 0.03125, 0.25 }, color = { 0.62, 0.8, 0.95 }, transform = { move = { 1.8125, 1.921875, 0.4375 } } },
+	prefab("window_frame", { id = "west_window", color = { 0.55, 0.36, 0.2 }, params = { width = 0.5, height = 0.375, bar = 0.0625, depth = 0.125 }, transform = { move = { 0.125, 0.75, 0.375 }, rotate = { 0, 0, 90 } } }),
+	box{ id = "west_window_glass", name = "Glass", size = { 0.03125, 0.375, 0.25 }, color = { 0.62, 0.8, 0.95 }, transform = { move = { 0.046875, 0.8125, 0.4375 } } },
+	prefab("window_frame", { id = "east_window", color = { 0.55, 0.36, 0.2 }, params = { width = 0.5, height = 0.375, bar = 0.0625, depth = 0.125 }, transform = { move = { 3, 0.75, 0.375 }, rotate = { 0, 0, 90 } } }),
+	box{ id = "east_window_glass", name = "Glass", size = { 0.03125, 0.375, 0.25 }, color = { 0.62, 0.8, 0.95 }, transform = { move = { 2.921875, 0.8125, 0.4375 } } },
+	extrude{ id = "roof", name = "Roof", color = { 0.66, 0.28, 0.2 }, height = 3, shape{ points = { { 0, 0 }, { 1, 0.5 }, { 2, 0 }, { 2, 0.125 }, { 1, 0.625 }, { 0, 0.125 } }, plane = { origin = { 0, 0, 1 }, u = { 0, 1, 0 }, v = { 0, 0, 1 } } } },
+	prefab("chimney", { id = "chimney", params = { height = 1, size = 0.375 }, transform = { move = { 2.25, 0.25, 1 } } }),
+	prefab("depot", { id = "depot", transform = { move = { 0.25, 0.875, 0 } } }),
 	prefab("storage", { id = "storage_1", transform = { move = { 0.875, 0.25, 0 } } }),
 	prefab("storage", { id = "storage_2", transform = { move = { 1.375, 0.25, 0 } } }),
 	prefab("storage", { id = "storage_3", transform = { move = { 1.875, 0.25, 0 } } }),
 	prefab("storage", { id = "storage_4", transform = { move = { 2.375, 0.25, 0 } } }),
-	prefab("storage", { id = "storage_5", transform = { move = { 0.25, 0.875, 0 } } }),
+	prefab("storage", { id = "storage_5", transform = { move = { 0.25, 0.25, 0 } } }),
 	prefab("storage", { id = "storage_6", transform = { move = { 0.75, 0.875, 0 } } }),
 	prefab("storage", { id = "storage_7", transform = { move = { 1.25, 0.875, 0 } } }),
 	prefab("storage", { id = "storage_8", transform = { move = { 1.75, 0.875, 0 } } }),
 	prefab("storage", { id = "storage_9", transform = { move = { 2.25, 0.875, 0 } } }),
-
-	prefab("input_port", { id = "input", transform = { move = { 1.5, D - 0.25, 0 } } }),
-	prefab("output_port", { id = "output", transform = { move = { 2.25, D - 0.25, 0 } } }),
+	prefab("input_port", { id = "input", transform = { move = { 1.5, 1.75, 0 } } }),
+	prefab("output_port", { id = "output", transform = { move = { 2.25, 1.75, 0 } } }),
 }

@@ -29,7 +29,7 @@ test("the HUD shows logs, stone and planks after harvesting one tree to its last
 	harvest(Config.nodes.tree.amount - 3)
 	assertEqual(3, last.stage)
 
-	Fake.holdFor(game, input, "a", 0.15) -- clear of the east tree, then to the south tree
+	Fake.holdFor(game, input, "a", 0.25) -- clear of the east tree and into the south tree's column
 	Fake.holdFor(game, input, "s", 1)
 	harvest(5)
 	assertEqual(2, half.stage)

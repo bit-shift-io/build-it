@@ -20,7 +20,7 @@ end)
 local Library = require("src.game.designs.library")
 
 test("a saved design named like the starter shadows the built-in one", function()
-	local mine = [[return group{ box{ size = { 2, 2, 1 } }, prefab("depot", { transform = { move = { 0.5, 0.5, 0 } } }) }]]
+	local mine = [[return group{ box{ size = { 2, 2, 0.0625 } }, prefab("depot", { transform = { move = { 0.5, 0.5, 0 } } }) }]]
 	local bp = Starter.blueprint(Library.merge(Builtins, { designs = { [Starter.NAME] = mine } }), Config)
 	assertEqual(2, bp.width)
 	assertEqual(2, bp.depth)

@@ -15,6 +15,10 @@ local BuildingsRender = {}
 
 -- One design cache per config table, for the life of the process.
 local caches = setmetatable({}, { __mode = "k" })
+local function cacheFor(config)
+	caches[config] = caches[config] or DesignCache.new(config)
+	return caches[config]
+end
 
 -- The baked sprite of `blueprint` turned to `facing`, at whole bake
 -- `scale`, in view `viewName` (a config.views key, default "topdown"), team
@@ -22,20 +26,45 @@ local caches = setmetatable({}, { __mode = "k" })
 -- docs/DECISIONS: one player, so every building is theirs). Shared by
 -- placed buildings, the placement ghost and the picker.
 function BuildingsRender.sprite(config, blueprint, facing, scale, viewName, palette)
-	caches[config] = caches[config] or DesignCache.new(config)
-	return DesignCache.sprite(caches[config], blueprint, facing, scale, viewName, palette)
+	return DesignCache.sprite(cacheFor(config), blueprint, facing, scale, viewName, palette)
+end
+
+-- The finished building whose footprint holds the player's centre (any
+-- character in ctx.pools.characters; one player), or nil. That building
+-- draws cut away (docs/CONTEXT.md "Cutaway"). World positions, not screen.
+function BuildingsRender.cutawayOf(ctx)
+	local tile = ctx.config.tileSize
+	for _, c in ipairs(ctx.pools.characters) do
+		local x, y = c.x / tile, c.y / tile
+		for _, b in ipairs(ctx.pools.buildings) do
+			if x >= b.tileX and x < b.tileX + b.width and y >= b.tileY and y < b.tileY + b.depth then
+				return b
+			end
+		end
+	end
+	return nil
 end
 
 local SITE_ALPHA = 0.45
 
 -- Appends { sprite, tileX, tileY } per building, and per site with
--- `alpha`, to `draws`; team slots in `palette`.
+-- `alpha`, to `draws`; team slots in `palette`. The building the player
+-- stands in (BuildingsRender.cutawayOf) draws its cutaway sprite, marked
+-- `cutaway` for the world's draw order (WorldRender.sortDraws).
 function BuildingsRender.addDraws(draws, ctx, scale, viewName, palette)
+	local cut = BuildingsRender.cutawayOf(ctx)
 	for _, b in ipairs(ctx.pools.buildings) do
+		local sprite
+		if b == cut then
+			sprite = DesignCache.cutaway(cacheFor(ctx.config), b.blueprint, b.facing, scale, viewName, palette)
+		else
+			sprite = BuildingsRender.sprite(ctx.config, b.blueprint, b.facing, scale, viewName, palette)
+		end
 		table.insert(draws, {
-			sprite = BuildingsRender.sprite(ctx.config, b.blueprint, b.facing, scale, viewName, palette),
+			sprite = sprite,
 			tileX = b.tileX,
 			tileY = b.tileY,
+			cutaway = b == cut or nil,
 		})
 	end
 	for _, site in ipairs(ctx.pools.sites) do

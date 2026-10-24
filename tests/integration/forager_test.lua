@@ -28,13 +28,14 @@ local function launch()
 	for i, x in ipairs({ 11, 14 }) do
 		World.addNode(world, { id = i, kind = "bush", tileX = x, tileY = 6, variant = 1, stage = 1, amount = Config.nodes.bush.amount })
 	end
-	local game = GameHarness.startSession(world, { storage = Config.stockpile })
+	local game = GameHarness.startSession(world, { storage = { plank = 20 } })
 	return game, Fake.FakeInput.new(), game.ctx.pools.characters[1], world
 end
 
 test("a forager's operator brings berries to storage, and its bushes stay and refill", function()
 	local game, _, c, world = launch()
 	local facility = game.ctx.pools.buildings[1]
+	facility.storage.capacity = 200 -- room for the berries; the tiny test store is full of planks
 	local v = Session.newVillager(1, 5.5 * TILE, 12.5 * TILE, Config)
 	table.insert(game.ctx.pools.villagers, v)
 

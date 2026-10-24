@@ -91,7 +91,19 @@ Domain terms for Build-it. Code, docs and conversation use these words with thes
 
 ## Footprint
 - **Definition:** The world tiles a building occupies.
-- **Boundary:** The model's ground bounds rounded up to whole tiles, with no cap, rotated by facing.
+- **Boundary:** The model's ground bounds rounded up to whole tiles, with no cap, rotated by facing. Solid to everyone except the player and the building's own operator or sleeper, who move by its walk grid (ADR 0008).
+
+## Walk grid
+- **Definition:** A blueprint's stud cells, 4 per tile side, each open or blocked. A cell blocks when geometry lies in the body-height band.
+- **Boundary:** Comes from geometry only, never from tags. Low geometry (floors, short fences) never blocks. Saved with the blueprint.
+
+## Doorway
+- **Definition:** An open walk-grid path from a footprint edge into the building.
+- **Boundary:** A gap in the geometry, not a part or tag. A function brick or bed with no doorway to it fails compile.
+
+## Cutaway
+- **Definition:** A building drawn without its geometry above half body height.
+- **Boundary:** Only the building the player stands in. Other buildings draw whole, operators inside them hidden.
 
 ## Trait
 - **Definition:** A numeric building property summed from its blueprint's voxels by material: productivity, capacity, reach, health.
@@ -145,7 +157,7 @@ Domain terms for Build-it. Code, docs and conversation use these words with thes
 
 ## Operator job
 - **Definition:** The job of running one function brick: harvesting, planting or converting, including carrying items in and out.
-- **Boundary:** Sticky: the operator keeps it while the brick has work, then lingers beside the building for the next one. Every function brick except the depot has one.
+- **Boundary:** Sticky: the operator keeps it while the brick has work, then lingers beside the building for the next one. Every function brick except the depot has one. The operator enters through a doorway and walks the walk grid to its brick.
 
 ## Haul job
 - **Definition:** One trip carrying a load from an output port or storage facility to an input port, a storage facility or a construction site.
@@ -227,7 +239,7 @@ Domain terms for Build-it. Code, docs and conversation use these words with thes
 
 ## Bed
 - **Definition:** A function brick that sleeps one villager.
-- **Boundary:** Needs no operator. Not owned. A tired villager with no free bed sleeps where it stands, more slowly.
+- **Boundary:** Needs no operator. Not owned. Its sleeper walks in through a doorway to beside it. A tired villager with no free bed sleeps where it stands, more slowly.
 
 ## Canteen
 - **Definition:** A function brick that makes its building an eating spot.
@@ -297,7 +309,7 @@ Domain terms for Build-it. Code, docs and conversation use these words with thes
 - **Boundary:** Can't be deleted, unlinked or stripped of its role. Its look is editable, and Reset to default restores it. A port role snaps to the nearest footprint edge at ground level.
 
 ## Blueprint
-- **Definition:** A design compiled at placement: mesh, footprint, roles, port tiles, cost and traits.
+- **Definition:** A design compiled at placement: mesh, footprint, walk grid, roles, port tiles, cost and traits.
 - **Boundary:** Frozen into its site or building and stored in the world save. The simulation reads only blueprints.
 
 ## Texture variant

@@ -35,7 +35,7 @@ end
 
 local PARTS = { "legL", "legR", "body", "armL", "armR", "head", "hair", "eyes", "nose" }
 
-test("every direction and frame is a 16-voxel model standing on its 1x1 footprint with every part", function()
+test("every direction and frame is a 32-voxel model standing on its 1x1 footprint with every part", function()
 	assertEqual(8, #Character.DIRECTIONS)
 	assertEqual(5, Character.FRAMES)
 	for dir = 1, #Character.DIRECTIONS do
@@ -43,10 +43,10 @@ test("every direction and frame is a 16-voxel model standing on its 1x1 footprin
 			local m = Character.model(dir, frame)
 			local b = Model.bounds(m)
 			local label = Character.DIRECTIONS[dir].name .. " frame " .. frame
-			assertEqual(16, m.cellsPerTile)
+			assertEqual(32, m.cellsPerTile)
 			assertEqual(1, m.width)
 			assertEqual(1, m.depth)
-			assertTrue(b.minX >= 0 and b.minY >= 0 and b.maxX <= 16 and b.maxY <= 16, label .. " inside the footprint")
+			assertTrue(b.minX >= 0 and b.minY >= 0 and b.maxX <= 32 and b.maxY <= 32, label .. " inside the footprint")
 			assertEqual(0, b.minZ, label .. " standing on the ground")
 			for _, name in ipairs(PARTS) do
 				assertTrue(#part(m, name) > 0, label .. " has a " .. name)
@@ -113,8 +113,8 @@ test("a diagonal turns the head: the face slides toward it", function()
 		return xs
 	end
 	assertTrue(next(frontSkinXs("N")) == nil, "N shows only hair from behind")
-	assertTrue(frontSkinXs("NE")[10] and not frontSkinXs("NE")[5], "NE shows its east cheek")
-	assertTrue(frontSkinXs("NW")[5] and not frontSkinXs("NW")[10], "NW shows its west cheek")
+	assertTrue(frontSkinXs("NE")[18] and not frontSkinXs("NE")[13], "NE shows its east cheek")
+	assertTrue(frontSkinXs("NW")[13] and not frontSkinXs("NW")[18], "NW shows its west cheek")
 end)
 
 -- A part's offset between two frames, as bounds deltas.
