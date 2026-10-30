@@ -366,13 +366,16 @@ end
 
 -- Sets field `key` of every selected node, the root included, to its own
 -- copy of `value`. True when it took; false and why otherwise.
-local function setSelected(scene, key, value)
+local function setSelected(scene, key, value, volumeOnly)
 	local nodes = {}
 	for _, id in ipairs(scene.selection) do
-		nodes[#nodes + 1] = Scene.find(scene, id)
+		local node = Scene.find(scene, id)
+		if not volumeOnly or Scene.hasVolume(node) then
+			nodes[#nodes + 1] = node
+		end
 	end
 	if #nodes == 0 then
-		return false, "nothing selected"
+		return false, #scene.selection == 0 and "nothing selected" or "nothing selected has volume"
 	end
 	for _, node in ipairs(nodes) do
 		node[key] = deepCopy(value)
@@ -380,7 +383,24 @@ local function setSelected(scene, key, value)
 	return true
 end
 
--- Makes every selected node, the root included, of `material` (Api's node
+-- Whether `node` has volume, so a material and colour show on it: a
+-- primitive, extrude, lathe, sweep or prefab instance; a group when any
+-- child does. A bare shape or path has none.
+function Scene.hasVolume(node)
+	if node.kind == "shape" or node.kind == "path" then
+		return false
+	elseif node.kind == "group" then
+		for _, child in ipairs(node.children or {}) do
+			if Scene.hasVolume(child) then
+				return true
+			end
+		end
+		return false
+	end
+	return true
+end
+
+-- Makes every selected node with volume (Scene.hasVolume), the root included, of `material` (Api's node
 -- material: { name, variant, scale, rotation }), each its own copy with
 -- every part filled in. True when it took; false and why otherwise.
 function Scene.setMaterial(scene, material)
@@ -388,10 +408,10 @@ function Scene.setMaterial(scene, material)
 	if not checked then
 		return false, why
 	end
-	return setSelected(scene, "material", checked)
+	return setSelected(scene, "material", checked, true)
 end
 
--- Paints every selected node, the root included, `color` (a node colour:
+-- Paints every selected node with volume, the root included, `color` (a node colour:
 -- { r, g, b } or a team slot name, src/game/palette.lua), each its own
 -- copy. True when it took; false and why otherwise.
 function Scene.setColor(scene, color)
@@ -399,7 +419,7 @@ function Scene.setColor(scene, color)
 	if not checked then
 		return false, why
 	end
-	return setSelected(scene, "color", checked)
+	return setSelected(scene, "color", checked, true)
 end
 
 -- Field `key` of node `id`: its own, else that of the nearest node above

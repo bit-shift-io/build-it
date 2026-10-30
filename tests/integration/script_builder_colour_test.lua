@@ -1,6 +1,6 @@
 -- Colours in the script builder through the real input path
--- (src/app/flow.lua): key 8, or Colour in the context menu, opens the
--- colour picker under its top bar slot; a swatch paints the selected nodes
+-- (src/app/flow.lua): the colour section of the action panel shows when
+-- the selection has volume; a swatch paints the selected nodes
 -- a team slot or a literal colour, one undo step, and joins the recent
 -- row (the last 8 picks, this session only).
 local GameHarness = require("tests.support.game_harness")
@@ -11,8 +11,6 @@ local Palette = require("src.game.palette")
 local ColourPicker = require("src.app.ui.colour_picker")
 local Sandbox = require("src.game.script.sandbox")
 local ScriptBuilderScreen = require("src.app.screens.script_builder")
-local BuilderCamera = require("src.app.builder_camera")
-local ContextMenu = require("src.app.ui.context_menu")
 
 -- A game in the script builder, opened on design file `name`.lua in the
 -- save directory holding `text`.
@@ -82,11 +80,9 @@ local function node(screen, id)
 	end
 end
 
-test("key 8 opens the colour picker; a slot or a colour paints the selection, undoes and saves", function()
+test("the colour section shows for a box; a slot or a colour paints the selection, undoes and saves", function()
 	local game, screen = openBuilder("barn", DESIGN)
 	clickRow(game, screen, "wall")
-	Fake.tap(game, "8")
-	assertEqual("colour", screen.tool)
 
 	local slot = clickSwatch(game, screen, "slot", 1)
 	assertEqual(Palette.SLOTS[1], slot.color)
@@ -105,16 +101,11 @@ test("key 8 opens the colour picker; a slot or a colour paints the selection, un
 	local text = assert(love.filesystem.read(Config.designs.dir .. "/barn.lua"))
 	local saved = assert(Sandbox.run(text, "barn")).root
 	assertEqual("primary", saved.children[1].color)
-
-	Fake.tap(game, "escape")
-	assertEqual(nil, ScriptBuilderScreen.colourPicker(screen))
-	assertEqual("select", screen.tool)
 end)
 
 test("the recent row keeps the last 8 picks, newest first, and repicks from it", function()
 	local game, screen = openBuilder("shed", DESIGN)
 	clickRow(game, screen, "wall")
-	Fake.tap(game, "8")
 	for i = 1, 9 do
 		clickSwatch(game, screen, "preset", i)
 	end
@@ -132,27 +123,19 @@ test("the recent row keeps the last 8 picks, newest first, and repicks from it",
 	assertEqual(ColourPicker.PRESETS[2][1], node(screen, "wall").color[1])
 
 	Fake.tap(game, "escape")
-	Fake.tap(game, "escape")
 	Fake.tap(game, "b")
-	Fake.tap(game, "8")
+	screen = game.flow.scriptBuilder
+	clickRow(game, screen, "post")
 	assertEqual(ColourPicker.PRESETS[2][1], clickSwatch(game, screen, "recent", 1).color[1], "kept across openings this session")
 end)
 
-test("Colour in the context menu opens the picker on the node right-clicked", function()
-	local game, screen = openBuilder("hutch", DESIGN)
-	clickRow(game, screen, "post")
-	local s, o = screen.cfg.studsPerTile, screen.origin
-	local x, y = BuilderCamera.project(ScriptBuilderScreen.view(screen), (1 - o[1]) * s, (0.5 - o[2]) * s, 1 * s)
-	Fake.click(game, 2, x, y)
-	local menu = assert(screen.menu, "the context menu is open")
-	for i, item in ipairs(menu.items) do
-		if item == "Colour" then
-			local r = ContextMenu.row(menu, i)
-			Fake.click(game, 1, r.x + r.width / 2, r.y + r.height / 2)
-		end
-	end
-	assertTrue(ScriptBuilderScreen.colourPicker(screen), "the colour picker is open")
-	clickSwatch(game, screen, "slot", 4)
-	assertEqual("secondary", node(screen, "wall").color)
-	assertEqual(nil, node(screen, "post").color)
+test("a selected shape has no Colour section", function()
+	local game, screen = openBuilder("flatcolour", [[
+return group{ id = "root",
+	shape{ id = "flat", points = { { 0, 0 }, { 1, 0 }, { 1, 1 }, { 0, 1 } } },
+}
+]])
+	clickRow(game, screen, "flat")
+	assertEqual(nil, ScriptBuilderScreen.colourPicker(screen))
 end)
+

@@ -1,5 +1,5 @@
 -- The Insert tool in the script builder through the real input path
--- (src/app/flow.lua): key 4 opens a menu of primitives and prefabs, role
+-- (src/app/flow.lua): key 3 opens a menu of primitives and prefabs, role
 -- prefabs included; picking one and clicking the view places it on the
 -- work plane under the pointer. The properties strip edits the selected
 -- primitive's dimensions and segments.
@@ -38,10 +38,10 @@ local function pixel(screen, p)
 	return BuilderCamera.project(ScriptBuilderScreen.view(screen), (p[1] - o[1]) * s, (p[2] - o[2]) * s, p[3] * s)
 end
 
--- Picks `label` from the Insert menu (key 4) and clicks the ground at
+-- Picks `label` from the Insert menu (key 3) and clicks the ground at
 -- design-space (x, y).
 local function insert(game, screen, label, x, y)
-	Fake.tap(game, "4")
+	Fake.tap(game, "3")
 	local rows = assert(ScriptBuilderScreen.insertMenu(screen), "the insert menu is open")
 	for _, row in ipairs(rows) do
 		if row.item.label == label then
@@ -179,14 +179,14 @@ end)
 
 test("Esc puts the Insert tool away without leaving the builder; a locked script refuses it", function()
 	local game, screen = openBuilder("kit", EMPTY)
-	Fake.tap(game, "4")
+	Fake.tap(game, "3")
 	assertEqual("insert", screen.tool)
 	Fake.tap(game, "escape")
 	assertEqual("scriptBuilder", game.flow.screen)
 	assertEqual("select", screen.tool)
 	assertEqual(nil, ScriptBuilderScreen.insertMenu(screen))
 	game, screen = openBuilder("posts", 'local n = 2\nreturn box{ size = { n, 1, 1 } }\n')
-	Fake.tap(game, "4")
+	Fake.tap(game, "3")
 	assertEqual("select", screen.tool)
 	assertTrue(screen.message and screen.message:find("Locked", 1, true), tostring(screen.message))
 end)

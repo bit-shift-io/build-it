@@ -113,6 +113,14 @@ Domain terms for Build-it. Code, docs and conversation use these words with thes
 - **Definition:** A building effect on the character or a villager while within the building's reach: walk speed and work rate.
 - **Boundary:** Auras from several buildings stack additively. Work rate speeds the player's hand-harvesting and fishing, and every villager work cycle: operator cycles and building. It never speeds eating or sleeping. Auras never affect other buildings.
 
+## Reach outline
+- **Definition:** The drawn edge of a building's reach: one per operator function brick, and one for its aura.
+- **Boundary:** The footprint grown by the reach in whole tiles, so a rectangle, never a circle. Shown on the placement ghost and on hover over a building or construction site. Display only.
+
+## Building card
+- **Definition:** The hover panel for a building or construction site: design name, site progress, function bricks with reach and operator, aura, traits and contents.
+- **Boundary:** Carries the colour key for its reach outlines. Read-only.
+
 ## Faced tile
 - **Definition:** The tile next to the character in its facing direction, diagonals included.
 - **Boundary:** E acts on it: a port tile delivers or collects, water catches fish. The tile underfoot wins over it.
@@ -286,8 +294,8 @@ Domain terms for Build-it. Code, docs and conversation use these words with thes
 - **Boundary:** Its nodes are editable through params and the code panel only.
 
 ## Shape
-- **Definition:** A closed 2D outline: rect, ellipse, polygon, or a path of hard and smooth points.
-- **Boundary:** Has no volume until an operation uses it.
+- **Definition:** A closed 2D outline: rect, ellipse, polygon, or a freeform outline of hard and smooth points.
+- **Boundary:** Has no volume until an operation uses it. Takes no material or colour. The freeform kind is `path` in script data; it is never a path.
 
 ## Path
 - **Definition:** A curve a shape is swept along: line, polyline, Bézier, Catmull-Rom, arc or helix.
@@ -299,6 +307,10 @@ Domain terms for Build-it. Code, docs and conversation use these words with thes
 ## Work plane
 - **Definition:** The plane the builder draws shapes and paths on: the ground, a clicked face, or an axis plane at a height.
 - **Boundary:** Snaps to a grid of 1/4 tile by default.
+
+## Action panel
+- **Definition:** The builder panel under the tree listing the selection's actions as buttons, the same list as its right-click menu, plus Material and Colour sections.
+- **Boundary:** Material and Colour show only when the selection has volume. Make 3D shows only on a shape or path no operation uses.
 
 ## Prefab
 - **Definition:** A reusable design script in the prefab folder, placed into designs as a linked instance.

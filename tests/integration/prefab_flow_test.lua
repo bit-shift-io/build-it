@@ -228,9 +228,12 @@ test("Export refuses a name already taken and a locked script; Unlink makes an e
 
 	write("inn_role", Designs.floor(1, 1, BED))
 	screen = openBuilder(game, "inn_role")
-	menu(game, screen, "bed", "Unlink")
-	assertTrue(screen.message and screen.message:find("role prefab", 1, true), screen.message)
+	Fake.click(game, 2, row(screen, "bed").x + 10, row(screen, "bed").y + 5)
+	for _, item in ipairs(screen.menu.items) do
+		assertTrue(item ~= "Unlink", "a role prefab offers no Unlink")
+	end
 	assertEqual("prefab", screen.scene.root.children[2].kind)
+	screen.menu = nil
 
 	write("coded", 'local n = UI.number({ default = 1 })\nreturn group{ id = "root", box{ id = "a" } }\n')
 	screen = openBuilder(game, "coded")

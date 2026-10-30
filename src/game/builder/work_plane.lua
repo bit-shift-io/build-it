@@ -126,6 +126,18 @@ function WorkPlane.grid(plane, centre, extent)
 	return lines
 end
 
+-- The ground's whole-tile lines within `extent` tiles of the design's
+-- origin, as WorkPlane.grid gives them (all major).
+function WorkPlane.groundGrid(extent)
+	local lines = {}
+	for _, line in ipairs(WorkPlane.grid(WorkPlane.ground(), { 0, 0 }, extent)) do
+		if line.major then
+			lines[#lines + 1] = line
+		end
+	end
+	return lines
+end
+
 -- Point p with `chain` of node transforms applied, innermost first.
 local function through(chain, p)
 	local x, y, z = p[1], p[2], p[3]

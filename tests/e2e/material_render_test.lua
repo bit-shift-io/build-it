@@ -122,9 +122,9 @@ for _, material in ipairs({ "plank", "stone" }) do
 	end
 end
 
-test("the material panel draws under its top bar slot", function()
+test("the material section draws beside the action panel", function()
 	local game, screen = openBox("stone", "brick")
-	Fake.tap(game, "5")
+	require("src.game.builder.scene").select(screen.scene, "b")
 	local rows = assert(ScriptBuilderScreen.materialPanel(screen))
 	local pixels = renderFrame(game)
 	Capture.capture("material_panel")

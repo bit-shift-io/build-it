@@ -127,7 +127,7 @@ end)
 test("the code panel follows a reload, but unrun code in it is kept", function()
 	local TextBuffer = require("src.game.text_buffer")
 	local game, screen = builder(HUT)
-	Fake.tap(game, "6")
+	Fake.tap(game, "4")
 	assert(DesignStore.write(CFG, "designs", "hut", WIDE))
 	Fake.runUntil(game, function()
 		return screen.locked

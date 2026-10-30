@@ -86,7 +86,7 @@ test("save, rename, duplicate and delete a design from the library panel", funct
 	input:release("lctrl")
 	assertTrue(screen.status and screen.status:find("Saved", 1, true), tostring(screen.status))
 
-	Fake.tap(game, "7")
+	Fake.tap(game, "5")
 	FrameStepper.step(game, 1)
 	Capture.capture("panel_open")
 	press(game, screen, "e2e_shed", "rename")

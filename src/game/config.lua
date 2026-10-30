@@ -195,6 +195,21 @@ return {
 		stone = { walkSpeed = 0, harvestRate = 0.001 },
 	},
 
+	-- Reach outline colours on the placement ghost (src/game/buildings/
+	-- reach_outline.lua): per ability, `default` for any other, and the aura's.
+	reachColors = {
+		abilities = {
+			saw = { 0.9, 0.6, 0.2 },
+			pickaxe = { 0.7, 0.7, 0.8 },
+			forager = { 0.5, 0.85, 0.3 },
+			planter = { 0.3, 0.8, 0.5 },
+			fishing = { 0.3, 0.6, 1 },
+			hunter = { 0.85, 0.35, 0.35 },
+		},
+		default = { 0.9, 0.9, 0.4 },
+		aura = { 0.8, 0.45, 0.95 },
+	},
+
 	-- Compiled designs (src/game/buildings/compile.lua; ADR 0006): cost
 	-- and traits come from the model's voxels, voxelsPerTile to a tile
 	-- side, counted by material. Geometry with no material is

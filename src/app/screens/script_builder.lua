@@ -1,6 +1,8 @@
 -- The script builder (docs/CONTEXT.md § Script builder): a live 3D view of
 -- a design script's geometry through the orbit camera, its footprint on the
--- ground, the numbered tool bar along the top, and the tree panel naming
+-- ground (with an always-on whole-tile ground grid 8 tiles round the design
+-- origin, a 1x1 tile guide and X red, Y green, Z blue axes, all under the
+-- geometry), the numbered tool bar along the top, and the tree panel naming
 -- its nodes down the left.
 --
 -- Opening it reads the design named after config.scriptBuilder.testDesign's
@@ -13,11 +15,18 @@
 -- design library) into a blueprint. A script that fails shows its message
 -- instead.
 --
--- A click on a tree row or on the model selects its node, Ctrl-click adds
+-- A click on a tree row, on the model, within 10 px of a shape outline or path
+-- line, or inside a closed shape selects its node (outlines beat the model;
+-- the one within reach lights up on hover), Ctrl-click adds
 -- to the selection, and a double-click on a row renames it. A right-click
--- without movement opens the context menu (Rename, Delete, Duplicate,
--- Group); right-drag orbits, the wheel zooms. Number keys and clicks pick
--- top bar tools. Ctrl+Z undoes, Ctrl+Y or Ctrl+Shift+Z redoes, Ctrl+S
+-- without movement opens the context menu, listing only the actions that
+-- apply to the selection (src/game/builder/actions.lua); a bare shape or
+-- path gets Make 3D, which opens Extrude, Lathe and the two ways to sweep
+-- (shape then path, or path then shape) in place; right-drag orbits, the wheel zooms. The action panel under the
+-- tree lists the same actions (or a hint with nothing selected) and its
+-- buttons run the same handlers. Number keys and clicks pick
+-- top bar tools: 1 Select, 2 Draw (shapes and paths in one menu), 3 Insert,
+-- 4 Code, 5 Library. Ctrl+Z undoes, Ctrl+Y or Ctrl+Shift+Z redoes, Ctrl+S
 -- saves the design file (src/app/design_store.lua); a locked script saves
 -- as it was read, never regenerated. The builder never touches the world.
 --
@@ -28,6 +37,11 @@
 -- selection does: dragging one of its handles runs that transform on the
 -- handle's axis until the button comes up. Each kept transform is one undo
 -- step; while one runs the view holds still and the design rebuilds live.
+--
+-- While drawing a polygon or freeform outline, Return or a double-click
+-- closes it (last point joins the first) and finishes an open path; the
+-- first point grows and lights under the pointer, and a hint line names
+-- the controls (ScriptBuilderScreen.hint).
 --
 -- Key 4 (Insert) opens a menu of primitives and prefabs, role prefabs
 -- included (src/game/builder/insert.lua); a click on one arms it and a
@@ -55,7 +69,7 @@
 -- the first point again closes the outline into a shape node, one undo
 -- step. Esc drops the outline being drawn, then puts the tool away. Shapes
 -- show as outlines with no volume; the selected shape's points drag along
--- its plane, each move one undo step. The grid shows while Shape or
+-- its plane, each move one undo step. The quarter-tile grid shows while Shape or
 -- Insert is on, snapping to a quarter tile unless Shift is held; Insert
 -- places on the same work plane.
 --
@@ -70,18 +84,18 @@
 -- The properties strip edits a sweep's twist and scales and an arc's or
 -- helix's params.
 --
--- Key 5 (Material), or Material in the context menu, opens the material
--- panel (src/app/ui/material_panel.lua) under its slot, showing the first
--- selected node's material (its own or inherited, else the default). A
--- click on a material, a texture variant, or a scale or rotation stepper
--- makes every selected node of the result (Scene.setMaterial), one undo
--- step; clicks in the view still select. Esc puts the panel away.
---
--- Key 8 (Colour), or Colour in the context menu, opens the colour picker
--- (src/app/ui/colour_picker.lua) under its slot: the team slots (drawn in
--- the local player's palette), preset colours and the recent picks (the
--- last 8, this session only). A click paints every selected node that
--- slot or colour (Scene.setColor), one undo step. Esc puts it away.
+-- Material and Colour are sections beside the action panel, shown only
+-- while the selection has volume (Actions.showPaint). They sit at the top
+-- of the view so a tall tree never pushes them off a small window. The
+-- material section (src/app/ui/material_panel.lua) shows the first selected
+-- node's material (its own or inherited, else the default). A click on a
+-- material, a texture variant, or a scale or rotation stepper makes every
+-- selected node with volume of the result (Scene.setMaterial), one undo
+-- step. The colour section (src/app/ui/colour_picker.lua) has the team
+-- slots (drawn in the local player's palette), preset colours and the
+-- recent picks (the last 8, this session only). A click paints every
+-- selected node with volume that slot or colour (Scene.setColor), one undo
+-- step. A shape or path alone shows neither.
 --
 -- Prefabs (docs/CONTEXT.md "Prefab"): Export as prefab in the context menu
 -- asks for a name, writes prefabs/<name>.lua and turns the selection into
@@ -126,6 +140,7 @@ local Resolve = require("src.game.script.resolve")
 local Lockcheck = require("src.game.script.lockcheck")
 local Serialize = require("src.game.script.serialize")
 local Scene = require("src.game.builder.scene")
+local Actions = require("src.game.builder.actions")
 local History = require("src.game.builder.history")
 local Mesh = require("src.game.geometry.mesh")
 local Pick = require("src.game.geometry.pick")
@@ -147,6 +162,7 @@ local WorkPlaneView = require("src.app.render.work_plane")
 local ShapeOverlay = require("src.app.render.shape_overlay")
 local TopBar = require("src.app.ui.top_bar")
 local TreePanel = require("src.app.ui.tree_panel")
+local ActionPanel = require("src.app.ui.action_panel")
 local ContextMenu = require("src.app.ui.context_menu")
 local InsertMenu = require("src.app.ui.insert_menu")
 local PropertiesStrip = require("src.app.ui.properties")
@@ -167,20 +183,22 @@ local ScriptBuilderScreen = {}
 -- The top bar's tools by slot number.
 ScriptBuilderScreen.TOOLS = {
 	[1] = { id = "select", label = "Select" },
-	[2] = { id = "shape", label = "Shape" },
-	[3] = { id = "path", label = "Path" },
-	[4] = { id = "insert", label = "Insert" },
-	[5] = { id = "material", label = "Material" },
-	[6] = { id = "code", label = "Code" },
-	[7] = { id = "library", label = "Library" },
-	[8] = { id = "colour", label = "Colour" },
+	[2] = { id = "draw", label = "Draw" },
+	[3] = { id = "insert", label = "Insert" },
+	[4] = { id = "code", label = "Code" },
+	[5] = { id = "library", label = "Library" },
 }
 
--- The context menu's entries, top to bottom.
-local MENU = {
-	"Rename", "Delete", "Duplicate", "Group", "Extrude", "Lathe", "Sweep", "Material", "Colour",
-	"Export as prefab", "Unlink", "Edit prefab", "Reset to default",
-}
+-- The Draw tool's menu: closed shapes, then open paths, each under a header
+-- (a header row has `header` and is not pickable).
+local DRAW_KINDS = { { header = true, label = "Shapes (closed)" } }
+for _, kind in ipairs(ShapeTool.KINDS) do
+	DRAW_KINDS[#DRAW_KINDS + 1] = kind
+end
+DRAW_KINDS[#DRAW_KINDS + 1] = { header = true, label = "Paths (open)" }
+for _, kind in ipairs(PathTool.KINDS) do
+	DRAW_KINDS[#DRAW_KINDS + 1] = kind
+end
 
 -- The camera's radius around an empty design, in studs.
 local EMPTY_RADIUS = 4
@@ -199,6 +217,8 @@ local POINT_REACH = 10
 
 -- How far the work plane's grid reaches round the pointer, in tiles.
 local GRID_EXTENT = 3
+-- Tiles the always-on ground grid reaches each way of the design origin.
+local GROUND_EXTENT = 8
 
 -- Two left clicks on one row within this many seconds rename it.
 local DOUBLE_CLICK = 0.4
@@ -286,7 +306,7 @@ function ScriptBuilderScreen.new(config, read, library, palette)
 		plane = WorkPlane.ground(),
 		planeName = "Ground",
 		planeHeight = 0,
-		-- While the Shape or Path tool is on: { kinds (ShapeTool.KINDS or
+		-- While the Draw tool is on: { kinds (ShapeTool.KINDS or
 		-- PathTool.KINDS), kind (one of them), path (true for the Path
 		-- tool), drawing (the outline or path under way { points, anchor (a
 		-- rect or ellipse's first corner), dragging (the index of the point
@@ -428,7 +448,7 @@ local function readScript(screen, kind, name, path, given)
 	screen.shape, screen.pointDrag, screen.hover, screen.sweeping = nil, nil, nil, nil
 	screen.plane, screen.planeName, screen.planeHeight = WorkPlane.ground(), "Ground", 0
 	screen.params, screen.paramField = {}, nil
-	screen.materialOpen, screen.colourOpen, screen.libraryOpen = nil, nil, nil
+	screen.libraryOpen = nil
 	screen.exportPrompt, screen.libraryRename, screen.unsaved = nil, nil, nil
 	screen.code = nil
 	local source, err = given or screen.lib[kind][name], "not in the library"
@@ -485,7 +505,7 @@ function ScriptBuilderScreen.modal(screen)
 	return screen.menu ~= nil or screen.rename ~= nil or screen.transform ~= nil
 		or screen.field ~= nil or screen.insert ~= nil or screen.paramField ~= nil
 		or screen.shape ~= nil or screen.pointDrag ~= nil or screen.sweeping ~= nil
-		or screen.materialOpen ~= nil or screen.colourOpen ~= nil or screen.exportPrompt ~= nil
+		or screen.exportPrompt ~= nil
 		or screen.libraryOpen ~= nil or screen.libraryRename ~= nil or screen.unsaved ~= nil
 		or (screen.code ~= nil and screen.code.open)
 end
@@ -594,7 +614,104 @@ local function pickAt(screen, x, y)
 	return (Pick.at(screen.targets, { origin[1] / s, origin[2] / s, origin[3] / s }, direction))
 end
 
--- The node under screen point (x, y): its tree row's, else the model's;
+-- How far screen point (x, y) lies from the segment between pixels a and
+-- b ({ x, y } each).
+local function fromSegment(x, y, a, b)
+	local dx, dy = b[1] - a[1], b[2] - a[2]
+	local len2 = dx * dx + dy * dy
+	local t = len2 > 0 and math.max(0, math.min(1, ((x - a[1]) * dx + (y - a[2]) * dy) / len2)) or 0
+	local px, py = a[1] + dx * t - x, a[2] + dy * t - y
+	return math.sqrt(px * px + py * py)
+end
+
+-- The drawn points of `corners` (design space) as screen pixels, the first
+-- again at the end when `closed`.
+local function drawnPixels(screen, corners, closed)
+	local view, s = ScriptBuilderScreen.view(screen), screen.cfg.studsPerTile
+	local out = {}
+	for _, point in ipairs(corners) do
+		local px, py = WorkPlaneView.pixel(view, s, screen.origin, point)
+		out[#out + 1] = px and { px, py } or false
+	end
+	if closed and #out > 0 then
+		out[#out + 1] = out[1]
+	end
+	return out
+end
+
+-- Whether screen point (x, y) lies inside the closed polygon of pixels.
+local function insidePixels(x, y, pixels)
+	local inside = false
+	for i = 1, #pixels - 1 do
+		local a, b = pixels[i], pixels[i + 1]
+		if a and b and (a[2] > y) ~= (b[2] > y) and x < (b[1] - a[1]) * (y - a[2]) / (b[2] - a[2]) + a[1] then
+			inside = not inside
+		end
+	end
+	return inside
+end
+
+-- The id of the path (or, with `shapes`, the closed shape) drawn nearest
+-- screen point (x, y), within reach of its line; else, for shapes, one
+-- whose outline holds the point; else nil.
+local function outlineAt(screen, x, y, shapes)
+	local best, nearest = nil, POINT_REACH
+	local function consider(id, corners, closed)
+		local pixels = drawnPixels(screen, corners, closed)
+		for i = 2, #pixels do
+			if pixels[i] and pixels[i - 1] then
+				local d = fromSegment(x, y, pixels[i - 1], pixels[i])
+				if d <= nearest then
+					best, nearest = id, d
+				end
+			end
+		end
+	end
+	for _, p in ipairs(WorkPlane.paths(screen.scene.root)) do
+		consider(p.id, p.points, false)
+	end
+	if shapes then
+		for _, s in ipairs(WorkPlane.shapes(screen.scene.root)) do
+			consider(s.id, s.outline, true)
+		end
+		if not best then
+			for _, s in ipairs(WorkPlane.shapes(screen.scene.root)) do
+				if insidePixels(x, y, drawnPixels(screen, s.outline, true)) then
+					return s.id
+				end
+			end
+		end
+	end
+	return best
+end
+
+-- The path drawn nearest screen point (x, y), within reach, or nil.
+local function pathAt(screen, x, y)
+	return outlineAt(screen, x, y, false)
+end
+
+-- The action panel's layout (ActionPanel.layout) under the tree: the
+-- selection's actions (Actions.of), Make 3D's second level once opened, or
+-- the hint with nothing selected.
+function ScriptBuilderScreen.actionPanel(screen)
+	local scene = screen.scene
+	local items
+	if #scene.selection > 0 then
+		local sub = screen.panelSub
+		if sub and sub.id == scene.selection[1] and #scene.selection == 1 then
+			items = sub.items
+		else
+			screen.panelSub = nil
+			items = Actions.of(scene, scene.selection, screen.lib, screen.locked)
+		end
+	end
+	local top = screen.scfg.topBarHeight
+	local tree = TreePanel.bounds(ScriptBuilderScreen.treeRows(screen), top)
+	return ActionPanel.layout(items, tree.y + tree.height)
+end
+
+-- The node under screen point (x, y): its tree row's, else the shape or
+-- path drawn there, else the model's;
 -- and whether the point is on the tree panel.
 local function nodeAt(screen, x, y)
 	local rows = ScriptBuilderScreen.treeRows(screen)
@@ -605,8 +722,17 @@ local function nodeAt(screen, x, y)
 	if screen.scene and TreePanel.contains(rows, screen.scfg.topBarHeight, x, y) then
 		return nil, true
 	end
+	if screen.scene and ActionPanel.contains(ScriptBuilderScreen.actionPanel(screen), x, y) then
+		return nil, true
+	end
 	if y < screen.scfg.topBarHeight then
 		return nil, true
+	end
+	if screen.scene then
+		local outline = outlineAt(screen, x, y, true)
+		if outline then
+			return outline, false
+		end
 	end
 	return pickAt(screen, x, y), false
 end
@@ -758,6 +884,16 @@ function ScriptBuilderScreen.insertMenu(screen)
 	end
 end
 
+-- Where the Material and Colour sections start (right of the action panel)
+-- and the material section's width (MaterialPanel).
+local PAINT_X, MATERIAL_WIDTH = 236, 150
+
+-- Whether the Material and Colour sections show: the selection has volume
+-- and the script can be edited.
+local function paintShown(screen)
+	return screen.scene ~= nil and not screen.locked and Actions.showPaint(screen.scene, screen.scene.selection)
+end
+
 -- The material the panel shows: the first selected node's (Scene.material),
 -- else the default material's first variant, unscaled and unturned.
 local function shownMaterial(screen)
@@ -771,29 +907,23 @@ local function shownMaterial(screen)
 end
 
 -- The material panel's rows (MaterialPanel.rows) under its top bar slot,
--- or nil when it is closed.
+-- or nil when the selection has no volume.
 function ScriptBuilderScreen.materialPanel(screen)
-	if not screen.materialOpen then
+	if not paintShown(screen) then
 		return nil
 	end
-	for _, slot in ipairs(ScriptBuilderScreen.topBar(screen)) do
-		if slot.tool and slot.tool.id == "material" then
-			return MaterialPanel.rows(shownMaterial(screen), screen.config.materials, slot)
-		end
-	end
+	local slot = { x = PAINT_X, y = screen.scfg.topBarHeight, height = 0 }
+	return MaterialPanel.rows(shownMaterial(screen), screen.config.materials, slot)
 end
 
 -- The colour picker's layout (ColourPicker.layout) under its top bar slot,
--- or nil when it is shut.
+-- or nil when the selection has no volume.
 function ScriptBuilderScreen.colourPicker(screen)
-	if not screen.colourOpen then
+	if not paintShown(screen) then
 		return nil
 	end
-	for _, slot in ipairs(ScriptBuilderScreen.topBar(screen)) do
-		if slot.tool and slot.tool.id == "colour" then
-			return ColourPicker.layout(ColourPicker.builderSections(screen.recentColours), slot.x, slot.y + slot.height + 4)
-		end
-	end
+	local x = PAINT_X + MATERIAL_WIDTH + 4
+	return ColourPicker.layout(ColourPicker.builderSections(screen.recentColours), x, screen.scfg.topBarHeight + 4)
 end
 
 -- A click on colour picker swatch `swatch`: the selection painted its
@@ -1176,9 +1306,9 @@ local PLANES = {
 	{ label = "Pick face", plane = "Face" },
 }
 
--- The Shape or Path tool's menu rows (InsertMenu.rows) under its top bar
--- slot: the kinds it draws, then the work planes, the one in use marked
--- with its height; nil when neither tool is on.
+-- The Draw tool's menu rows (InsertMenu.rows) under its top bar
+-- slot: the kinds it draws under their headers, then the work planes, the
+-- one in use marked with its height; nil when the tool is off.
 function ScriptBuilderScreen.shapeMenu(screen)
 	if not screen.shape then
 		return nil
@@ -1273,9 +1403,46 @@ local function pathClick(screen, at, x, y)
 	end
 end
 
+-- Whether this press at screen point (x, y) is the second of a
+-- double-click while drawing points; every press is remembered.
+local function doubleClicked(screen, x, y)
+	local last = screen.lastDraw
+	screen.lastDraw = { x = x, y = y, time = screen.clock }
+	return last ~= nil
+		and screen.clock - last.time <= DOUBLE_CLICK
+		and (last.x - x) ^ 2 + (last.y - y) ^ 2 <= POINT_REACH * POINT_REACH
+end
+
+-- A double-click's finish: the first press already added its point (or
+-- finished the drawing, leaving nothing to do); one repeating the point
+-- before it is dropped, then a polygon or freeform outline closes and a
+-- path finishes.
+local function finishDrawing(screen)
+	local tool = screen.shape
+	local drawing = tool.drawing
+	if not drawing or drawing.anchor then
+		return
+	end
+	local points = drawing.points
+	local last, before = points[#points], points[#points - 1]
+	if before and last[1] == before[1] and last[2] == before[2] then
+		points[#points] = nil
+	end
+	drawing.dragging = nil
+	if tool.path then
+		finishPath(screen)
+	else
+		closeShape(screen, points)
+	end
+end
+
 -- A click with the Shape or Path tool at screen point (x, y) in the view.
 local function shapeClick(screen, x, y)
 	local tool = screen.shape
+	if not tool.picking and doubleClicked(screen, x, y) and (tool.path or (tool.kind.kind ~= "rect" and tool.kind.kind ~= "ellipse")) then
+		finishDrawing(screen)
+		return
+	end
 	if tool.picking then
 		adoptFace(screen, x, y)
 		return
@@ -1431,20 +1598,47 @@ local function drawingCorners(screen)
 	return corners, drawing.anchor ~= nil
 end
 
+-- The line of help while the Shape or Path tool is on, by what it draws;
+-- nil when neither is.
+function ScriptBuilderScreen.hint(screen)
+	local tool = screen.shape
+	if not tool then
+		return nil
+	end
+	if tool.picking then
+		return "Click a face to draw on · Esc to cancel"
+	end
+	if tool.path then
+		local clicks = PathTool.CLICKS[tool.kind.curve]
+		if clicks then
+			return "Click " .. clicks .. " points · Esc to cancel"
+		end
+		return "Click to add points · Enter or double-click to finish · Esc to cancel"
+	end
+	local kind = tool.kind.kind
+	if kind == "rect" or kind == "ellipse" then
+		return "Click two corners · Esc to cancel"
+	end
+	if kind == "path" then
+		return "Click to add points, drag for curves · Enter or double-click to close · Esc to cancel"
+	end
+	return "Click to add points · Enter or double-click to close · Esc to cancel"
+end
+
 -- What the shape overlay (src/app/render/shape_overlay.lua) draws, in
 -- design space: every shape's outline and every path (selected ones
 -- marked), the selected shape's points and their handles, and the outline
 -- or path under way.
 function ScriptBuilderScreen.overlay(screen)
-	local out = { outlines = {}, points = {} }
+	local out = { outlines = {}, points = {}, hint = ScriptBuilderScreen.hint(screen) }
 	if not screen.scene then
 		return out
 	end
 	for _, s in ipairs(WorkPlane.shapes(screen.scene.root)) do
-		out.outlines[#out.outlines + 1] = { corners = s.outline, closed = true, selected = Scene.isSelected(screen.scene, s.id) }
+		out.outlines[#out.outlines + 1] = { corners = s.outline, closed = true, selected = Scene.isSelected(screen.scene, s.id), hovered = screen.hoverOutline == s.id }
 	end
 	for _, p in ipairs(WorkPlane.paths(screen.scene.root)) do
-		out.outlines[#out.outlines + 1] = { corners = p.points, closed = false, selected = Scene.isSelected(screen.scene, p.id) }
+		out.outlines[#out.outlines + 1] = { corners = p.points, closed = false, selected = Scene.isSelected(screen.scene, p.id), hovered = screen.hoverOutline == p.id }
 	end
 	local s = selectedShape(screen)
 	if s then
@@ -1462,8 +1656,13 @@ function ScriptBuilderScreen.overlay(screen)
 	local corners, closed = drawingCorners(screen)
 	if corners then
 		out.drawing = { corners = corners, closed = closed }
-		for _, p in ipairs(screen.shape.drawing.points) do
-			out.points[#out.points + 1] = { at = WorkPlane.at(screen.plane, p[1], p[2]) }
+		for i, p in ipairs(screen.shape.drawing.points) do
+			local point = { at = WorkPlane.at(screen.plane, p[1], p[2]) }
+			if i == 1 and not screen.shape.path and not screen.shape.drawing.anchor then
+				local m = screen.mouse
+				point.first, point.lit = true, m ~= nil and near(screen, m.x, m.y, point.at)
+			end
+			out.points[#out.points + 1] = point
 		end
 	end
 	return out
@@ -1631,20 +1830,6 @@ local ACTIONS = {
 	Lathe = function(screen)
 		edit(screen, Scene.lathe)
 	end,
-	Material = function(screen)
-		for slot, tool in pairs(ScriptBuilderScreen.TOOLS) do
-			if tool.id == "material" then
-				setTool(screen, slot)
-			end
-		end
-	end,
-	Colour = function(screen)
-		for slot, tool in pairs(ScriptBuilderScreen.TOOLS) do
-			if tool.id == "colour" then
-				setTool(screen, slot)
-			end
-		end
-	end,
 	-- Opens the name prompt; Return exports the selection (commitExport).
 	["Export as prefab"] = function(screen)
 		if screen.locked then
@@ -1676,8 +1861,21 @@ local ACTIONS = {
 	["Reset to default"] = function(screen)
 		LIBRARY_ACTIONS.reset(screen, screen.kind, screen.name)
 	end,
+	-- Waits for a click on the shape to sweep along the selected path.
+	["Sweep a shape along this…"] = function(screen)
+		local selection = screen.scene.selection
+		local node = #selection == 1 and Scene.find(screen.scene, selection[1])
+		if screen.locked then
+			screen.message = LOCKED_MESSAGE
+		elseif not node or node.kind ~= "path" then
+			screen.message = "Select one path to sweep along"
+		else
+			screen.sweeping = { path = node.id }
+			screen.message = "Click a shape to sweep along it (Esc drops it)"
+		end
+	end,
 	-- Waits for a click on the path to sweep the selected shape along.
-	Sweep = function(screen)
+	["Sweep along path…"] = function(screen)
 		local selection = screen.scene.selection
 		local node = #selection == 1 and Scene.find(screen.scene, selection[1])
 		if screen.locked then
@@ -1691,43 +1889,23 @@ local ACTIONS = {
 	end,
 }
 
--- How far screen point (x, y) lies from the segment between pixels a and
--- b ({ x, y } each).
-local function fromSegment(x, y, a, b)
-	local dx, dy = b[1] - a[1], b[2] - a[2]
-	local len2 = dx * dx + dy * dy
-	local t = len2 > 0 and math.max(0, math.min(1, ((x - a[1]) * dx + (y - a[2]) * dy) / len2)) or 0
-	local px, py = a[1] + dx * t - x, a[2] + dy * t - y
-	return math.sqrt(px * px + py * py)
-end
-
--- The id of the path drawn nearest screen point (x, y), within reach, or
--- nil.
-local function pathAt(screen, x, y)
-	local view, s = ScriptBuilderScreen.view(screen), screen.cfg.studsPerTile
-	local best, nearest = nil, POINT_REACH
-	for _, p in ipairs(WorkPlane.paths(screen.scene.root)) do
-		local before = nil
-		for _, point in ipairs(p.points) do
-			local px, py = WorkPlaneView.pixel(view, s, screen.origin, point)
-			local here = px and { px, py }
-			if here and before then
-				local d = fromSegment(x, y, before, here)
-				if d <= nearest then
-					best, nearest = p.id, d
-				end
-			end
-			before = here
-		end
-	end
-	return best
-end
-
 -- The click after Sweep: the path under it (its tree row, or drawn in the
 -- view) gets the shape swept along it, one undo step.
 local function sweepClick(screen, x, y)
-	local shape = screen.sweeping.id
+	local sweeping = screen.sweeping
 	screen.sweeping = nil
+	if sweeping.path then
+		local id = nodeAt(screen, x, y)
+		local node = id and Scene.find(screen.scene, id)
+		if not node or node.kind ~= "shape" then
+			screen.message = "No shape there to sweep"
+			return
+		end
+		Scene.select(screen.scene, id, false)
+		edit(screen, Scene.sweep, sweeping.path)
+		return
+	end
+	local shape = sweeping.id
 	local id, onPanel = nodeAt(screen, x, y)
 	if not onPanel then
 		id = pathAt(screen, x, y)
@@ -1745,12 +1923,12 @@ function setTool(screen, slot)
 	if not tool then
 		return
 	end
-	screen.insert, screen.shape, screen.materialOpen, screen.colourOpen = nil, nil, nil, nil
+	screen.insert, screen.shape = nil, nil
 	screen.libraryOpen = nil
 	if screen.code then
 		screen.code.open = false
 	end
-	if tool.id == "insert" or tool.id == "shape" or tool.id == "path" or tool.id == "material" or tool.id == "colour" then
+	if tool.id == "insert" or tool.id == "draw" then
 		if not screen.scene then
 			return
 		elseif screen.locked then
@@ -1760,14 +1938,8 @@ function setTool(screen, slot)
 	end
 	if tool.id == "insert" then
 		screen.insert = { items = Insert.items(screen.lib) }
-	elseif tool.id == "shape" then
-		screen.shape = { kinds = ShapeTool.KINDS, kind = ShapeTool.KINDS[4] }
-	elseif tool.id == "path" then
-		screen.shape = { kinds = PathTool.KINDS, kind = PathTool.KINDS[2], path = true }
-	elseif tool.id == "material" then
-		screen.materialOpen = true
-	elseif tool.id == "colour" then
-		screen.colourOpen = true
+	elseif tool.id == "draw" then
+		screen.shape = { kinds = DRAW_KINDS, kind = ShapeTool.KINDS[4] }
 	elseif tool.id == "library" then
 		listLibrary(screen, screen.kind)
 	elseif tool.id == "code" then
@@ -1790,6 +1962,21 @@ local function commitField(screen)
 	screen.field = nil
 	if f.text ~= f.initial then
 		edit(screen, Properties.set, f.id, f.key, tonumber(f.text))
+	end
+end
+
+-- Runs the action labelled `item` (nil: nothing) for the menu or the
+-- panel: Make 3D calls open(items) with its second level, Back calls back(),
+-- any other label runs its handler.
+local function runAction(screen, item, open, back)
+	if item == Actions.MAKE_3D then
+		local node = Scene.find(screen.scene, screen.scene.selection[1])
+		open(Actions.make3d(node.kind))
+	elseif item == Actions.BACK then
+		back()
+	elseif item then
+		screen.panelSub = nil
+		ACTIONS[item](screen)
 	end
 end
 
@@ -1830,8 +2017,11 @@ local function leftClick(screen, x, y)
 	local shapeRow = shapeRows and InsertMenu.rowAt(shapeRows, x, y)
 	if shapeRow then
 		local item = shapeRow.item
-		if item.kind or item.curve then
+		if item.header then
+			return
+		elseif item.kind or item.curve then
 			screen.shape.kind, screen.shape.drawing = item, nil
+			screen.shape.path = item.curve ~= nil
 		elseif item.plane == "Face" then
 			screen.shape.picking, screen.shape.drawing = true, nil
 		else
@@ -1864,6 +2054,17 @@ local function leftClick(screen, x, y)
 	if field then
 		startField(screen, field)
 		return
+	end
+	if screen.scene then
+		local panel = ScriptBuilderScreen.actionPanel(screen)
+		if ActionPanel.contains(panel, x, y) then
+			runAction(screen, ActionPanel.itemAt(panel, x, y), function(items)
+				screen.panelSub = { items = items, id = screen.scene.selection[1] }
+			end, function()
+				screen.panelSub = nil
+			end)
+			return
+		end
 	end
 	local id, onPanel = nodeAt(screen, x, y)
 	if onPanel then
@@ -1901,7 +2102,7 @@ local function leftClick(screen, x, y)
 		startTransform(screen, screen.gizmoMode, axis, x, y, true)
 		return
 	end
-	if screen.tool == "select" or screen.tool == "material" or screen.tool == "colour" then
+	if screen.tool == "select" then
 		select(screen, id, ctrlDown())
 	end
 end
@@ -2000,11 +2201,15 @@ function ScriptBuilderScreen.mousepressed(screen, x, y, button)
 		commitParamField(screen)
 	end
 	if screen.menu then
-		local item = ContextMenu.itemAt(screen.menu, x, y)
+		local menu = screen.menu
+		local item = ContextMenu.itemAt(menu, x, y)
 		screen.menu = nil
-		if item then
-			ACTIONS[item](screen)
-		end
+		runAction(screen, item, function(items)
+			screen.menu = ContextMenu.open(menu.x, menu.y, items)
+			screen.menu.main = menu
+		end, function()
+			screen.menu = menu.main
+		end)
 		return
 	end
 	leftClick(screen, x, y)
@@ -2042,12 +2247,21 @@ function ScriptBuilderScreen.mousereleased(screen, x, y, button)
 	if id and not Scene.isSelected(screen.scene, id) then
 		select(screen, id, false)
 	end
-	screen.menu = ContextMenu.open(x, y, MENU)
+	screen.menu = ContextMenu.open(
+		x, y, Actions.of(screen.scene, screen.scene.selection, screen.lib, screen.locked)
+	)
 end
 
 function ScriptBuilderScreen.mousemoved(screen, x, y, dx, dy)
 	screen.mouse = { x = x, y = y }
 	screen.hover = (screen.shape or screen.insert) and planeHit(screen, x, y) or nil
+	screen.hoverOutline = nil
+	if screen.scene and not screen.shape and not screen.insert then
+		local _, onPanel = nodeAt(screen, x, y)
+		if not onPanel then
+			screen.hoverOutline = outlineAt(screen, x, y, true)
+		end
+	end
 	local drawing = screen.shape and screen.shape.drawing
 	local code = screen.code
 	if screen.transform then
@@ -2176,10 +2390,9 @@ function ScriptBuilderScreen.keypressed(screen, key)
 		screen.sweeping, screen.message = nil, nil
 	elseif (key == "return" or key == "kpenter") and screen.shape and screen.shape.path and screen.shape.drawing then
 		finishPath(screen)
-	elseif key == "escape" and screen.materialOpen then
-		screen.materialOpen, screen.tool = nil, "select"
-	elseif key == "escape" and screen.colourOpen then
-		screen.colourOpen, screen.tool = nil, "select"
+	elseif (key == "return" or key == "kpenter") and screen.shape and screen.shape.drawing and not screen.shape.drawing.anchor then
+		screen.shape.drawing.dragging = nil
+		closeShape(screen, screen.shape.drawing.points)
 	elseif key == "escape" and screen.libraryOpen then
 		screen.libraryOpen, screen.tool = nil, "select"
 	elseif key == "escape" and screen.insert then
@@ -2262,8 +2475,10 @@ end
 function ScriptBuilderScreen.draw(screen)
 	local w = Screen.dimensions()
 	local top = screen.scfg.topBarHeight
-	ScriptBuilderView.draw(screen, ScriptBuilderScreen.view(screen))
 	local view = ScriptBuilderScreen.view(screen)
+	ScriptBuilderView.draw(screen, view, function()
+		WorkPlaneView.drawGround(view, screen.cfg.studsPerTile, screen.origin, WorkPlane.groundGrid(GROUND_EXTENT))
+	end)
 	if screen.shape or screen.insert then
 		local lines = WorkPlane.grid(screen.plane, screen.hover or { 0, 0 }, GRID_EXTENT)
 		WorkPlaneView.draw(view, screen.cfg.studsPerTile, screen.origin, lines)
@@ -2276,6 +2491,9 @@ function ScriptBuilderScreen.draw(screen)
 	TopBar.draw(ScriptBuilderScreen.topBar(screen), screen.tool, w, top)
 	if screen.scene then
 		TreePanel.draw(ScriptBuilderScreen.treeRows(screen), top, screen.scene, screen.rename, screen.locked, screen.mouse)
+	end
+	if screen.scene then
+		ActionPanel.draw(ScriptBuilderScreen.actionPanel(screen), screen.mouse)
 	end
 	PropertiesStrip.draw(ScriptBuilderScreen.properties(screen), screen.field)
 	ParamsPanel.draw(ScriptBuilderScreen.paramsPanel(screen), screen.paramField)

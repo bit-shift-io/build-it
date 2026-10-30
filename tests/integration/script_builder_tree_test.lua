@@ -87,7 +87,7 @@ test("a double-click renames a row by typing, and Ctrl+S saves the name into the
 		Fake.tap(game, "backspace")
 	end
 	-- Number keys type into the box rather than picking tools.
-	Fake.tap(game, "7")
+	Fake.tap(game, "5")
 	Fake.typeText(game, "Roof 7")
 	Fake.tap(game, "return")
 	assertEqual(nil, screen.rename)
@@ -132,7 +132,7 @@ end)
 test("number keys and clicks on the top bar pick tools; empty slots pick nothing", function()
 	local game, screen = openBuilder("house", HOUSE)
 	assertEqual("select", screen.tool)
-	Fake.tap(game, "7")
+	Fake.tap(game, "5")
 	assertEqual("library", screen.tool)
 	Fake.tap(game, "9")
 	assertEqual("library", screen.tool)
@@ -191,4 +191,49 @@ test("a hand-written loop file opens locked: edits are refused and saving keeps 
 	assertEqual(nil, screen.rename)
 	withCtrl(game, "s")
 	assertEqual(LOOP, savedFile("posts"))
+end)
+
+local SHAPE = [[
+return group{ id = "root", shape{ id = "s", points = { { 0, 0 }, { 1, 0 }, { 1, 1 }, { 0, 1 } } } }
+]]
+
+local function panelClick(game, screen, label)
+	for _, b in ipairs(ScriptBuilderScreen.actionPanel(screen).buttons) do
+		if b.label == label then
+			Fake.click(game, 1, b.x + 5, b.y + 5)
+			return
+		end
+	end
+	error("no panel button " .. label)
+end
+
+test("the action panel shows the hint with nothing selected", function()
+	local game, screen = openBuilder("shape", SHAPE)
+	local panel = ScriptBuilderScreen.actionPanel(screen)
+	assertEqual("Select something, or press 2 to draw.", panel.hint)
+	assertEqual(0, #panel.buttons)
+end)
+
+test("the action panel mirrors the menu and Make 3D then Extrude works from it", function()
+	local game, screen = openBuilder("shape", SHAPE)
+	clickRow(game, screen, "s")
+	local Actions = require("src.game.builder.actions")
+	local want = Actions.of(screen.scene, screen.scene.selection, screen.lib, screen.locked)
+	local got = {}
+	for i, b in ipairs(ScriptBuilderScreen.actionPanel(screen).buttons) do
+		got[i] = b.label
+	end
+	assertEqual(table.concat(want, "|"), table.concat(got, "|"))
+	panelClick(game, screen, "Make 3D")
+	assertEqual("◂ Back", ScriptBuilderScreen.actionPanel(screen).buttons[4].label)
+	panelClick(game, screen, "Extrude")
+	assertEqual("extrude", screen.scene.root.children[1].kind)
+end)
+
+test("a click on the action panel does not select through to the view", function()
+	local game, screen = openBuilder("shape", SHAPE)
+	clickRow(game, screen, "s")
+	local p = ScriptBuilderScreen.actionPanel(screen)
+	Fake.click(game, 1, p.x + p.width - 2, p.y + p.height - 1)
+	assertEqual("s", screen.scene.selection[1])
 end)

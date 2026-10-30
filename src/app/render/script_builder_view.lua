@@ -154,8 +154,8 @@ local function projectedMesh(view, vertices)
 end
 
 -- Draws the geometry and its footprint through `view` into the viewport
--- below the top bar.
-function ScriptBuilderView.draw(screen, view)
+-- below the top bar. `under`, when given, draws first, beneath the geometry.
+function ScriptBuilderView.draw(screen, view, under)
 	local t = renderTargets()
 	local vertices = studVertices(screen)
 
@@ -163,6 +163,9 @@ function ScriptBuilderView.draw(screen, view)
 	love.graphics.origin()
 	love.graphics.setCanvas({ t.color, depthstencil = t.depth })
 	love.graphics.clear(Screen.BACKGROUND)
+	if under then
+		under()
+	end
 	if #vertices > 0 then
 		local mesh = projectedMesh(view, vertices)
 		love.graphics.setShader(blockShader(screen.config))

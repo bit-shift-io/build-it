@@ -78,3 +78,50 @@ test("hovering a villager's sprite shows its card; bare ground shows none", func
 	assertEqual(nil, WorldScreen.hovered(screen))
 	clear(config)
 end)
+
+test("hovering a building and a site shows reach outlines and the building card", function()
+	local config = testConfig()
+	clear(config)
+	local game = GameHarness.launch({ real = true, config = config })
+	FrameStepper.step(game, 1)
+	game:keypressed("return")
+	FrameStepper.step(game, 2)
+
+	local Designs = require("tests.support.designs")
+	local Placement = require("src.game.buildings.placement")
+	local Storage = require("src.game.components.storage")
+	local Projection = require("src.game.projection")
+	local screen = game.flow.world
+	local ctx = game.ctx
+	local cam = game.camera
+	local w, h = love.graphics.getDimensions()
+	local player = screen.player
+	local tx, ty = math.floor(player.x / config.tileSize) + 4, math.floor(player.y / config.tileSize) + 4
+
+	local text = Designs.floor(2, 2, Designs.ability("saw", 0.5, 0.5))
+	local building = Placement.build(ctx, Designs.request(text, "N", tx, ty, "Hover Saw"))
+	local site = Placement.place(ctx, Designs.request(text, "N", tx + 6, ty, "Hover Site"))
+	assertTrue(building ~= nil, "a building placed")
+
+	local function hover(record)
+		local p = Projection.new(config, 1, config.views[screen.view])
+		local px, py = Projection.worldToScreen(p, record.tileX + record.width / 2, record.tileY + record.depth / 2, 0)
+		game:mousemoved(w / 2 + (px - cam.x) * cam.zoom, h / 2 + (py - cam.y) * cam.zoom, 0, 0)
+		FrameStepper.step(game, 1)
+	end
+
+	hover(building)
+	assertEqual(building, WorldScreen.hoveredBuilding(screen))
+	Capture.capture("over_building")
+
+	if site then
+		hover(site)
+		assertEqual(site, WorldScreen.hoveredBuilding(screen))
+		Capture.capture("over_site")
+	end
+
+	game:mousemoved(2, 2, 0, 0)
+	FrameStepper.step(game, 1)
+	assertEqual(nil, WorldScreen.hoveredBuilding(screen))
+	clear(config)
+end)

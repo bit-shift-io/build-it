@@ -6,9 +6,17 @@
 -- library's placeable designs (Library.placeable: compiled, with a function
 -- role) and filters them as the player types. Picking one starts placement
 -- mode with its blueprint (docs/CONTEXT.md "Building"): a ghost of it follows the
--- pointer, R turns it to the next facing, a left click places it, and Esc
--- or a right click leaves the mode. While placing, left clicks never
--- harvest.
+-- pointer, R turns it to the next facing, a left click places it and leaves
+-- the mode (Shift + left click places and stays for the next one; a refused
+-- click shows why and stays), and Esc or a right click leaves the mode.
+-- The ghost draws a reach outline per operator function brick and for the
+-- aura, and the placement panel keys their colours.
+-- While placing, left clicks never harvest.
+--
+-- Hovering a finished building or a construction site (when no villager's
+-- sprite is under the pointer, and not while placing or with a menu, picker
+-- or settings open) draws its reach outlines and a building card beside the
+-- pointer (src/game/components/building_status.lua).
 --
 -- Right-clicking a building adds "Replace..." to the menu (docs/CONTEXT.md
 -- "Replace"): it opens the picker, and the chosen design's ghost sits
@@ -29,6 +37,7 @@ local StorageFacility = require("src.game.components.storage_facility")
 local Hud = require("src.app.render.hud")
 local Projection = require("src.game.projection")
 local Status = require("src.game.components.status")
+local BuildingStatus = require("src.game.components.building_status")
 local Card = require("src.app.render.card")
 local Picker = require("src.app.picker")
 local PickerRender = require("src.app.render.picker")
@@ -135,6 +144,28 @@ function WorldScreen.hovered(screen)
 	end
 	local px, py = viewPoint(screen, screen.mouse.x, screen.mouse.y)
 	return CharacterRender.at(screen.ctx, px, py, screen.view)
+end
+
+-- The building or construction site whose footprint is under the pointer,
+-- or nil: while placing or with a menu, picker or settings open, none; a
+-- villager's sprite under the pointer wins (WorldScreen.hovered).
+function WorldScreen.hoveredBuilding(screen)
+	if not screen.mouse or screen.placing or screen.menu or screen.picker or screen.settings or WorldScreen.hovered(screen) then
+		return nil
+	end
+	local tx, ty = worldAt(screen, screen.mouse.x, screen.mouse.y)
+	local b = World.buildingAt(screen.ctx.world, math.floor(tx), math.floor(ty))
+	if not b or b.dead then
+		return nil
+	end
+	for _, list in ipairs({ screen.ctx.pools.buildings, screen.ctx.pools.sites }) do
+		for _, record in ipairs(list) do
+			if record == b then
+				return b
+			end
+		end
+	end
+	return nil
 end
 
 -- The tile under the held left-click pointer, or nil when not held.
@@ -329,8 +360,10 @@ local function placeGhost(screen)
 	if ghost.ok then
 		screen.pendingPlace = ghost.request
 		screen.message = nil
-		if ghost.request.replaces then
-			-- A building is replaced once.
+		local shift = love.keyboard.isDown("lshift") or love.keyboard.isDown("rshift")
+		if ghost.request.replaces or not shift then
+			-- A building is replaced once; a click places once unless
+			-- Shift is held.
 			stopPlacing(screen)
 		end
 	else
@@ -508,14 +541,21 @@ function WorldScreen.draw(screen)
 	if ghost then
 		GhostRender.draw(screen.ctx, ghost, screen.camera.zoom, screen.view, palette)
 	end
+	local hoveredBuilding = WorldScreen.hoveredBuilding(screen)
+	if hoveredBuilding then
+		GhostRender.drawReach(screen.ctx, projectionOf(screen), hoveredBuilding.blueprint, hoveredBuilding.tileX, hoveredBuilding.tileY, hoveredBuilding.facing)
+	end
 	Camera.detach()
 	Hud.draw(screen.player.inventory, StorageFacility.totals(screen.ctx), CharacterSystem.portInUse(screen.player, screen.ctx), Aura.at(screen.ctx, screen.player), StorageFacility.claimed(screen.ctx), StorageFacility.totalFill(screen.ctx), Status.hunger(screen.player.needs, screen.ctx.config.needs), screen.ctx.config.food)
 	local hovered = WorldScreen.hovered(screen)
 	if hovered then
 		Card.draw(Status.lines(hovered, Aura.at(screen.ctx, hovered)), screen.mouse.x, screen.mouse.y, Status.bars(hovered))
 	end
+	if hoveredBuilding then
+		Card.draw(BuildingStatus.lines(hoveredBuilding, screen.ctx.config), screen.mouse.x, screen.mouse.y)
+	end
 	Hud.drawSettingsButton((Screen.dimensions()), screen.mouse)
-	GhostRender.drawPanel(screen.placing, WorldScreen.cost(screen), WorldScreen.status(screen), StorageFacility.totals(screen.ctx))
+	GhostRender.drawPanel(screen.placing, WorldScreen.cost(screen), WorldScreen.status(screen), StorageFacility.totals(screen.ctx), screen.ctx.config)
 	if screen.settings then
 		local w, h = Screen.dimensions()
 		love.graphics.setColor(0, 0, 0, 0.6)

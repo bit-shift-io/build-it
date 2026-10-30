@@ -37,4 +37,44 @@ function WorkPlaneView.draw(view, s, origin, lines)
 	love.graphics.pop()
 end
 
+local GUIDE_COLOR = { 1, 1, 1, 0.6 }
+local AXES = {
+	{ { 1, 0, 0 }, { 0.9, 0.2, 0.2, 1 } }, -- X, east
+	{ { 0, 1, 0 }, { 0.3, 0.8, 0.3, 1 } }, -- Y, south
+	{ { 0, 0, 1 }, { 0.3, 0.5, 1, 1 } }, -- Z, up
+}
+
+-- Draws the always-on ground reference round the design's origin: the
+-- whole-tile `lines` (WorkPlane.groundGrid), a 1x1 tile outline at the
+-- origin and an axis arm of one tile each, X red, Y green, Z blue.
+function WorkPlaneView.drawGround(view, s, origin, lines)
+	WorkPlaneView.draw(view, s, origin, lines)
+	love.graphics.push("all")
+	love.graphics.setLineWidth(2)
+	local corners = { { 0, 0, 0 }, { 1, 0, 0 }, { 1, 1, 0 }, { 0, 1, 0 } }
+	local pts = {}
+	for _, c in ipairs(corners) do
+		local x, y = WorkPlaneView.pixel(view, s, origin, c)
+		if not x then
+			pts = nil
+			break
+		end
+		pts[#pts + 1] = x
+		pts[#pts + 1] = y
+	end
+	if pts then
+		love.graphics.setColor(GUIDE_COLOR)
+		love.graphics.polygon("line", pts)
+	end
+	for _, axis in ipairs(AXES) do
+		local ax, ay = WorkPlaneView.pixel(view, s, origin, { 0, 0, 0 })
+		local bx, by = WorkPlaneView.pixel(view, s, origin, axis[1])
+		if ax and bx then
+			love.graphics.setColor(axis[2])
+			love.graphics.line(ax, ay, bx, by)
+		end
+	end
+	love.graphics.pop()
+end
+
 return WorkPlaneView

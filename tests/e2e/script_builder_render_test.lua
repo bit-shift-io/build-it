@@ -87,7 +87,7 @@ test("the Insert menu and the properties strip draw over the view, and an insert
 	Fake.tap(game, "b")
 	local screen = game.flow.scriptBuilder
 	assertEqual(false, screen.locked)
-	Fake.tap(game, "4")
+	Fake.tap(game, "3")
 	local rows = assert(ScriptBuilderScreen.insertMenu(screen))
 	local cone = rows[4]
 	assertEqual("Cone", cone.item.label)
@@ -175,4 +175,32 @@ return group{ id = "root", sweep{ id = "beam", shape{ points = { { 0, 0 }, { 1, 
 	-- corner is bare.
 	assertTrue(isFootprint(pixels, pixelOf(screen, 0.15, 0.15, 0)), "expected bare footprint inside the curve")
 	love.filesystem.remove("e2e_sweep.lua")
+end)
+
+test("a new empty design shows the ground grid, the 1x1 guide and the axes", function()
+	local config = {}
+	for k, v in pairs(Config) do
+		config[k] = v
+	end
+	config.scriptBuilder = {}
+	for k, v in pairs(Config.scriptBuilder) do
+		config.scriptBuilder[k] = v
+	end
+	config.scriptBuilder.testDesign = "e2e_empty.lua"
+	assert(love.filesystem.write("e2e_empty.lua", [[return group{ id = "root", box{ id = "floor", size = { 1, 1, 0.125 }, transform = { move = { 1.5, 1.5, 0 } } } }]]))
+	local game = GameHarness.startSession({ width = 20, height = 20 }, { real = true, config = config })
+	Fake.tap(game, "b")
+	local screen = game.flow.scriptBuilder
+	assertEqual(nil, screen.message, screen.message)
+	local pixels = renderFrame(game)
+	Capture.capture("empty_design_ground")
+	local o = screen.origin
+	-- Half way along the X arm is red, along the Z arm blue.
+	local rx, ry = pixelOf(screen, 0.5 - o[1], -o[2], 0)
+	local r, g, b = colorAt(pixels, rx, ry)
+	assertTrue(r > g + 0.2 and r > b + 0.2, "expected the red X axis")
+	local bx, by = pixelOf(screen, -o[1], -o[2], 0.5)
+	r, g, b = colorAt(pixels, bx, by)
+	assertTrue(b > r + 0.2, "expected the blue Z axis")
+	love.filesystem.remove("e2e_empty.lua")
 end)

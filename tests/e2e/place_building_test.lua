@@ -68,22 +68,24 @@ test("a design places in all 4 facings with its port tiles marked, and the ghost
 	local c = game.ctx.pools.characters[1]
 	local screen = game.flow.world
 
-	Fake.pickDesign(game, "works")
 	-- One building per facing in a row south of the character,
-	-- footprints 3x2 or 2x3.
+	-- footprints 3x2 or 2x3. A click ends placement, so each facing
+	-- re-opens the picker and turns with R.
 	local spots = { N = { 3, 12 }, E = { 9, 12 }, S = { 15, 12 }, W = { 21, 12 } }
-	for _, facing in ipairs({ "N", "E", "S", "W" }) do
+	for i, facing in ipairs({ "N", "E", "S", "W" }) do
+		Fake.pickDesign(game, "works")
+		for _ = 2, i do
+			Fake.tap(game, "r")
+		end
 		assertEqual(facing, screen.placing.facing)
 		local spot = spots[facing]
 		local w, d = Placement.footprint(screen.placing.blueprint, facing)
 		Fake.click(game, 1, screenOf(game, c, spot[1] + w / 2, spot[2] + d / 2))
-		Fake.tap(game, "r")
 	end
 
 	-- Sites first: translucent, their cost reserved, nothing delivered.
 	assertEqual(4, #game.ctx.pools.sites, "one site per facing")
 	assertEqual(1, #game.ctx.pools.buildings, "only the storage facility")
-	Fake.tap(game, "escape")
 	game:mousemoved(5, 5, 0, 0)
 	Capture.capture("sites_all_facings")
 

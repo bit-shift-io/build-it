@@ -94,6 +94,17 @@ test("the grid drawn on a plane: quarter-tile lines round a point, every whole t
 	assertEqual(5, majors)
 end)
 
+test("the ground grid is whole-tile lines only, spanning 8 tiles each way of the origin", function()
+	local lines = WorkPlane.groundGrid(8)
+	-- x = -8..8 and y = -8..8.
+	assertEqual(34, #lines)
+	for _, l in ipairs(lines) do
+		assertTrue(l.major)
+		assertEqual(0, l[1][3])
+		assertTrue(math.abs(l[1][1]) <= 8 and math.abs(l[2][2]) <= 8)
+	end
+end)
+
 test("each path in a tree comes with its points in design space, every transform above applied", function()
 	local root = assert(Sandbox.run([[
 return group{ id = "root", transform = { move = { 1, 0, 0 } },

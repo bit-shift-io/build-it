@@ -1,6 +1,6 @@
 -- Materials in the script builder through the real input path
--- (src/app/flow.lua): key 5, or Material in the context menu, opens the
--- material panel under its top bar slot; its rows set the selected nodes'
+-- (src/app/flow.lua): the material section of the action panel shows when
+-- the selection has volume; its rows set the selected nodes'
 -- material, texture variant, texture scale and rotation, each one undo
 -- step. Changing material changes cost; changing variant doesn't.
 local GameHarness = require("tests.support.game_harness")
@@ -9,8 +9,6 @@ local Fake = require("tests.support.fake_input")
 local Config = require("src.game.config")
 local Sandbox = require("src.game.script.sandbox")
 local ScriptBuilderScreen = require("src.app.screens.script_builder")
-local BuilderCamera = require("src.app.builder_camera")
-local ContextMenu = require("src.app.ui.context_menu")
 
 -- A game in the script builder, opened on design file `name`.lua in the
 -- save directory holding `text`.
@@ -78,11 +76,9 @@ local function node(screen, id)
 	end
 end
 
-test("key 5 opens the material panel; its rows make the selection stone brick, scaled and turned, and save", function()
+test("the material section shows for a box; its rows make the selection stone brick, scaled and turned, and save", function()
 	local game, screen = openBuilder("hall", DESIGN)
 	clickRow(game, screen, "wall")
-	Fake.tap(game, "5")
-	assertEqual("material", screen.tool)
 	local plankCost = screen.blueprint.cost.plank
 	assertEqual(nil, screen.blueprint.cost.stone)
 
@@ -112,27 +108,18 @@ test("key 5 opens the material panel; its rows make the selection stone brick, s
 	local text = assert(love.filesystem.read(Config.designs.dir .. "/hall.lua"))
 	local saved = assert(Sandbox.run(text, "hall")).root
 	assertEqual("brick", saved.children[1].material.variant)
+end)
 
-	Fake.tap(game, "escape")
+test("a selected shape has no Material section, and a group paints only what has volume", function()
+	local game, screen = openBuilder("flat", [[
+return group{ id = "root",
+	shape{ id = "flat", points = { { 0, 0 }, { 1, 0 }, { 1, 1 }, { 0, 1 } } },
+	box{ id = "crate" },
+}
+]])
+	clickRow(game, screen, "flat")
 	assertEqual(nil, ScriptBuilderScreen.materialPanel(screen))
+	clickRow(game, screen, "root")
+	assertTrue(ScriptBuilderScreen.materialPanel(screen), "a group with a box shows it")
 end)
 
-test("Material in the context menu opens the panel on the node right-clicked", function()
-	local game, screen = openBuilder("hut", DESIGN)
-	clickRow(game, screen, "post")
-	-- The top of the wall, in the view.
-	local s, o = screen.cfg.studsPerTile, screen.origin
-	local x, y = BuilderCamera.project(ScriptBuilderScreen.view(screen), (1 - o[1]) * s, (0.5 - o[2]) * s, 1 * s)
-	Fake.click(game, 2, x, y)
-	local menu = assert(screen.menu, "the context menu is open")
-	for i, item in ipairs(menu.items) do
-		if item == "Material" then
-			local r = ContextMenu.row(menu, i)
-			Fake.click(game, 1, r.x + r.width / 2, r.y + r.height / 2)
-		end
-	end
-	assertTrue(ScriptBuilderScreen.materialPanel(screen), "the material panel is open")
-	clickPanel(game, screen, "name", "stone")
-	assertEqual("stone", node(screen, "wall").material.name)
-	assertEqual(nil, node(screen, "post").material)
-end)

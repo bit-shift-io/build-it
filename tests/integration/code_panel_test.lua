@@ -45,18 +45,18 @@ end
 -- Opens the panel with the 6 key as LÖVE delivers it: keypressed, then
 -- the key's own textinput, in one frame.
 local function openPanel(game)
-	game:keypressed("6")
+	game:keypressed("4")
 	game:textinput("6")
 	require("tests.support.frame_stepper").step(game, 1)
 end
 
-test("6 opens the code panel on the script's text; digits type rather than pick tools", function()
+test("4 opens the code panel on the script's text; digits type rather than pick tools", function()
 	local game, screen = builder()
 	openPanel(game)
 	assertTrue(ScriptBuilderScreen.codePanel(screen) ~= nil, "the panel opens")
 	assertTrue(ScriptBuilderScreen.modal(screen), "Esc closes the panel, not the builder")
 	local shown = Serialize.tree(screen.scene.root)
-	assertEqual(shown, code(screen), "the opening key's 6 is not typed")
+	assertEqual(shown, code(screen), "the opening key's 4 is not typed")
 	Fake.tap(game, "1")
 	Fake.typeText(game, "1")
 	assertEqual("code", screen.tool, "1 picks no tool")

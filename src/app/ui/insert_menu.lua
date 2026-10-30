@@ -10,6 +10,7 @@ local BACKGROUND = { 0, 0, 0, 0.85 }
 local HOVER_COLOR = { 1, 1, 1, 0.15 }
 local ARMED_COLOR = { 0.3, 0.5, 0.85, 0.75 }
 local TEXT_COLOR = { 1, 1, 1, 1 }
+local HEADER_COLOR = { 0.6, 0.6, 0.6, 1 }
 local PREFAB_COLOR = { 0.75, 0.85, 1, 1 }
 
 local function inside(r, x, y)
@@ -47,6 +48,11 @@ function InsertMenu.draw(rows, armed, mouse)
 	love.graphics.setColor(BACKGROUND)
 	love.graphics.rectangle("fill", first.x, first.y, WIDTH, #rows * ROW_H)
 	for _, row in ipairs(rows) do
+		if row.item.header then
+			love.graphics.setColor(HEADER_COLOR)
+			love.graphics.print(row.item.label, row.x + PAD, row.y + 3)
+			goto continue
+		end
 		if row.item == armed then
 			love.graphics.setColor(ARMED_COLOR)
 			love.graphics.rectangle("fill", row.x, row.y, row.width, row.height)
@@ -56,6 +62,7 @@ function InsertMenu.draw(rows, armed, mouse)
 		end
 		love.graphics.setColor(row.item.prefab and PREFAB_COLOR or TEXT_COLOR)
 		love.graphics.print(row.item.label, row.x + PAD, row.y + 3)
+		::continue::
 	end
 	love.graphics.pop()
 end

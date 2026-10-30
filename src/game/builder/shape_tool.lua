@@ -15,7 +15,7 @@ ShapeTool.KINDS = {
 	{ label = "Rect", kind = "rect" },
 	{ label = "Ellipse", kind = "ellipse" },
 	{ label = "Polygon", kind = "polygon" },
-	{ label = "Path", kind = "path" },
+	{ label = "Freeform", kind = "path" },
 }
 
 -- A shape node of `points` on `plane`, both copied, with no id (Scene.insert

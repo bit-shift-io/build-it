@@ -9,10 +9,15 @@ local ShapeOverlay = {}
 
 local OUTLINE_COLOR = { 0.95, 0.85, 0.4, 0.8 }
 local SELECTED_COLOR = { 1, 0.65, 0.2, 1 }
+local HOVER_COLOR = { 1, 1, 0.7, 1 }
 local DRAWING_COLOR = { 0.5, 0.85, 1, 1 }
 local POINT_COLOR = { 1, 1, 1, 1 }
 local HANDLE_COLOR = { 0.5, 0.85, 1, 0.9 }
 local POINT_SIZE = 4
+local FIRST_SIZE = 6
+local LIT_SIZE = 8
+local HINT_COLOR = { 0.85, 0.9, 1, 1 }
+local LIT_COLOR = { 1, 1, 0.4, 1 }
 
 -- `corners` as screen pixels { x1, y1, x2, y2, ... }, the first again at
 -- the end when `closed`; nil when any lies behind the camera.
@@ -46,7 +51,7 @@ function ShapeOverlay.draw(view, s, origin, overlay)
 	love.graphics.push("all")
 	love.graphics.setLineWidth(2)
 	for _, o in ipairs(overlay.outlines) do
-		love.graphics.setColor(o.selected and SELECTED_COLOR or OUTLINE_COLOR)
+		love.graphics.setColor(o.hovered and HOVER_COLOR or o.selected and SELECTED_COLOR or OUTLINE_COLOR)
 		polyline(view, s, origin, o.corners, o.closed)
 	end
 	if overlay.drawing then
@@ -68,6 +73,11 @@ function ShapeOverlay.draw(view, s, origin, overlay)
 			love.graphics.setColor(POINT_COLOR)
 			love.graphics.rectangle("fill", x - POINT_SIZE, y - POINT_SIZE, POINT_SIZE * 2, POINT_SIZE * 2)
 		end
+	end
+	if overlay.hint then
+		local _, h = love.graphics.getDimensions()
+		love.graphics.setColor(HINT_COLOR)
+		love.graphics.print(overlay.hint, 16, h - 16 - 5 * love.graphics.getFont():getHeight())
 	end
 	love.graphics.pop()
 end

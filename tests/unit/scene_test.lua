@@ -208,3 +208,44 @@ return group{ id = "root", material = { name = "stone" },
 	assertEqual("stone", Scene.material(scene, "c").name)
 	assertEqual(nil, Scene.material(sceneOf("return group{ id = \"root\", box{ id = \"b\" } }"), "b"))
 end)
+
+test("hasVolume: primitives and prefabs yes, a bare shape or path no, a group if a child has", function()
+	local scene = sceneOf([[
+return group{ id = "root",
+	shape{ id = "s", points = { { 0, 0 }, { 1, 0 }, { 1, 1 }, { 0, 1 } } },
+	path{ id = "p", points = { { 0, 0 }, { 3, 0 } } },
+	box{ id = "b" },
+	group{ id = "flat", shape{ id = "s2", points = { { 0, 0 }, { 1, 0 }, { 1, 1 } } } },
+	prefab("something", { id = "pf" }),
+}
+]])
+	local function has(id)
+		return Scene.hasVolume(Scene.find(scene, id))
+	end
+	assertFalse(has("s"))
+	assertFalse(has("p"))
+	assertTrue(has("b"))
+	assertTrue(has("pf"))
+	assertFalse(has("flat"))
+	assertTrue(has("root"))
+end)
+
+test("setMaterial and setColor skip selected nodes without volume", function()
+	local scene = sceneOf([[
+return group{ id = "root",
+	shape{ id = "s", points = { { 0, 0 }, { 1, 0 }, { 1, 1 }, { 0, 1 } } },
+	box{ id = "b" },
+}
+]])
+	Scene.select(scene, "s")
+	Scene.select(scene, "b", true)
+	assertTrue(Scene.setColor(scene, { 1, 0, 0 }))
+	assertTrue(Scene.setMaterial(scene, { name = "stone", variant = "brick", scale = 1, rotation = 0 }))
+	assertEqual(nil, Scene.find(scene, "s").color)
+	assertEqual(nil, Scene.find(scene, "s").material)
+	assertEqual(1, Scene.find(scene, "b").color[1])
+	assertEqual("stone", Scene.find(scene, "b").material.name)
+	Scene.select(scene, "s")
+	local ok = Scene.setColor(scene, { 1, 0, 0 })
+	assertFalse(ok)
+end)

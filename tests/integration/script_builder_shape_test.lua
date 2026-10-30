@@ -60,7 +60,7 @@ end
 test("four clicks and a click on the first point close a shape of four hard points, saved and reopened editable", function()
 	local game, screen = openBuilder("plot", EMPTY)
 	Fake.tap(game, "2")
-	assertEqual("shape", screen.tool)
+	assertEqual("draw", screen.tool)
 	clickGround(game, screen, { { 0, 0 }, { 2, 0 }, { 2, 1 }, { 0, 1 }, { 0, 0 } })
 	local shape = screen.scene.root.children[1]
 	assertTrue(shape ~= nil, "a node was added")
@@ -101,8 +101,9 @@ test("a path point dragged while placed turns smooth with Bézier handles; a rec
 	assertEqual(2, #path.points[3], "a plain click is a hard point")
 	-- Rect, from the Shape menu.
 	local rows = assert(ScriptBuilderScreen.shapeMenu(screen))
-	assertEqual("Rect", rows[1].item.label)
-	Fake.click(game, 1, rows[1].x + 5, rows[1].y + 5)
+	assertEqual("Shapes (closed)", rows[1].item.label)
+	assertEqual("Rect", rows[2].item.label)
+	Fake.click(game, 1, rows[2].x + 5, rows[2].y + 5)
 	clickGround(game, screen, { { 4, 3 }, { 3, 2.5 } })
 	local rect = screen.scene.root.children[2]
 	assertEqual("shape", rect.kind)
@@ -181,4 +182,81 @@ return group{ id = "root", box{ id = "b", size = { 2, 2, 1 } } }
 	assertEqual("shape", top.kind, tostring(screen.message))
 	assertEqual(1, top.plane.origin[3])
 	assertEqual("1.5 0.5", table.concat(top.points[2], " "))
+end)
+
+test("a click within 10 px of an outline, or inside it, selects the shape; 15 px off selects nothing; hover lights it", function()
+	local game, screen = openBuilder("plot", [[
+return group{ id = "root", shape{ id = "s", points = { { 0, 0 }, { 2, 0 }, { 2, 2 }, { 0, 2 } } } }
+]])
+	local x, y = pixel(screen, { 1, 0, 0 })
+	game:mousemoved(x, y + 8, 0, 0)
+	assertEqual("s", screen.hoverOutline)
+	assertTrue(ScriptBuilderScreen.overlay(screen).outlines[1].hovered)
+	Fake.click(game, 1, x, y + 8)
+	assertEqual("s", screen.scene.selection[1])
+	Fake.click(game, 1, x, y - 40)
+	assertEqual(nil, screen.scene.selection[1])
+	game:mousemoved(x, y - 15, 0, 0)
+	assertEqual(nil, screen.hoverOutline)
+	local cx, cy = pixel(screen, { 1, 1, 0 })
+	Fake.click(game, 1, cx, cy)
+	assertEqual("s", screen.scene.selection[1])
+end)
+
+local function doubleClickGround(game, screen, p)
+	local x, y = pixel(screen, { p[1], p[2], 0 })
+	game:mousemoved(x, y, 0, 0)
+	for _ = 1, 2 do
+		game:mousepressed(x, y, 1)
+		game:mousereleased(x, y, 1)
+	end
+	game:update(1 / 60)
+end
+
+test("Return closes a polygon of three points; fewer than three refuses with a message", function()
+	local game, screen = openBuilder("ret", EMPTY)
+	Fake.tap(game, "2")
+	clickGround(game, screen, { { 0, 0 }, { 2, 0 } })
+	Fake.tap(game, "return")
+	assertEqual(0, #screen.scene.root.children)
+	assertTrue(screen.message ~= nil and screen.message:find("Can't close"), "refused with a message")
+	clickGround(game, screen, { { 2, 2 } })
+	Fake.tap(game, "return")
+	local shape = screen.scene.root.children[1]
+	assertEqual("shape", shape.kind)
+	assertEqual(3, #shape.points)
+	assertEqual(nil, screen.shape.drawing)
+end)
+
+test("a double-click on the last point closes the polygon without adding a point", function()
+	local game, screen = openBuilder("dbl", EMPTY)
+	Fake.tap(game, "2")
+	clickGround(game, screen, { { 0, 0 }, { 2, 0 } })
+	doubleClickGround(game, screen, { 2, 2 })
+	local shape = screen.scene.root.children[1]
+	assertEqual("shape", shape.kind)
+	assertEqual(3, #shape.points)
+	assertEqual(1, #screen.scene.root.children)
+end)
+
+test("a double-click after three points closes it on the first press's duplicate", function()
+	local game, screen = openBuilder("dbl3", EMPTY)
+	Fake.tap(game, "2")
+	clickGround(game, screen, { { 0, 0 }, { 2, 0 }, { 2, 2 } })
+	doubleClickGround(game, screen, { 2, 2 })
+	assertEqual(3, #screen.scene.root.children[1].points)
+end)
+
+test("the first point lights when the pointer is over it, and a hint shows per kind", function()
+	local game, screen = openBuilder("hint", EMPTY)
+	Fake.tap(game, "2")
+	clickGround(game, screen, { { 0, 0 }, { 2, 0 }, { 2, 2 } })
+	local x, y = pixel(screen, { 0, 0, 0 })
+	game:mousemoved(x + 20, y, 0, 0)
+	assertEqual(false, ScriptBuilderScreen.overlay(screen).points[1].lit)
+	game:mousemoved(x + 3, y, 0, 0)
+	local first = ScriptBuilderScreen.overlay(screen).points[1]
+	assertEqual(true, first.first)
+	assertEqual(true, first.lit)
+	assertTrue(ScriptBuilderScreen.hint(screen):find("Enter or double%-click to close"), "polygon hint")
 end)
