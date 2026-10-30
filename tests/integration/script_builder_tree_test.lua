@@ -132,11 +132,27 @@ end)
 test("number keys and clicks on the top bar pick tools; empty slots pick nothing", function()
 	local game, screen = openBuilder("house", HOUSE)
 	assertEqual("select", screen.tool)
-	Fake.tap(game, "5")
+	Fake.tap(game, "4")
 	assertEqual("library", screen.tool)
 	Fake.tap(game, "9")
 	assertEqual("library", screen.tool)
-	local slot = ScriptBuilderScreen.topBar(screen)[1]
+	local slot = ScriptBuilderScreen.topBar(screen)[4]
+	Fake.click(game, 1, slot.x + 2, slot.y + 2)
+	assertEqual("select", screen.tool)
+	assertEqual(nil, screen.libraryOpen)
+end)
+
+test("pressing the active tool's number, or clicking its slot, puts it away", function()
+	local game, screen = openBuilder("house", HOUSE)
+	assertEqual(4, #ScriptBuilderScreen.topBar(screen))
+	Fake.tap(game, "2")
+	assertEqual("insert", screen.tool)
+	Fake.tap(game, "2")
+	assertEqual("select", screen.tool)
+	assertEqual(nil, screen.insert)
+	local slot = ScriptBuilderScreen.topBar(screen)[4]
+	Fake.click(game, 1, slot.x + 2, slot.y + 2)
+	assertEqual("library", screen.tool)
 	Fake.click(game, 1, slot.x + 2, slot.y + 2)
 	assertEqual("select", screen.tool)
 end)
@@ -236,4 +252,71 @@ test("a click on the action panel does not select through to the view", function
 	local p = ScriptBuilderScreen.actionPanel(screen)
 	Fake.click(game, 1, p.x + p.width - 2, p.y + p.height - 1)
 	assertEqual("s", screen.scene.selection[1])
+end)
+
+local function headerAt(screen, name)
+	for _, s in ipairs(ScriptBuilderScreen.column(screen).sections) do
+		if s.name == name then
+			return s.header
+		end
+	end
+end
+
+local function manyBoxes(count)
+	local parts = {}
+	for i = 1, count do
+		parts[i] = string.format('\tbox{ id = "b%d", name = "B%d", size = { 1, 1, 1 } },', i, i)
+	end
+	return 'return group{ id = "root", name = "Root",\n' .. table.concat(parts, "\n") .. "\n}\n"
+end
+
+test("collapsing Tree hides its rows, lifts Actions, and a click there selects nothing", function()
+	local game, screen = openBuilder("house", HOUSE)
+	local before = headerAt(screen, "actions").y
+	local x, y = rowCenter(screen, "base")
+	local header = headerAt(screen, "tree")
+	Fake.click(game, 1, header.x + 5, header.y + 5)
+	assertEqual(0, #ScriptBuilderScreen.treeRows(screen))
+	assert(headerAt(screen, "actions").y < before, "Actions moved up")
+	Fake.click(game, 1, x, y)
+	assertEqual(0, #screen.scene.selection)
+	Fake.click(game, 1, header.x + 5, header.y + 5)
+	assertEqual(3, #ScriptBuilderScreen.treeRows(screen))
+end)
+
+test("the wheel over the column scrolls it, and a click on a scrolled row selects that node", function()
+	local game, screen = openBuilder("many", manyBoxes(50))
+	local zoom = screen.camera.distance
+	local col = ScriptBuilderScreen.column(screen)
+	assert(col.maxScroll > 0, "tree is taller than the window")
+	game:mousemoved(50, 300, 0, 0)
+	game:wheelmoved(0, -3)
+	assertEqual(90, screen.column.scroll)
+	assertEqual(zoom, screen.camera.distance)
+	for _, row in ipairs(ScriptBuilderScreen.treeRows(screen)) do
+		if row.y >= 200 and row.y < 220 then
+			Fake.click(game, 1, row.x + 10, row.y + 10)
+			assertEqual(row.node.id, screen.scene.selection[1])
+			return
+		end
+	end
+	error("no row at y 200")
+end)
+
+test("dragging the scroll bar thumb scrolls the column", function()
+	local game, screen = openBuilder("many", manyBoxes(50))
+	local thumb = ScriptBuilderScreen.column(screen).bar.thumb
+	Fake.drag(game, 1, thumb.x + 2, thumb.y + 2, thumb.x + 2, thumb.y + 102)
+	assert(screen.column.scroll > 0, "scrolled")
+	assertEqual(nil, screen.column.dragging)
+end)
+
+test("collapsed sections stay collapsed when another script opens", function()
+	local game, screen = openBuilder("house", HOUSE)
+	local header = headerAt(screen, "tree")
+	Fake.click(game, 1, header.x + 5, header.y + 5)
+	assertEqual(true, screen.column.collapsed.tree)
+	love.filesystem.write("other.lua", HOUSE)
+	ScriptBuilderScreen.open(screen)
+	assertEqual(true, screen.column.collapsed.tree)
 end)

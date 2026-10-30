@@ -43,7 +43,7 @@
 -- first point grows and lights under the pointer, and a hint line names
 -- the controls (ScriptBuilderScreen.hint).
 --
--- Key 4 (Insert) opens a menu of primitives and prefabs, role prefabs
+-- Key 2 (Insert) opens a menu of primitives and prefabs, role prefabs
 -- included (src/game/builder/insert.lua); a click on one arms it and a
 -- click in the view places it on the work plane under the pointer (the
 -- ground, snapped to a quarter tile unless Shift is held), selected, as one
@@ -60,7 +60,7 @@
 -- edit a locked script takes; scripts with params are always locked -- and
 -- rebuilds the model live, so Ctrl+S saves the new default.
 --
--- Key 2 (Shape) draws a closed 2D outline (src/game/builder/shape_tool.lua)
+-- Key 1 (Draw: shapes) draws a closed 2D outline (src/game/builder/shape_tool.lua)
 -- on the work plane (src/game/builder/work_plane.lua): the ground, an XY,
 -- XZ or YZ plane at a height ([ and ] step it by a quarter tile) or a face
 -- of the model picked from its menu. A rect or ellipse takes two clicks on
@@ -73,7 +73,7 @@
 -- Insert is on, snapping to a quarter tile unless Shift is held; Insert
 -- places on the same work plane.
 --
--- Key 3 (Path) draws an open path (src/game/builder/path_tool.lua) on the
+-- Key 1 (Draw: paths) draws an open path (src/game/builder/path_tool.lua) on the
 -- same work planes, from the same kind of menu: a line takes two clicks,
 -- an arc its centre, start and end (counter-clockwise), a helix its centre
 -- and radius; a polyline, Bézier (drag while placing for handles) or
@@ -109,7 +109,7 @@
 -- built-in as a shadow copy in the save directory, and Reset to default
 -- deletes that copy (Library.reset).
 --
--- Key 7 (Library) opens the library manager (src/app/ui/library_panel.lua)
+-- Key 4 (Library) opens the library manager (src/app/ui/library_panel.lua)
 -- under its slot: Designs and Prefabs tabs listing every script with a
 -- thumbnail and Open, Duplicate, Rename and Delete (Reset for a built-in,
 -- which can't be renamed or deleted); Delete takes a second click to
@@ -119,7 +119,7 @@
 -- New, Edit prefab, Reset of the open script) asks first: S saves, D
 -- drops them, Esc stays. Esc puts the panel away.
 --
--- Key 6 (Code) opens the code panel (src/app/ui/code_panel.lua) down the
+-- Key 3 (Code) opens the code panel (src/app/ui/code_panel.lua) down the
 -- right: the script as text (src/game/text_buffer.lua) with line numbers.
 -- While it is up every key types or edits there (digits pick no tool);
 -- a click places the cursor, a drag or Shift selects, Ctrl+C/X/V/A copy,
@@ -163,11 +163,14 @@ local ShapeOverlay = require("src.app.render.shape_overlay")
 local TopBar = require("src.app.ui.top_bar")
 local TreePanel = require("src.app.ui.tree_panel")
 local ActionPanel = require("src.app.ui.action_panel")
+local BuilderColumn = require("src.app.ui.builder_column")
 local ContextMenu = require("src.app.ui.context_menu")
 local InsertMenu = require("src.app.ui.insert_menu")
 local PropertiesStrip = require("src.app.ui.properties")
+local WorkPlaneSection = require("src.app.ui.work_plane_section")
 local ParamsPanel = require("src.app.ui.params_panel")
 local MaterialPanel = require("src.app.ui.material_panel")
+local Dropdown = require("src.app.ui.dropdown")
 local ColourPicker = require("src.app.ui.colour_picker")
 local LibraryPanel = require("src.app.ui.library_panel")
 local CodePanel = require("src.app.ui.code_panel")
@@ -182,11 +185,10 @@ local ScriptBuilderScreen = {}
 
 -- The top bar's tools by slot number.
 ScriptBuilderScreen.TOOLS = {
-	[1] = { id = "select", label = "Select" },
-	[2] = { id = "draw", label = "Draw" },
-	[3] = { id = "insert", label = "Insert" },
-	[4] = { id = "code", label = "Code" },
-	[5] = { id = "library", label = "Library" },
+	[1] = { id = "draw", label = "Draw" },
+	[2] = { id = "insert", label = "Insert" },
+	[3] = { id = "code", label = "Code" },
+	[4] = { id = "library", label = "Library" },
 }
 
 -- The Draw tool's menu: closed shapes, then open paths, each under a header
@@ -228,6 +230,9 @@ local LOCKED_MESSAGE = "Locked script: it holds code, so edit it as text"
 -- Seconds between hot reload's looks at the save directory.
 local POLL = 0.5
 
+-- Px the builder column scrolls per wheel notch.
+local WHEEL_STEP = 30
+
 -- read(path) returns a game file's text, or nil and why not
 -- (love.filesystem.read). library() returns the design library as it is
 -- now (src/game/designs/library.lua), which its prefabs resolve from.
@@ -242,6 +247,10 @@ function ScriptBuilderScreen.new(config, read, library, palette)
 		-- The colour picker's recent picks (RecentColours), kept across
 		-- openings for the session.
 		recentColours = RecentColours.new(),
+		-- The builder column's state (BuilderColumn), kept across openings:
+		-- collapsed sections by name, the scroll in px, and a thumb drag
+		-- ({ grab }) in progress.
+		column = { collapsed = {}, scroll = 0, dragging = nil },
 		cfg = config.builder,
 		scfg = config.scriptBuilder,
 		read = read,
@@ -505,7 +514,7 @@ function ScriptBuilderScreen.modal(screen)
 	return screen.menu ~= nil or screen.rename ~= nil or screen.transform ~= nil
 		or screen.field ~= nil or screen.insert ~= nil or screen.paramField ~= nil
 		or screen.shape ~= nil or screen.pointDrag ~= nil or screen.sweeping ~= nil
-		or screen.exportPrompt ~= nil
+		or screen.exportPrompt ~= nil or ScriptBuilderScreen.dropdown(screen) ~= nil
 		or screen.libraryOpen ~= nil or screen.libraryRename ~= nil or screen.unsaved ~= nil
 		or (screen.code ~= nil and screen.code.open)
 end
@@ -559,17 +568,184 @@ function ScriptBuilderScreen.topBar(screen)
 	return TopBar.slots(screen.scfg.topBarHeight, screen.scfg.topBarSlots, ScriptBuilderScreen.TOOLS)
 end
 
--- The tree panel's rows (TreePanel.rows), a selected prefab instance's
--- own tree read-only under it; none when the script failed.
-function ScriptBuilderScreen.treeRows(screen)
-	if not screen.scene then
-		return {}
-	end
+-- The prefab instances' trees shown read-only under the selection.
+local function expandedTrees(screen)
 	local expanded = {}
 	for _, id in ipairs(screen.scene.selection) do
 		expanded[id] = screen.expanded[id]
 	end
-	return TreePanel.rows(screen.scene, screen.scfg.topBarHeight, expanded)
+	return expanded
+end
+
+-- The action panel's labels: the selection's actions (Actions.of), Make 3D's
+-- second level once opened, or nil (the hint) with nothing selected.
+local function actionItems(screen)
+	local scene = screen.scene
+	if #scene.selection == 0 then
+		return nil
+	end
+	local sub = screen.panelSub
+	if sub and sub.id == scene.selection[1] and #scene.selection == 1 then
+		return sub.items
+	end
+	screen.panelSub = nil
+	return Actions.of(scene, scene.selection, screen.lib, screen.locked)
+end
+
+-- Whether the Material and Colour sections show: the selection has volume
+-- and the script can be edited.
+local function paintShown(screen)
+	return screen.scene ~= nil and not screen.locked and Actions.showPaint(screen.scene, screen.scene.selection)
+end
+
+-- The material the panel shows: the first selected node's (Scene.material),
+-- else the default material's first variant, unscaled and unturned.
+local function shownMaterial(screen)
+	local id = screen.scene.selection[1]
+	local material = id and Scene.material(screen.scene, id)
+	if material then
+		return material
+	end
+	local name = screen.config.blueprints.defaultMaterial
+	return { name = name, variant = screen.config.materials[name].variants[1], scale = 1, rotation = 0 }
+end
+
+-- The selected node's editable properties (Properties.of); none unless
+-- exactly one is selected and the script can be edited.
+local function shownProperties(screen)
+	local scene = screen.scene
+	if screen.locked or not scene or #scene.selection ~= 1 then
+		return {}
+	end
+	local node = Scene.find(scene, scene.selection[1])
+	return node and Properties.of(node) or {}
+end
+
+-- The one selected node when it is a prefab instance, else nil.
+local function selectedInstance(screen)
+	local scene = screen.scene
+	if not scene or #scene.selection ~= 1 then
+		return nil
+	end
+	local node = Scene.find(scene, scene.selection[1])
+	return node and node.kind == "prefab" and node or nil
+end
+
+-- The params the panel shows: the script's own when it declares any, else
+-- the one selected prefab instance's (Resolve.prefab, its overrides as
+-- values), worked out once per revision; and that instance, or nil.
+local function shownParams(screen)
+	if #screen.params > 0 then
+		return screen.params, nil
+	end
+	local node = not screen.locked and selectedInstance(screen)
+	if not node then
+		return {}, nil
+	end
+	local c = screen.instanceCache
+	if not (c and c.revision == screen.revision and c.id == node.id) then
+		local result = Resolve.prefab(screen.lib, node.prefab, node.params)
+		c = { revision = screen.revision, id = node.id, params = result and result.params or {} }
+		screen.instanceCache = c
+	end
+	return c.params, node
+end
+
+-- The builder column's layout (BuilderColumn.layout): the Tree and Actions
+-- sections under the top bar, scrolled; empty when the script failed.
+function ScriptBuilderScreen.column(screen)
+	local state = screen.column
+	local sections = {}
+	if screen.scene then
+		local count = #TreePanel.rows(screen.scene, 0, expandedTrees(screen))
+		sections = {
+			{ name = "tree", title = "Tree", height = TreePanel.height(count), collapsed = state.collapsed.tree },
+			{
+				name = "actions",
+				title = "Actions",
+				height = ActionPanel.height(actionItems(screen)),
+				collapsed = state.collapsed.actions,
+			},
+		}
+		if screen.shape or screen.insert then
+			table.insert(sections, 1, {
+				name = "plane",
+				title = "Work plane",
+				height = WorkPlaneSection.height(screen.planeName),
+				collapsed = state.collapsed.plane,
+			})
+		end
+		local props = #shownProperties(screen)
+		if props > 0 then
+			sections[#sections + 1] = {
+				name = "properties",
+				title = "Properties",
+				height = PropertiesStrip.height(props),
+				collapsed = state.collapsed.properties,
+			}
+		end
+		local params = #(shownParams(screen))
+		if params > 0 then
+			sections[#sections + 1] = {
+				name = "params",
+				title = "Params",
+				height = ParamsPanel.height(params),
+				collapsed = state.collapsed.params,
+			}
+		end
+		if paintShown(screen) then
+			sections[#sections + 1] = {
+				name = "material",
+				title = "Material",
+				height = MaterialPanel.height(),
+				collapsed = state.collapsed.material,
+			}
+			sections[#sections + 1] = {
+				name = "colour",
+				title = "Colour",
+				height = ColourPicker.layout(ColourPicker.builderSections(screen.recentColours), 0, 0).height,
+				collapsed = state.collapsed.colour,
+			}
+		end
+	end
+	local top = screen.scfg.topBarHeight
+	local _, h = Screen.dimensions()
+	local col = BuilderColumn.layout(sections, top, h - top, state.scroll)
+	state.scroll = col.scroll
+	return col
+end
+
+local function sectionContent(col, name)
+	for _, s in ipairs(col.sections) do
+		if s.name == name then
+			return s.content
+		end
+	end
+	return nil
+end
+
+-- The Work plane section's layout (WorkPlaneSection.layout) while Draw or
+-- Insert is on; nil when neither is or the section is collapsed.
+function ScriptBuilderScreen.workPlane(screen)
+	if not (screen.shape or screen.insert) then
+		return nil
+	end
+	local content = sectionContent(ScriptBuilderScreen.column(screen), "plane")
+	return content and WorkPlaneSection.layout(screen.planeName, screen.planeHeight, content)
+end
+
+-- The tree panel's rows (TreePanel.rows), a selected prefab instance's
+-- own tree read-only under it; none when the script failed or Tree is
+-- collapsed.
+function ScriptBuilderScreen.treeRows(screen)
+	if not screen.scene then
+		return {}
+	end
+	local content = sectionContent(ScriptBuilderScreen.column(screen), "tree")
+	if not content then
+		return {}
+	end
+	return TreePanel.rows(screen.scene, content.y, expandedTrees(screen))
 end
 
 -- What the camera circles, in studs: the middle of the geometry and its
@@ -690,42 +866,28 @@ local function pathAt(screen, x, y)
 	return outlineAt(screen, x, y, false)
 end
 
--- The action panel's layout (ActionPanel.layout) under the tree: the
--- selection's actions (Actions.of), Make 3D's second level once opened, or
--- the hint with nothing selected.
+-- The action panel's layout (ActionPanel.layout) in the column's Actions
+-- section; nil while it is collapsed.
 function ScriptBuilderScreen.actionPanel(screen)
-	local scene = screen.scene
-	local items
-	if #scene.selection > 0 then
-		local sub = screen.panelSub
-		if sub and sub.id == scene.selection[1] and #scene.selection == 1 then
-			items = sub.items
-		else
-			screen.panelSub = nil
-			items = Actions.of(scene, scene.selection, screen.lib, screen.locked)
-		end
+	local content = sectionContent(ScriptBuilderScreen.column(screen), "actions")
+	if not content then
+		return nil
 	end
-	local top = screen.scfg.topBarHeight
-	local tree = TreePanel.bounds(ScriptBuilderScreen.treeRows(screen), top)
-	return ActionPanel.layout(items, tree.y + tree.height)
+	return ActionPanel.layout(actionItems(screen), content.y)
 end
 
 -- The node under screen point (x, y): its tree row's, else the shape or
 -- path drawn there, else the model's;
--- and whether the point is on the tree panel.
+-- and whether the point is on the builder column or top bar.
 local function nodeAt(screen, x, y)
-	local rows = ScriptBuilderScreen.treeRows(screen)
-	local row = TreePanel.rowAt(rows, x, y)
-	if row then
-		return row.owner or row.node.id, true
-	end
-	if screen.scene and TreePanel.contains(rows, screen.scfg.topBarHeight, x, y) then
-		return nil, true
-	end
-	if screen.scene and ActionPanel.contains(ScriptBuilderScreen.actionPanel(screen), x, y) then
-		return nil, true
-	end
 	if y < screen.scfg.topBarHeight then
+		return nil, true
+	end
+	if screen.scene and BuilderColumn.contains(ScriptBuilderScreen.column(screen), x, y) then
+		local row = TreePanel.rowAt(ScriptBuilderScreen.treeRows(screen), x, y)
+		if row then
+			return row.owner or row.node.id, true
+		end
 		return nil, true
 	end
 	if screen.scene then
@@ -871,59 +1033,70 @@ local function select(screen, id, add)
 	end
 end
 
+-- `slot` moved to sit just right of the builder column, so a tool's menu
+-- hangs beside the column and never covers its sections.
+local function besideColumn(slot)
+	local moved = {}
+	for k, v in pairs(slot) do
+		moved[k] = v
+	end
+	moved.x = BuilderColumn.MARGIN + BuilderColumn.WIDTH + 16
+	return moved
+end
+
 -- The Insert tool's menu rows (InsertMenu.rows) under its top bar slot,
 -- or nil when the tool is off.
 function ScriptBuilderScreen.insertMenu(screen)
-	if not screen.insert then
+	if not (screen.insert and screen.insert.menuOpen) then
 		return nil
 	end
 	for _, slot in ipairs(ScriptBuilderScreen.topBar(screen)) do
 		if slot.tool and slot.tool.id == "insert" then
-			return InsertMenu.rows(screen.insert.items, slot)
+			return InsertMenu.rows(screen.insert.items, besideColumn(slot))
 		end
 	end
 end
 
--- Where the Material and Colour sections start (right of the action panel)
--- and the material section's width (MaterialPanel).
-local PAINT_X, MATERIAL_WIDTH = 236, 150
-
--- Whether the Material and Colour sections show: the selection has volume
--- and the script can be edited.
-local function paintShown(screen)
-	return screen.scene ~= nil and not screen.locked and Actions.showPaint(screen.scene, screen.scene.selection)
-end
-
--- The material the panel shows: the first selected node's (Scene.material),
--- else the default material's first variant, unscaled and unturned.
-local function shownMaterial(screen)
-	local id = screen.scene.selection[1]
-	local material = id and Scene.material(screen.scene, id)
-	if material then
-		return material
-	end
-	local name = screen.config.blueprints.defaultMaterial
-	return { name = name, variant = screen.config.materials[name].variants[1], scale = 1, rotation = 0 }
-end
-
--- The material panel's rows (MaterialPanel.rows) under its top bar slot,
--- or nil when the selection has no volume.
+-- The material panel's rows (MaterialPanel.rows) in the column's Material
+-- section, or nil when the selection has no volume or the section is
+-- collapsed.
 function ScriptBuilderScreen.materialPanel(screen)
-	if not paintShown(screen) then
+	local content = paintShown(screen) and sectionContent(ScriptBuilderScreen.column(screen), "material")
+	if not content then
 		return nil
 	end
-	local slot = { x = PAINT_X, y = screen.scfg.topBarHeight, height = 0 }
-	return MaterialPanel.rows(shownMaterial(screen), screen.config.materials, slot)
+	return MaterialPanel.rows(shownMaterial(screen), screen.config.materials, content)
 end
 
--- The colour picker's layout (ColourPicker.layout) under its top bar slot,
--- or nil when the selection has no volume.
+-- The Properties section's fields (PropertiesStrip.fields) for the one
+-- selected node; none unless one editable primitive is selected, or when
+-- the section is collapsed.
+function ScriptBuilderScreen.properties(screen)
+	local content = sectionContent(ScriptBuilderScreen.column(screen), "properties")
+	if not content then
+		return {}
+	end
+	return PropertiesStrip.fields(shownProperties(screen), content.x, content.y, content.width)
+end
+
+-- The Params section's rows (ParamsPanel.rows), one per param shown; none
+-- when the section is collapsed.
+function ScriptBuilderScreen.paramsPanel(screen)
+	local content = sectionContent(ScriptBuilderScreen.column(screen), "params")
+	if not content then
+		return {}
+	end
+	return ParamsPanel.rows((shownParams(screen)), content.x, content.y, content.width)
+end
+
+-- The colour picker's layout (ColourPicker.layout) in the column's Colour
+-- section, or nil when the selection has no volume or it is collapsed.
 function ScriptBuilderScreen.colourPicker(screen)
-	if not paintShown(screen) then
+	local content = paintShown(screen) and sectionContent(ScriptBuilderScreen.column(screen), "colour")
+	if not content then
 		return nil
 	end
-	local x = PAINT_X + MATERIAL_WIDTH + 4
-	return ColourPicker.layout(ColourPicker.builderSections(screen.recentColours), x, screen.scfg.topBarHeight + 4)
+	return ColourPicker.layout(ColourPicker.builderSections(screen.recentColours), content.x, content.y)
 end
 
 -- A click on colour picker swatch `swatch`: the selection painted its
@@ -937,18 +1110,23 @@ local function colourClick(screen, swatch)
 	edit(screen, Scene.setColor, swatch.color)
 end
 
--- The library manager's layout (LibraryPanel.layout) under its top bar
--- slot, or nil when it is shut.
+-- The library manager's layout (LibraryPanel.layout) down the right edge
+-- under the top bar, or nil when it is shut.
 function ScriptBuilderScreen.libraryPanel(screen)
 	local open = screen.libraryOpen
 	if not open then
-		return nil
-	end
-	for _, slot in ipairs(ScriptBuilderScreen.topBar(screen)) do
-		if slot.tool and slot.tool.id == "library" then
-			return LibraryPanel.layout(open.entries, open.tab, slot.x, slot.y + slot.height + 4)
+		open = screen.insert and screen.insert.picker
+		if not open then
+			return nil
 		end
+		return LibraryPanel.layout(open.entries, "pick", ScriptBuilderScreen.viewport(screen), open.scroll)
 	end
+	return LibraryPanel.layout(open.entries, open.tab, ScriptBuilderScreen.viewport(screen), open.scroll)
+end
+
+-- The state the panel shows: the manager's, or the Insert prefab picker's.
+local function panelState(screen)
+	return screen.libraryOpen or (screen.insert and screen.insert.picker)
 end
 
 -- Rereads the design library and lists tab `tab` of the manager (the one
@@ -956,12 +1134,26 @@ end
 -- to for a thumbnail; nothing armed.
 local function listLibrary(screen, tab)
 	screen.lib = screen.library()
-	tab = tab or screen.libraryOpen.tab
+	local previous = screen.libraryOpen
+	tab = tab or previous.tab
+	local scroll = previous and previous.tab == tab and previous.scroll or 0
 	local entries = Library.entries(screen.lib, tab)
 	for _, entry in ipairs(entries) do
 		entry.blueprint = Compile.design(screen.lib[tab][entry.name], entry.name, screen.lib, screen.config)
 	end
-	screen.libraryOpen = { tab = tab, entries = entries }
+	screen.libraryOpen = { tab = tab, entries = entries, scroll = scroll }
+end
+
+-- Lists every prefab, with thumbnails, in the Insert tool's picker (opens
+-- it, or refreshes it keeping its scroll).
+local function listPicker(screen)
+	screen.lib = screen.library()
+	local entries = Library.entries(screen.lib, "prefabs")
+	for _, entry in ipairs(entries) do
+		entry.blueprint = Compile.design(screen.lib.prefabs[entry.name], entry.name, screen.lib, screen.config)
+	end
+	local previous = screen.insert.picker
+	screen.insert.picker = { entries = entries, scroll = previous and previous.scroll or 0 }
 end
 
 -- Runs `go` (which opens another script) now, or after the unsaved-changes
@@ -1043,6 +1235,9 @@ local LIBRARY_ACTIONS = {
 			if screen.libraryOpen then
 				listLibrary(screen)
 			end
+			if screen.insert and screen.insert.picker then
+				listPicker(screen)
+			end
 			screen.status = "Reset " .. name .. " to default"
 		end
 		if screen.kind == kind and screen.name == name then
@@ -1098,6 +1293,25 @@ local function libraryClick(screen, hit)
 	end
 end
 
+-- The open material dropdown's layout (Dropdown.layout) with its row, or
+-- nil when none is open; one open for a selection that has since changed
+-- or a section that is gone closes.
+function ScriptBuilderScreen.dropdown(screen)
+	local d = screen.dropdown
+	if not d then
+		return nil
+	end
+	local rows = screen.scene and ScriptBuilderScreen.materialPanel(screen)
+	for _, row in ipairs(rows or {}) do
+		if row.kind == d.kind and screen.scene.selection[1] == d.id then
+			local _, h = Screen.dimensions()
+			return Dropdown.layout(MaterialPanel.box(row), row.options, true, h), row
+		end
+	end
+	screen.dropdown = nil
+	return nil
+end
+
 -- A click on the material panel's `row` (stepper box `part`): the
 -- selection made of the material it picks, one undo step.
 local function materialClick(screen, row, part)
@@ -1110,57 +1324,6 @@ local function materialClick(screen, row, part)
 		return
 	end
 	edit(screen, Scene.setMaterial, material)
-end
-
--- The properties strip's fields (PropertiesStrip.fields) for the one
--- selected node; none unless exactly one editable primitive is selected.
-function ScriptBuilderScreen.properties(screen)
-	local scene = screen.scene
-	if screen.locked or not scene or #scene.selection ~= 1 then
-		return {}
-	end
-	local node = Scene.find(scene, scene.selection[1])
-	if not node then
-		return {}
-	end
-	local w = Screen.dimensions()
-	return PropertiesStrip.fields(Properties.of(node), w, screen.scfg.topBarHeight)
-end
-
--- The one selected node when it is a prefab instance, else nil.
-local function selectedInstance(screen)
-	local scene = screen.scene
-	if not scene or #scene.selection ~= 1 then
-		return nil
-	end
-	local node = Scene.find(scene, scene.selection[1])
-	return node and node.kind == "prefab" and node or nil
-end
-
--- The params the panel shows: the script's own when it declares any, else
--- the one selected prefab instance's (Resolve.prefab, its overrides as
--- values), worked out once per revision; and that instance, or nil.
-local function shownParams(screen)
-	if #screen.params > 0 then
-		return screen.params, nil
-	end
-	local node = not screen.locked and selectedInstance(screen)
-	if not node then
-		return {}, nil
-	end
-	local c = screen.instanceCache
-	if not (c and c.revision == screen.revision and c.id == node.id) then
-		local result = Resolve.prefab(screen.lib, node.prefab, node.params)
-		c = { revision = screen.revision, id = node.id, params = result and result.params or {} }
-		screen.instanceCache = c
-	end
-	return c.params, node
-end
-
--- The params panel's rows (ParamsPanel.rows), one per param shown.
-function ScriptBuilderScreen.paramsPanel(screen)
-	local w = Screen.dimensions()
-	return ParamsPanel.rows((shownParams(screen)), w, screen.scfg.topBarHeight)
 end
 
 -- Sets the param at `index` to `value`, clamped: a selected instance's
@@ -1297,37 +1460,16 @@ local function place(screen, x, y)
 	edit(screen, Scene.insert, Insert.node(armed, point))
 end
 
--- The work planes the Shape menu offers, after the kinds it draws.
-local PLANES = {
-	{ label = "Ground", plane = "Ground" },
-	{ label = "XY plane", plane = "XY" },
-	{ label = "XZ plane", plane = "XZ" },
-	{ label = "YZ plane", plane = "YZ" },
-	{ label = "Pick face", plane = "Face" },
-}
-
--- The Draw tool's menu rows (InsertMenu.rows) under its top bar
--- slot: the kinds it draws under their headers, then the work planes, the
--- one in use marked with its height; nil when the tool is off.
+-- The Draw tool's menu rows (InsertMenu.rows) under its top bar slot: the
+-- kinds it draws under their headers; nil when the tool is off or the menu
+-- closed by a pick.
 function ScriptBuilderScreen.shapeMenu(screen)
-	if not screen.shape then
+	if not (screen.shape and screen.shape.menuOpen) then
 		return nil
-	end
-	local items = {}
-	for i, item in ipairs(screen.shape.kinds) do
-		items[i] = item
-	end
-	for _, item in ipairs(PLANES) do
-		local label = item.label
-		if item.plane == screen.planeName then
-			local axis = screen.planeName ~= "Ground" and screen.planeName ~= "Face"
-			label = "> " .. label .. (axis and " at " .. screen.planeHeight or "")
-		end
-		items[#items + 1] = { label = label, plane = item.plane }
 	end
 	for _, slot in ipairs(ScriptBuilderScreen.topBar(screen)) do
 		if slot.tool and slot.tool.id == screen.tool then
-			return InsertMenu.rows(items, slot)
+			return InsertMenu.rows(screen.shape.kinds, besideColumn(slot))
 		end
 	end
 end
@@ -1337,13 +1479,26 @@ end
 local function setPlane(screen, name)
 	screen.planeName = name
 	screen.plane = name == "Ground" and WorkPlane.ground() or WorkPlane.axis(name, screen.planeHeight)
-	screen.shape.drawing = nil
+	if screen.shape then
+		screen.shape.drawing = nil
+	end
+end
+
+-- Moves the axis work plane one quarter tile up (dir 1) or down (-1); the
+-- ground and a face stay.
+local function stepPlane(screen, dir)
+	local name = screen.planeName
+	if name == "XY" or name == "XZ" or name == "YZ" then
+		screen.planeHeight = screen.planeHeight + dir * WorkPlane.SNAP
+		setPlane(screen, name)
+	end
 end
 
 -- Adopts the model's face under screen point (x, y) as the work plane;
 -- nothing there leaves the plane as it was.
 local function adoptFace(screen, x, y)
-	screen.shape.picking = nil
+	local tool = screen.shape or screen.insert
+	tool.picking = nil
 	local origin, direction = BuilderCamera.ray(ScriptBuilderScreen.view(screen), x, y)
 	local s, o = screen.cfg.studsPerTile, screen.origin
 	local at = { origin[1] / s, origin[2] / s, origin[3] / s }
@@ -1923,10 +2078,15 @@ function setTool(screen, slot)
 	if not tool then
 		return
 	end
+	local again = screen.tool == tool.id
 	screen.insert, screen.shape = nil, nil
 	screen.libraryOpen = nil
 	if screen.code then
 		screen.code.open = false
+	end
+	if again then
+		screen.tool = "select"
+		return
 	end
 	if tool.id == "insert" or tool.id == "draw" then
 		if not screen.scene then
@@ -1937,9 +2097,9 @@ function setTool(screen, slot)
 		end
 	end
 	if tool.id == "insert" then
-		screen.insert = { items = Insert.items(screen.lib) }
+		screen.insert = { items = Insert.items(), menuOpen = true }
 	elseif tool.id == "draw" then
-		screen.shape = { kinds = DRAW_KINDS, kind = ShapeTool.KINDS[4] }
+		screen.shape = { kinds = DRAW_KINDS, kind = ShapeTool.KINDS[4], menuOpen = true }
 	elseif tool.id == "library" then
 		listLibrary(screen, screen.kind)
 	elseif tool.id == "code" then
@@ -1986,6 +2146,15 @@ local function leftClick(screen, x, y)
 		sweepClick(screen, x, y)
 		return
 	end
+	local open, openRow = ScriptBuilderScreen.dropdown(screen)
+	if open then
+		screen.dropdown = nil
+		local kind, option = Dropdown.hit(open, x, y)
+		if kind == "option" then
+			materialClick(screen, { kind = openRow.kind, value = option.value })
+		end
+		return
+	end
 	local slot = TopBar.slotAt(ScriptBuilderScreen.topBar(screen), x, y)
 	if slot then
 		setTool(screen, slot.number)
@@ -1998,11 +2167,17 @@ local function leftClick(screen, x, y)
 	end
 	local libraryLayout = ScriptBuilderScreen.libraryPanel(screen)
 	local hit = LibraryPanel.hit(libraryLayout, x, y)
-	if hit then
+	if hit and hit.pick then
+		screen.insert.armed = Insert.prefabItem(hit.row.entry.name)
+		screen.insert.picker = nil
+		return
+	elseif hit then
 		libraryClick(screen, hit)
 		return
 	elseif LibraryPanel.contains(libraryLayout, x, y) then
-		screen.libraryOpen.armed = nil
+		if screen.libraryOpen then
+			screen.libraryOpen.armed = nil
+		end
 		return
 	elseif screen.libraryOpen then
 		screen.libraryOpen.armed = nil
@@ -2010,7 +2185,12 @@ local function leftClick(screen, x, y)
 	local menu = ScriptBuilderScreen.insertMenu(screen)
 	local row = menu and InsertMenu.rowAt(menu, x, y)
 	if row then
-		screen.insert.armed = row.item
+		screen.insert.menuOpen = false
+		if row.item.pickPrefab then
+			listPicker(screen)
+		else
+			screen.insert.armed = row.item
+		end
 		return
 	end
 	local shapeRows = ScriptBuilderScreen.shapeMenu(screen)
@@ -2019,45 +2199,76 @@ local function leftClick(screen, x, y)
 		local item = shapeRow.item
 		if item.header then
 			return
-		elseif item.kind or item.curve then
-			screen.shape.kind, screen.shape.drawing = item, nil
-			screen.shape.path = item.curve ~= nil
-		elseif item.plane == "Face" then
-			screen.shape.picking, screen.shape.drawing = true, nil
-		else
-			setPlane(screen, item.plane)
 		end
-		return
-	end
-	local materialRow, materialPart = MaterialPanel.hit(ScriptBuilderScreen.materialPanel(screen), x, y)
-	if materialRow then
-		materialClick(screen, materialRow, materialPart)
-		return
-	end
-	local colourLayout = ScriptBuilderScreen.colourPicker(screen)
-	local swatch = ColourPicker.hit(colourLayout, x, y)
-	if swatch then
-		colourClick(screen, swatch)
-		return
-	elseif ColourPicker.contains(colourLayout, x, y) then
-		return
-	end
-	local paramRows = ScriptBuilderScreen.paramsPanel(screen)
-	local paramRow, part = ParamsPanel.hit(paramRows, x, y)
-	if paramRow then
-		paramClick(screen, paramRow, part)
-		return
-	elseif ParamsPanel.contains(paramRows, x, y) then
-		return
-	end
-	local field = PropertiesStrip.fieldAt(ScriptBuilderScreen.properties(screen), x, y)
-	if field then
-		startField(screen, field)
+		screen.shape.kind, screen.shape.drawing = item, nil
+		screen.shape.path = item.curve ~= nil
+		screen.shape.menuOpen = false
 		return
 	end
 	if screen.scene then
-		local panel = ScriptBuilderScreen.actionPanel(screen)
-		if ActionPanel.contains(panel, x, y) then
+		local col = ScriptBuilderScreen.column(screen)
+		local hit = BuilderColumn.hit(col, x, y)
+		if hit and hit.name == "plane" and hit.part == "content" then
+			local pick = WorkPlaneSection.hit(ScriptBuilderScreen.workPlane(screen), x, y)
+			local tool = screen.shape or screen.insert
+			if pick and pick.step then
+				stepPlane(screen, pick.step)
+			elseif pick and pick.plane == "Face" then
+				tool.picking = true
+				if screen.shape then
+					screen.shape.drawing = nil
+				end
+			elseif pick then
+				tool.picking = nil
+				setPlane(screen, pick.plane)
+			end
+			return
+		end
+		if hit and hit.part == "header" then
+			screen.column.collapsed[hit.name] = not screen.column.collapsed[hit.name] or nil
+			return
+		elseif hit and hit.part == "thumb" then
+			screen.column.dragging = { grab = y - col.bar.thumb.y }
+			return
+		elseif hit and hit.part == "track" then
+			screen.column.dragging = { grab = col.bar.thumb.height / 2 }
+			screen.column.scroll = BuilderColumn.dragScroll(col, screen.column.dragging.grab, y)
+			return
+		end
+		if hit and hit.name == "params" then
+			local paramRow, part = ParamsPanel.hit(ScriptBuilderScreen.paramsPanel(screen), x, y)
+			if paramRow then
+				paramClick(screen, paramRow, part)
+			end
+			return
+		elseif hit and hit.name == "properties" then
+			local field = PropertiesStrip.fieldAt(ScriptBuilderScreen.properties(screen), x, y)
+			if field then
+				startField(screen, field)
+			end
+			return
+		end
+		if hit and hit.name == "material" then
+			local row, rowPart = MaterialPanel.hit(ScriptBuilderScreen.materialPanel(screen), x, y)
+			if row and row.options then
+				if #screen.scene.selection == 0 then
+					screen.message = "Select the nodes to make of a material"
+				else
+					screen.dropdown = { kind = row.kind, id = screen.scene.selection[1] }
+				end
+			elseif row then
+				materialClick(screen, row, rowPart)
+			end
+			return
+		elseif hit and hit.name == "colour" then
+			local swatch = ColourPicker.hit(ScriptBuilderScreen.colourPicker(screen), x, y)
+			if swatch then
+				colourClick(screen, swatch)
+			end
+			return
+		end
+		local panel = hit and hit.name == "actions" and ScriptBuilderScreen.actionPanel(screen)
+		if panel then
 			runAction(screen, ActionPanel.itemAt(panel, x, y), function(items)
 				screen.panelSub = { items = items, id = screen.scene.selection[1] }
 			end, function()
@@ -2081,6 +2292,10 @@ local function leftClick(screen, x, y)
 		return
 	end
 	if screen.insert then
+		if screen.insert.picking then
+			adoptFace(screen, x, y)
+			return
+		end
 		place(screen, x, y)
 		return
 	end
@@ -2159,6 +2374,9 @@ local function poll(screen)
 		if screen.libraryOpen then
 			listLibrary(screen)
 		end
+		if screen.insert and screen.insert.picker then
+			listPicker(screen)
+		end
 	end
 end
 
@@ -2218,6 +2436,9 @@ end
 -- A right-click without movement opens the context menu on the node under
 -- the pointer, selecting it first unless it is selected already.
 function ScriptBuilderScreen.mousereleased(screen, x, y, button)
+	if button == 1 then
+		screen.column.dragging = nil
+	end
 	if button == 1 and screen.code then
 		screen.code.dragging = nil
 	end
@@ -2264,7 +2485,11 @@ function ScriptBuilderScreen.mousemoved(screen, x, y, dx, dy)
 	end
 	local drawing = screen.shape and screen.shape.drawing
 	local code = screen.code
-	if screen.transform then
+	if screen.column.dragging then
+		screen.column.scroll = BuilderColumn.dragScroll(
+			ScriptBuilderScreen.column(screen), screen.column.dragging.grab, y
+		)
+	elseif screen.transform then
 		follow(screen, x, y)
 	elseif code and code.open and code.dragging then
 		local line, col = CodePanel.position(ScriptBuilderScreen.codePanel(screen), code.buffer, code.scroll, x, y)
@@ -2281,10 +2506,22 @@ function ScriptBuilderScreen.mousemoved(screen, x, y, dx, dy)
 end
 
 function ScriptBuilderScreen.wheelmoved(screen, _, y)
+	local libraryLayout = ScriptBuilderScreen.libraryPanel(screen)
+	if screen.mouse and LibraryPanel.contains(libraryLayout, screen.mouse.x, screen.mouse.y) then
+		panelState(screen).scroll = math.min(math.max(libraryLayout.scroll - WHEEL_STEP * y, 0), libraryLayout.maxScroll)
+		return
+	end
 	local codeLayout, m = ScriptBuilderScreen.codePanel(screen), screen.mouse
 	if m and CodePanel.contains(codeLayout, m.x, m.y) then
 		screen.code.scroll = CodePanel.scroll(codeLayout, screen.code.buffer, screen.code.scroll, -3 * y)
 		return
+	end
+	if m and screen.scene then
+		local col = ScriptBuilderScreen.column(screen)
+		if BuilderColumn.contains(col, m.x, m.y) then
+			screen.column.scroll = BuilderColumn.clampScroll(col, col.scroll - WHEEL_STEP * y)
+			return
+		end
 	end
 	local _, radius = frame(screen)
 	BuilderCamera.zoomAround(screen.camera, y, radius, screen.cfg)
@@ -2380,6 +2617,10 @@ function ScriptBuilderScreen.keypressed(screen, key)
 		fieldKey(screen, key)
 	elseif screen.paramField then
 		paramFieldKey(screen, key)
+	elseif ScriptBuilderScreen.dropdown(screen) then
+		if key == "escape" then
+			screen.dropdown = nil
+		end
 	elseif screen.menu then
 		if key == "escape" then
 			screen.menu = nil
@@ -2402,11 +2643,7 @@ function ScriptBuilderScreen.keypressed(screen, key)
 	elseif key == "escape" and screen.shape then
 		screen.shape, screen.tool = nil, "select"
 	elseif (key == "[" or key == "]") and screen.shape then
-		local name = screen.planeName
-		if name == "XY" or name == "XZ" or name == "YZ" then
-			screen.planeHeight = screen.planeHeight + (key == "]" and WorkPlane.SNAP or -WorkPlane.SNAP)
-			setPlane(screen, name)
-		end
+		stepPlane(screen, key == "]" and 1 or -1)
 	elseif ctrlDown() then
 		if key == "s" then
 			save(screen)
@@ -2490,13 +2727,31 @@ function ScriptBuilderScreen.draw(screen)
 	end
 	TopBar.draw(ScriptBuilderScreen.topBar(screen), screen.tool, w, top)
 	if screen.scene then
-		TreePanel.draw(ScriptBuilderScreen.treeRows(screen), top, screen.scene, screen.rename, screen.locked, screen.mouse)
+		BuilderColumn.draw(ScriptBuilderScreen.column(screen), function(name, content)
+			if name == "plane" then
+				WorkPlaneSection.draw(ScriptBuilderScreen.workPlane(screen))
+			elseif name == "tree" then
+				TreePanel.draw(ScriptBuilderScreen.treeRows(screen), content, screen.scene, screen.rename, screen.locked, screen.mouse)
+			elseif name == "actions" then
+				ActionPanel.draw(ScriptBuilderScreen.actionPanel(screen), screen.mouse)
+			elseif name == "properties" then
+				PropertiesStrip.draw(ScriptBuilderScreen.properties(screen), screen.field)
+			elseif name == "params" then
+				ParamsPanel.draw(ScriptBuilderScreen.paramsPanel(screen), screen.paramField)
+			elseif name == "material" then
+				MaterialPanel.draw(ScriptBuilderScreen.materialPanel(screen))
+			else
+				local id = screen.scene.selection[1]
+				local shown = id and Scene.color(screen.scene, id)
+				ColourPicker.draw(
+					ScriptBuilderScreen.colourPicker(screen),
+					screen.palette(),
+					{ slot = shown, preset = shown },
+					screen.mouse
+				)
+			end
+		end)
 	end
-	if screen.scene then
-		ActionPanel.draw(ScriptBuilderScreen.actionPanel(screen), screen.mouse)
-	end
-	PropertiesStrip.draw(ScriptBuilderScreen.properties(screen), screen.field)
-	ParamsPanel.draw(ScriptBuilderScreen.paramsPanel(screen), screen.paramField)
 	local insertRows = ScriptBuilderScreen.insertMenu(screen)
 	if insertRows then
 		InsertMenu.draw(insertRows, screen.insert.armed, screen.mouse)
@@ -2504,16 +2759,6 @@ function ScriptBuilderScreen.draw(screen)
 	local shapeRows = ScriptBuilderScreen.shapeMenu(screen)
 	if shapeRows then
 		InsertMenu.draw(shapeRows, screen.shape.kind, screen.mouse)
-	end
-	local materialRows = ScriptBuilderScreen.materialPanel(screen)
-	if materialRows then
-		MaterialPanel.draw(materialRows, shownMaterial(screen), screen.mouse)
-	end
-	local colourLayout = ScriptBuilderScreen.colourPicker(screen)
-	if colourLayout then
-		local id = screen.scene and screen.scene.selection[1]
-		local shown = id and Scene.color(screen.scene, id)
-		ColourPicker.draw(colourLayout, screen.palette(), { slot = shown, preset = shown }, screen.mouse)
 	end
 	if screen.menu then
 		ContextMenu.draw(screen.menu, screen.mouse)
@@ -2531,7 +2776,7 @@ function ScriptBuilderScreen.draw(screen)
 	local libraryLayout = ScriptBuilderScreen.libraryPanel(screen)
 	if libraryLayout then
 		local palette = screen.palette()
-		LibraryPanel.draw(libraryLayout, screen.libraryOpen.armed, screen.kind == screen.libraryOpen.tab and screen.name, screen.mouse, function(blueprint, rect)
+		LibraryPanel.draw(libraryLayout, screen.libraryOpen and screen.libraryOpen.armed, screen.libraryOpen and screen.kind == screen.libraryOpen.tab and screen.name, screen.mouse, function(blueprint, rect)
 			drawThumbnail(screen, blueprint, rect, palette)
 		end)
 	end
@@ -2542,6 +2787,10 @@ function ScriptBuilderScreen.draw(screen)
 		drawPrompt(screen.name .. " has unsaved changes: S saves, D discards, Esc stays")
 	end
 	ScriptBuilderView.drawStatus(screen)
+	local open, openRow = ScriptBuilderScreen.dropdown(screen)
+	if open then
+		Dropdown.draw(open, openRow.value, screen.mouse)
+	end
 end
 
 return ScriptBuilderScreen

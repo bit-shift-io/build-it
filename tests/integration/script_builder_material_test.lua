@@ -9,6 +9,7 @@ local Fake = require("tests.support.fake_input")
 local Config = require("src.game.config")
 local Sandbox = require("src.game.script.sandbox")
 local ScriptBuilderScreen = require("src.app.screens.script_builder")
+local MaterialPanel = require("src.app.ui.material_panel")
 
 -- A game in the script builder, opened on design file `name`.lua in the
 -- save directory holding `text`.
@@ -37,6 +38,7 @@ return group{ id = "root",
 ]]
 
 local function clickRow(game, screen, id)
+	screen.column.scroll = 0
 	for _, row in ipairs(ScriptBuilderScreen.treeRows(screen)) do
 		if row.node.id == id then
 			Fake.click(game, 1, row.x + row.width / 2, row.y + row.height / 2)
@@ -46,19 +48,48 @@ local function clickRow(game, screen, id)
 	error("no row for " .. id)
 end
 
--- Clicks the material panel's row of `kind` ("name", "variant", "scale",
--- "rotation") with `value` (names and variants), on `part` (nil, "minus",
--- "plus").
-local function clickPanel(game, screen, kind, value, part)
-	local rows = assert(ScriptBuilderScreen.materialPanel(screen), "the material panel is open")
-	for _, row in ipairs(rows) do
-		if row.kind == kind and (value == nil or row.value == value) then
-			local box = part and row[part] or row
-			Fake.click(game, 1, box.x + box.width / 2, box.y + box.height / 2)
+-- Scrolls the column so section `name` (a "material" or "colour" content)
+-- sits at the top of the visible area, as the wheel would.
+local function reveal(screen, name)
+	local col = ScriptBuilderScreen.column(screen)
+	for _, s in ipairs(col.sections) do
+		if s.name == name then
+			screen.column.scroll = col.scroll + (s.header.y - col.y)
 			return
 		end
 	end
-	error("no material row " .. kind .. " " .. tostring(value))
+	error("no section " .. name)
+end
+
+local function clickBox(game, box)
+	Fake.click(game, 1, box.x + box.width / 2, box.y + box.height / 2)
+end
+
+-- Clicks the material panel's row of `kind` ("scale", "rotation") on
+-- `part` ("minus", "plus"), or a dropdown's ("name", "variant") box.
+local function clickPanel(game, screen, kind, part)
+	reveal(screen, "material")
+	local rows = assert(ScriptBuilderScreen.materialPanel(screen), "the material panel is open")
+	for _, row in ipairs(rows) do
+		if row.kind == kind then
+			clickBox(game, part and row[part] or MaterialPanel.box(row))
+			return
+		end
+	end
+	error("no material row " .. kind)
+end
+
+-- Opens dropdown `kind` and clicks its option `value`.
+local function pick(game, screen, kind, value)
+	clickPanel(game, screen, kind)
+	local open = assert(ScriptBuilderScreen.dropdown(screen), "the list opened")
+	for _, item in ipairs(open.items) do
+		if item.option.value == value then
+			clickBox(game, item)
+			return
+		end
+	end
+	error("no option " .. value)
 end
 
 local function withCtrl(game, key)
@@ -82,7 +113,7 @@ test("the material section shows for a box; its rows make the selection stone br
 	local plankCost = screen.blueprint.cost.plank
 	assertEqual(nil, screen.blueprint.cost.stone)
 
-	clickPanel(game, screen, "name", "stone")
+	pick(game, screen, "name", "stone")
 	assertEqual(nil, screen.message, screen.message)
 	local wall = node(screen, "wall")
 	assertEqual("stone", wall.material.name)
@@ -92,9 +123,9 @@ test("the material section shows for a box; its rows make the selection stone br
 	assertTrue(stoneCost and stoneCost > 0, "the wall costs stone")
 	assertTrue(screen.blueprint.cost.plank < plankCost, "the wall no longer costs plank")
 
-	clickPanel(game, screen, "variant", "brick")
-	clickPanel(game, screen, "scale", nil, "plus")
-	clickPanel(game, screen, "rotation", nil, "plus")
+	pick(game, screen, "variant", "brick")
+	clickPanel(game, screen, "scale", "plus")
+	clickPanel(game, screen, "rotation", "plus")
 	wall = node(screen, "wall")
 	assertEqual("brick", wall.material.variant)
 	assertEqual(1.25, wall.material.scale)
@@ -119,7 +150,36 @@ return group{ id = "root",
 ]])
 	clickRow(game, screen, "flat")
 	assertEqual(nil, ScriptBuilderScreen.materialPanel(screen))
+	for _, section in ipairs(ScriptBuilderScreen.column(screen).sections) do
+		assertTrue(section.name ~= "material" and section.name ~= "colour", "no paint section in the column")
+	end
 	clickRow(game, screen, "root")
 	assertTrue(ScriptBuilderScreen.materialPanel(screen), "a group with a box shows it")
 end)
 
+
+test("picking Stone from the material dropdown is one undo step onto its first variant", function()
+	local game, screen = openBuilder("pickstone", DESIGN)
+	clickRow(game, screen, "wall")
+	pick(game, screen, "name", "stone")
+	assertEqual("stone", node(screen, "wall").material.name)
+	assertEqual("polished", node(screen, "wall").material.variant)
+	assertEqual(nil, ScriptBuilderScreen.dropdown(screen), "the list closed")
+	withCtrl(game, "z")
+	assertEqual(nil, node(screen, "wall").material, "one undo reverts it")
+end)
+
+test("Esc and an outside click close an open variant list and change nothing", function()
+	local game, screen = openBuilder("escdrop", DESIGN)
+	clickRow(game, screen, "wall")
+	clickPanel(game, screen, "variant")
+	assertTrue(ScriptBuilderScreen.dropdown(screen), "the list is open")
+	assertTrue(ScriptBuilderScreen.modal(screen), "an open list is modal")
+	Fake.tap(game, "escape")
+	assertEqual(nil, ScriptBuilderScreen.dropdown(screen))
+	assertEqual(nil, node(screen, "wall").material)
+	clickPanel(game, screen, "variant")
+	Fake.click(game, 1, 600, 400)
+	assertEqual(nil, ScriptBuilderScreen.dropdown(screen))
+	assertEqual(nil, node(screen, "wall").material)
+end)

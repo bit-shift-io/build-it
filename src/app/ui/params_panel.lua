@@ -1,15 +1,16 @@
--- The script builder's params panel (docs/CONTEXT.md "Param"): one input
--- per param the design declares (src/game/script/params.lua), a column of
--- labelled rows down the right edge under the top bar. A number is a
--- stepper (- value +) whose value box edits as text; a bool's box toggles,
--- a choice's box steps to the next option, a colour's box edits as
--- "r g b" text. Layout is pure arithmetic (testable); only draw touches
--- love.graphics.
+-- The script builder's Params section (docs/CONTEXT.md "Param"): one input
+-- per param the design declares (src/game/script/params.lua), stacked, each
+-- a label over its input. A number is a stepper (- value +) whose value box
+-- edits as text; a bool's box toggles, a choice's box steps to the next
+-- option, a colour's box edits as "r g b" text. Layout is pure arithmetic
+-- (testable); only draw touches love.graphics.
 local ParamsPanel = {}
 
-local MARGIN, LABEL_W, BOX_W, BUTTON_W, ROW_H, GAP, PAD = 8, 110, 72, 22, 22, 4, 6
+local BUTTON_W, ROW_H, LABEL_H, GAP = 22, 22, 16, 4
+-- A label character's width, in px, roughly the default font's.
+local CHAR_WIDTH = 7
+local ENTRY_H = LABEL_H + ROW_H + GAP + 2
 
-local PANEL_COLOR = { 0, 0, 0, 0.6 }
 local BOX_COLOR = { 0.18, 0.19, 0.22, 1 }
 local EDIT_COLOR = { 0.1, 0.1, 0.12, 1 }
 local EDIT_OUTLINE = { 0.3, 0.5, 0.85, 1 }
@@ -19,24 +20,37 @@ local function box(x, y, w)
 	return { x = x, y = y, width = w, height = ROW_H }
 end
 
--- The rows for `params` (Params.collect) in a window `width` px wide,
--- under a top bar `top` px tall: { { param, index, labelX, y, value,
--- minus?, plus? }, ... } top to bottom; value, minus and plus are boxes
--- { x, y, width, height }, minus and plus for numbers only.
-function ParamsPanel.rows(params, width, top)
+-- The px `count` params take.
+function ParamsPanel.height(count)
+	return count * ENTRY_H
+end
+
+-- `label` cut to fit `width` px.
+function ParamsPanel.clip(label, width)
+	local max = math.max(1, math.floor(width / CHAR_WIDTH))
+	if #label <= max then
+		return label
+	end
+	return label:sub(1, max - 1) .. "~"
+end
+
+-- The rows for `params` (Params.collect) stacked from (x, y), `width` px
+-- wide: { { param, index, labelX, labelY, y, value, minus?, plus? }, ... }
+-- top to bottom; value, minus and plus are boxes { x, y, width, height },
+-- minus and plus for numbers only.
+function ParamsPanel.rows(params, x, y, width)
 	local out = {}
-	local right = width - MARGIN
 	for i, param in ipairs(params) do
-		local y = top + MARGIN + (i - 1) * (ROW_H + GAP)
-		local r = { param = param, index = i, y = y }
+		local top = y + (i - 1) * ENTRY_H
+		local iy = top + LABEL_H
+		local r = { param = param, index = i, y = iy, labelX = x, labelY = top }
 		if param.kind == "number" then
-			r.plus = box(right - BUTTON_W, y, BUTTON_W)
-			r.value = box(r.plus.x - GAP - BOX_W, y, BOX_W)
-			r.minus = box(r.value.x - GAP - BUTTON_W, y, BUTTON_W)
+			r.minus = box(x, iy, BUTTON_W)
+			r.plus = box(x + width - BUTTON_W, iy, BUTTON_W)
+			r.value = box(x + BUTTON_W + GAP, iy, width - 2 * (BUTTON_W + GAP))
 		else
-			r.value = box(right - BUTTON_W - GAP - BOX_W - GAP - BUTTON_W, y, BUTTON_W + GAP + BOX_W + GAP + BUTTON_W)
+			r.value = box(x, iy, width)
 		end
-		r.labelX = right - (BUTTON_W + GAP) * 2 - BOX_W - PAD - LABEL_W
 		out[i] = r
 	end
 	return out
@@ -59,16 +73,6 @@ function ParamsPanel.hit(rows, x, y)
 	return nil
 end
 
--- Whether screen point (x, y) is on the panel.
-function ParamsPanel.contains(rows, x, y)
-	for _, r in ipairs(rows) do
-		if x >= r.labelX - PAD and y >= r.y - GAP / 2 and y < r.y + ROW_H + GAP / 2 then
-			return true
-		end
-	end
-	return false
-end
-
 -- A param's value as the panel shows it.
 function ParamsPanel.show(param)
 	local v = param.value
@@ -81,19 +85,11 @@ end
 -- Draws `rows`; `editing` ({ index, text } or nil) is the text box open on
 -- one of them.
 function ParamsPanel.draw(rows, editing)
-	if #rows == 0 then
-		return
-	end
 	love.graphics.push("all")
-	local last = rows[#rows]
-	local left = last.labelX - PAD
-	local right = last.value.x + last.value.width + (last.plus and (GAP + BUTTON_W) or 0) + PAD
-	love.graphics.setColor(PANEL_COLOR)
-	love.graphics.rectangle("fill", left, rows[1].y - 3, right - left, last.y + ROW_H + 3 - (rows[1].y - 3), 4, 4)
 	for _, r in ipairs(rows) do
 		local open = editing and editing.index == r.index
 		love.graphics.setColor(TEXT_COLOR)
-		love.graphics.print(r.param.label, r.labelX, r.y + 4)
+		love.graphics.print(ParamsPanel.clip(r.param.label, r.value.width + (r.minus and 2 * (BUTTON_W + GAP) or 0)), r.labelX, r.labelY)
 		for _, part in ipairs({ "minus", "value", "plus" }) do
 			local b = r[part]
 			if b then

@@ -389,7 +389,7 @@ return {
 	-- per tile).
 	scriptBuilder = {
 		testDesign = "content/designs/test.lua",
-		topBarSlots = 9,
+		topBarSlots = 4,
 		topBarHeight = 40,
 	},
 

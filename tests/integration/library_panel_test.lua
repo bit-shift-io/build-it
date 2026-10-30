@@ -11,6 +11,7 @@ local World = require("src.game.world")
 local DesignStore = require("src.app.design_store")
 local Designs = require("tests.support.designs")
 local ScriptBuilderScreen = require("src.app.screens.script_builder")
+local LibraryPanel = require("src.app.ui.library_panel")
 
 local CFG = Config.designs
 
@@ -75,6 +76,16 @@ end
 local function press(game, screen, name, action)
 	for _, row in ipairs(ScriptBuilderScreen.libraryPanel(screen).rows) do
 		if row.entry.name == name then
+			-- Wheel the row into the list if it is below the fold.
+			local layout = ScriptBuilderScreen.libraryPanel(screen)
+			if row.y + row.height > layout.list.y + layout.list.height then
+				screen.libraryOpen.scroll = layout.scroll + row.y + row.height - layout.list.y - layout.list.height
+				for _, r in ipairs(ScriptBuilderScreen.libraryPanel(screen).rows) do
+					if r.entry.name == name then
+						row = r
+					end
+				end
+			end
 			for _, button in ipairs(row.buttons) do
 				if button.action == action then
 					clickAt(game, button)
@@ -99,7 +110,7 @@ end
 
 test("7 opens the library with a Designs tab and a Prefabs tab, each row with its buttons", function()
 	local game, screen = builder({ barn = HUT }, { lamp = LAMP })
-	Fake.tap(game, "5")
+	Fake.tap(game, "4")
 	local layout = assert(ScriptBuilderScreen.libraryPanel(screen), "the panel opens")
 	assertTrue(ScriptBuilderScreen.modal(screen), "Esc closes the panel, not the builder")
 	assertEqual(builtinNames("barn", "hut"), names(layout))
@@ -125,13 +136,13 @@ end)
 
 test("Open switches to a script, Duplicate copies it, Rename moves its file", function()
 	local game, screen = builder({ barn = HOUSE }, { lamp = LAMP })
-	Fake.tap(game, "5")
+	Fake.tap(game, "4")
 	press(game, screen, "barn", "open")
 	assertEqual("barn", screen.name)
 	assertEqual("designs", screen.kind)
 	assertEqual(nil, ScriptBuilderScreen.libraryPanel(screen), "opening a script puts the panel away")
 
-	Fake.tap(game, "5")
+	Fake.tap(game, "4")
 	press(game, screen, "barn", "duplicate")
 	assertEqual(HOUSE, love.filesystem.read(CFG.dir .. "/barn_copy.lua"), "the copy is written")
 	assertTrue(names(ScriptBuilderScreen.libraryPanel(screen)):find("barn_copy", 1, true), "and listed")
@@ -152,14 +163,14 @@ end)
 
 test("Delete arms on the first click and deletes on the second; a design using a deleted prefab names it", function()
 	local game, screen = builder({ house = HOUSE }, { lamp = LAMP })
-	Fake.tap(game, "5")
+	Fake.tap(game, "4")
 	tab(game, screen, "prefabs")
 	press(game, screen, "lamp", "delete")
 	assertEqual("lamp", screen.libraryOpen.armed)
 	assertTrue(love.filesystem.getInfo(CFG.prefabDir .. "/lamp.lua") ~= nil, "one click deletes nothing")
 	-- Any other click disarms it.
 	press(game, screen, "saw", "open")
-	Fake.tap(game, "5")
+	Fake.tap(game, "4")
 	tab(game, screen, "prefabs")
 	press(game, screen, "lamp", "delete")
 	tab(game, screen, "prefabs")
@@ -178,7 +189,7 @@ end)
 
 test("a built-in can't be renamed or deleted; Reset drops its saved copy", function()
 	local game, screen = builder({}, { saw = LAMP })
-	Fake.tap(game, "5")
+	Fake.tap(game, "4")
 	tab(game, screen, "prefabs")
 	press(game, screen, "saw", "rename")
 	assertEqual(nil, screen.libraryRename, "no prompt for a built-in")
@@ -192,7 +203,7 @@ end)
 
 test("New starts an empty design under a free name, saved by Ctrl+S", function()
 	local game, screen = builder({ untitled = HUT })
-	Fake.tap(game, "5")
+	Fake.tap(game, "4")
 	clickAt(game, ScriptBuilderScreen.libraryPanel(screen).new)
 	assertEqual("untitled2", screen.name)
 	assertEqual("designs", screen.kind)
@@ -239,11 +250,11 @@ end
 
 test("switching from unsaved changes asks first: Esc stays, D discards, S saves then switches", function()
 	local game, screen = builder({ house = HOUSE }, { lamp = LAMP })
-	Fake.tap(game, "5")
+	Fake.tap(game, "4")
 	press(game, screen, "house", "open")
 	change(game, screen, "lamp1")
 
-	Fake.tap(game, "5")
+	Fake.tap(game, "4")
 	press(game, screen, "hut", "open")
 	assertTrue(screen.unsaved ~= nil, "a prompt asks before switching")
 	assertEqual("house", screen.name)
@@ -252,16 +263,15 @@ test("switching from unsaved changes asks first: Esc stays, D discards, S saves 
 	assertEqual("house", screen.name, "Esc stays on the changed design")
 	assertEqual("scriptBuilder", game.flow.screen, "Esc closes the prompt, not the builder")
 
-	Fake.tap(game, "5")
 	press(game, screen, "hut", "open")
 	Fake.tap(game, "d")
 	assertEqual("hut", screen.name, "D switches")
 	assertEqual(HOUSE, love.filesystem.read(CFG.dir .. "/house.lua"), "dropping the change")
 
-	Fake.tap(game, "5")
+	Fake.tap(game, "4")
 	press(game, screen, "house", "open")
 	change(game, screen, "lamp1")
-	Fake.tap(game, "5")
+	Fake.tap(game, "4")
 	clickAt(game, ScriptBuilderScreen.libraryPanel(screen).new)
 	Fake.tap(game, "s")
 	assertEqual("untitled", screen.name, "S switches after saving")
@@ -270,7 +280,7 @@ end)
 
 test("Edit prefab and Reset to default ask before dropping unsaved changes", function()
 	local game, screen = builder({ house = HOUSE }, { lamp = LAMP, saw = [[return group{ box{ id = "a" } }]] })
-	Fake.tap(game, "5")
+	Fake.tap(game, "4")
 	press(game, screen, "house", "open")
 	menu(game, screen, "lamp1", "Duplicate")
 	assertTrue(ScriptBuilderScreen.dirty(screen))
@@ -281,7 +291,7 @@ test("Edit prefab and Reset to default ask before dropping unsaved changes", fun
 	assertEqual("lamp", screen.name)
 	assertEqual("prefabs", screen.kind)
 
-	Fake.tap(game, "5")
+	Fake.tap(game, "4")
 	tab(game, screen, "prefabs")
 	press(game, screen, "saw", "open")
 	change(game, screen, "a")
@@ -294,4 +304,47 @@ test("Edit prefab and Reset to default ask before dropping unsaved changes", fun
 	Fake.tap(game, "d")
 	assertEqual(nil, love.filesystem.getInfo(CFG.prefabDir .. "/saw.lua"), "D resets")
 	assertFalse(ScriptBuilderScreen.dirty(screen), "the built-in shows as opened")
+end)
+
+test("the library panel is flush right and full height under the top bar", function()
+	local game, screen = builder()
+	Fake.tap(game, "4")
+	local layout = ScriptBuilderScreen.libraryPanel(screen)
+	local view = ScriptBuilderScreen.viewport(screen)
+	assertEqual(view.x + view.width, layout.x + layout.width)
+	assertEqual(view.y, layout.y)
+	assertEqual(view.y + view.height, layout.y + layout.height)
+end)
+
+test("a long list scrolls with the wheel over the panel and clicks hit the row under the pointer", function()
+	local designs = {}
+	for i = 1, 30 do
+		designs["d" .. string.format("%02d", i)] = HUT
+	end
+	local game, screen = builder(designs)
+	Fake.tap(game, "4")
+	local layout = ScriptBuilderScreen.libraryPanel(screen)
+	assertTrue(layout.maxScroll > 0, "more rows than fit")
+	local first = layout.rows[1].entry.name
+	local firstY = layout.rows[1].y
+	local zoom = screen.camera.distance
+	local px, py = layout.x + 10, layout.list.y + 10
+	game:mousemoved(px, py, 0, 0)
+	game:wheelmoved(0, -3)
+	layout = ScriptBuilderScreen.libraryPanel(screen)
+	assertTrue(layout.rows[1].y < layout.list.y, "the first row scrolls out of view")
+	assertTrue(layout.rows[1].y < firstY)
+	assertEqual(zoom, screen.camera.distance, "the wheel did not zoom")
+	local target
+	for _, row in ipairs(layout.rows) do
+		if row.y >= layout.list.y and row.entry.name ~= first then
+			target = row
+			break
+		end
+	end
+	local button = target.buttons[1]
+	assertEqual(target, LibraryPanel.hit(layout, button.x + 1, button.y + 1).row)
+	clickAt(game, button)
+	assertEqual(target.entry.name, screen.name)
+	assertEqual(nil, LibraryPanel.hit(layout, layout.rows[1].buttons[1].x + 1, layout.rows[1].buttons[1].y + 1), "a scrolled-out row is not hit")
 end)

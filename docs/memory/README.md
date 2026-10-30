@@ -13,3 +13,4 @@ Situational facts: true only when touching a particular area. One fact per file.
 - [projection-single-source.md](projection-single-source.md) — world/screen pixel math goes through `Projection` with the active view; no inline `tileSize` math
 - [tests-need-sandbox-off.md](tests-need-sandbox-off.md) — integration (`os.tmpname`) and e2e (launches LÖVE) fail inside the Claude sandbox; run them with it disabled
 - [e2e-spies-on-module-functions.md](e2e-spies-on-module-functions.md) — e2e tests count calls by replacing module functions like `Baker.bake`; when calls move to a new function, update the spies
+- [builder-tool-keys-in-tests.md](builder-tool-keys-in-tests.md) — builder tests pick tools by digit key; remap them when `ScriptBuilderScreen.TOOLS` slots change

@@ -39,6 +39,7 @@ return group{ id = "root",
 ]]
 
 local function clickRow(game, screen, id)
+	screen.column.scroll = 0
 	for _, row in ipairs(ScriptBuilderScreen.treeRows(screen)) do
 		if row.node.id == id then
 			Fake.click(game, 1, row.x + row.width / 2, row.y + row.height / 2)
@@ -48,9 +49,23 @@ local function clickRow(game, screen, id)
 	error("no row for " .. id)
 end
 
+-- Scrolls the column so section `name` (a "material" or "colour" content)
+-- sits at the top of the visible area, as the wheel would.
+local function reveal(screen, name)
+	local col = ScriptBuilderScreen.column(screen)
+	for _, s in ipairs(col.sections) do
+		if s.name == name then
+			screen.column.scroll = col.scroll + (s.header.y - col.y)
+			return
+		end
+	end
+	error("no section " .. name)
+end
+
 -- Clicks the colour picker's swatch in section `section` ("slot",
 -- "preset" or "recent") number `n`.
 local function clickSwatch(game, screen, section, n)
+	reveal(screen, "colour")
 	local layout = assert(ScriptBuilderScreen.colourPicker(screen), "the colour picker is open")
 	local seen = 0
 	for _, swatch in ipairs(layout.swatches) do
@@ -139,3 +154,30 @@ return group{ id = "root",
 	assertEqual(nil, ScriptBuilderScreen.colourPicker(screen))
 end)
 
+
+test("collapsing the Colour section hides its swatches; Material and Colour take no space for a bare shape", function()
+	local game, screen = openBuilder("collapse", DESIGN)
+	clickRow(game, screen, "wall")
+	local col = ScriptBuilderScreen.column(screen)
+	local header
+	for _, s in ipairs(col.sections) do
+		if s.name == "colour" then
+			header = s.header
+		end
+	end
+	Fake.click(game, 1, header.x + 10, header.y + 5)
+	assertEqual(nil, ScriptBuilderScreen.colourPicker(screen))
+	assertEqual(true, screen.column.collapsed.colour)
+end)
+
+test("a swatch click lands while the column is scrolled", function()
+	local game, screen = openBuilder("scrolled", DESIGN)
+	love.graphics.getDimensions = function()
+		return 1280, 300
+	end
+	clickRow(game, screen, "wall")
+	reveal(screen, "colour")
+	assertTrue(ScriptBuilderScreen.column(screen).scroll > 0, "the column is scrolled")
+	clickSwatch(game, screen, "slot", 1)
+	assertEqual("primary", node(screen, "wall").color)
+end)

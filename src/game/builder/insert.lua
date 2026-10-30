@@ -17,23 +17,20 @@ Insert.PRIMITIVES = {
 	{ label = "Wedge", kind = "wedge" },
 }
 
--- What the Insert tool offers from design library `library` ({ designs,
--- prefabs }): every primitive, then every prefab, role prefabs included,
--- by name.
-function Insert.items(library)
+-- What the Insert tool offers: every primitive, then a "Prefab…" row that
+-- opens the prefab picker (it is not itself placeable).
+function Insert.items()
 	local items = {}
 	for i, item in ipairs(Insert.PRIMITIVES) do
 		items[i] = item
 	end
-	local names = {}
-	for name in pairs(library.prefabs) do
-		names[#names + 1] = name
-	end
-	table.sort(names)
-	for _, name in ipairs(names) do
-		items[#items + 1] = { label = name, prefab = name }
-	end
+	items[#items + 1] = { label = "Prefab…", pickPrefab = true }
 	return items
+end
+
+-- The item that places an instance of library prefab `name`.
+function Insert.prefabItem(name)
+	return { label = name, prefab = name }
 end
 
 -- A primitive node at its defaults, built by the design API itself so the

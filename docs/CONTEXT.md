@@ -308,9 +308,17 @@ Domain terms for Build-it. Code, docs and conversation use these words with thes
 - **Definition:** The plane the builder draws shapes and paths on: the ground, a clicked face, or an axis plane at a height.
 - **Boundary:** Snaps to a grid of 1/4 tile by default.
 
+## Builder column
+- **Definition:** The scrollable column down the builder's left edge. Its collapsible sections, top to bottom, are Work plane, Tree, Actions, Properties, Params, Material and Colour.
+- **Boundary:** A section with nothing to show is hidden. Collapsed state lasts for the session only. The right edge belongs to the code panel and the library panel.
+
 ## Action panel
-- **Definition:** The builder panel under the tree listing the selection's actions as buttons, the same list as its right-click menu, plus Material and Colour sections.
-- **Boundary:** Material and Colour show only when the selection has volume. Make 3D shows only on a shape or path no operation uses.
+- **Definition:** The builder column section listing the selection's actions as buttons. It is the same list as the right-click menu.
+- **Boundary:** Make 3D shows only on a shape or path no operation uses. Material and Colour are separate sections, shown only when the selection has volume.
+
+## Prefab picker
+- **Definition:** The library panel in pick mode, opened from Insert > Prefab…. It lists every prefab with a thumbnail, and a pick arms it for placement.
+- **Boundary:** It never opens, renames or deletes scripts. The library manager does.
 
 ## Prefab
 - **Definition:** A reusable design script in the prefab folder, placed into designs as a linked instance.

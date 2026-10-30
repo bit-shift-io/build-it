@@ -27,15 +27,16 @@ test("an inserted sphere rests on the plane; a prefab is an instance by name", f
 	assertEqual(2, saw.transform.move[1])
 end)
 
-test("the menu offers every primitive, then every library prefab by name, role prefabs included", function()
-	local items = Insert.items({ designs = {}, prefabs = { saw = "", bed = "", input_port = "" } })
+test("the menu offers the five primitives, then a Prefab… row, and no prefab names", function()
+	local items = Insert.items()
 	local labels = {}
 	for i, item in ipairs(items) do
 		labels[i] = item.label
 	end
-	assertEqual("Box, Sphere, Cylinder, Cone, Wedge, bed, input_port, saw", table.concat(labels, ", "))
+	assertEqual("Box, Sphere, Cylinder, Cone, Wedge, Prefab…", table.concat(labels, ", "))
 	assertEqual("cone", items[4].kind)
-	assertEqual("bed", items[6].prefab)
+	assertTrue(items[6].pickPrefab)
+	assertEqual("saw", Insert.prefabItem("saw").prefab)
 end)
 
 test("inserting adds the node to the root group with a fresh id and selects it, one undoable step", function()

@@ -1,5 +1,5 @@
 -- The library manager (docs/CONTEXT.md "Design library"): the script
--- builder's panel under top bar slot 7, a Designs tab and a Prefabs tab,
+-- builder's panel anchored right, full height, a Designs tab and a Prefabs tab,
 -- New on the Designs tab, and a row per script: a thumbnail, its name and
 -- the buttons Open, Duplicate, Rename and Delete -- Reset for a built-in.
 -- A Delete armed by its first click reads Confirm. Layout and what a click
@@ -50,18 +50,22 @@ local function actions(entry)
 	}
 end
 
--- The panel at (x, y) showing tab `tab` ("designs" | "prefabs") with rows
+-- The panel anchored to the right edge of `view` ({ x, y, width, height }),
+-- full height, showing tab `tab` ("designs" | "prefabs") with rows
 -- `entries` ({ { name, builtin, blueprint }, ... }; blueprint, for the
--- thumbnail, is nil when the script doesn't compile).
-function LibraryPanel.layout(entries, tab, x, y)
+-- thumbnail, is nil when the script doesn't compile). Rows start `scroll`
+-- px up (clamped to 0..maxScroll); `list` is the rectangle rows show in.
+function LibraryPanel.layout(entries, tab, view, scroll)
+	local pick = tab == "pick"
 	local buttonsW = 0
-	for _, b in ipairs(actions({})) do
+	for _, b in ipairs(pick and {} or actions({})) do
 		buttonsW = buttonsW + buttonWidth(b.label) + GAP
 	end
 	local width = 2 * PAD + THUMB + GAP + NAME_W + buttonsW
-	local layout = { x = x, y = y, width = width, tab = tab, tabs = {}, rows = {} }
+	local x, y = view.x + view.width - width, view.y
+	local layout = { x = x, y = y, width = width, height = view.height, tab = tab, tabs = {}, rows = {} }
 	local tx = x + PAD
-	for i, t in ipairs(TABS) do
+	for i, t in ipairs(pick and {} or TABS) do
 		layout.tabs[i] = { tab = t.tab, label = t.label, x = tx, y = y + PAD, width = TAB_W, height = TAB_H }
 		tx = tx + TAB_W + GAP
 	end
@@ -69,7 +73,14 @@ function LibraryPanel.layout(entries, tab, x, y)
 		local w = buttonWidth("New")
 		layout.new = { x = x + width - PAD - w, y = y + PAD, width = w, height = TAB_H }
 	end
-	local top = y + PAD + TAB_H + GAP
+	if pick then
+		layout.header = { text = "Pick a prefab", x = x + PAD, y = y + PAD, width = width - 2 * PAD, height = TAB_H }
+	end
+	local listTop = y + PAD + TAB_H + GAP
+	layout.list = { x = x, y = listTop, width = width, height = math.max(0, y + view.height - listTop) }
+	layout.maxScroll = math.max(0, #entries * ROW_H + PAD - layout.list.height)
+	layout.scroll = math.min(math.max(scroll or 0, 0), layout.maxScroll)
+	local top = listTop - layout.scroll
 	for i, entry in ipairs(entries) do
 		local row = {
 			entry = entry,
@@ -82,7 +93,7 @@ function LibraryPanel.layout(entries, tab, x, y)
 			buttons = {},
 		}
 		local bx = x + PAD + THUMB + GAP + NAME_W
-		for j, b in ipairs(actions(entry)) do
+		for j, b in ipairs(pick and {} or actions(entry)) do
 			local w = buttonWidth(b.label)
 			row.buttons[j] = { action = b.action, label = b.label, x = bx, y = top + (ROW_H - BUTTON_H) / 2, width = w, height = BUTTON_H }
 			bx = bx + w + GAP
@@ -90,12 +101,13 @@ function LibraryPanel.layout(entries, tab, x, y)
 		layout.rows[i] = row
 		top = top + ROW_H
 	end
-	layout.height = top - y + PAD
 	return layout
 end
 
 -- What screen point (x, y) hits: { tab = <tab> }, { new = true }, or
--- { row, action } for a row's button; nil for anything else.
+-- { row, action } for a row's button, or { row, pick = true } for a row in
+-- the prefab picker (tab "pick": a header, no tabs, no buttons); nil for anything else. Rows scrolled
+-- out of the list rectangle can't be hit.
 function LibraryPanel.hit(layout, x, y)
 	if not layout then
 		return nil
@@ -108,7 +120,13 @@ function LibraryPanel.hit(layout, x, y)
 	if layout.new and inside(layout.new, x, y) then
 		return { new = true }
 	end
+	if not inside(layout.list, x, y) then
+		return nil
+	end
 	for _, row in ipairs(layout.rows) do
+		if layout.tab == "pick" and inside(row, x, y) then
+			return { row = row, pick = true }
+		end
 		for _, b in ipairs(row.buttons) do
 			if inside(b, x, y) then
 				return { row = row, action = b.action }
@@ -150,6 +168,12 @@ function LibraryPanel.draw(layout, armed, open, mouse, thumbnail)
 	if layout.new then
 		box(layout.new, TAB_COLOR, "New")
 	end
+	if layout.header then
+		love.graphics.setColor(TEXT_COLOR)
+		love.graphics.print(layout.header.text, layout.header.x, layout.header.y + 4)
+	end
+	local list = layout.list
+	love.graphics.setScissor(list.x, list.y, list.width, list.height)
 	for _, row in ipairs(layout.rows) do
 		if row.blueprint then
 			thumbnail(row.blueprint, row.thumb)
@@ -166,6 +190,7 @@ function LibraryPanel.draw(layout, armed, open, mouse, thumbnail)
 			box(b, confirm and ARMED_COLOR or BUTTON_COLOR, confirm and "Confirm" or b.label)
 		end
 	end
+	love.graphics.setScissor()
 	love.graphics.pop()
 end
 

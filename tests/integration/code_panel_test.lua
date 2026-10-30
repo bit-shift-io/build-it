@@ -45,18 +45,18 @@ end
 -- Opens the panel with the 6 key as LÖVE delivers it: keypressed, then
 -- the key's own textinput, in one frame.
 local function openPanel(game)
-	game:keypressed("4")
+	game:keypressed("3")
 	game:textinput("6")
 	require("tests.support.frame_stepper").step(game, 1)
 end
 
-test("4 opens the code panel on the script's text; digits type rather than pick tools", function()
+test("3 opens the code panel on the script's text; digits type rather than pick tools", function()
 	local game, screen = builder()
 	openPanel(game)
 	assertTrue(ScriptBuilderScreen.codePanel(screen) ~= nil, "the panel opens")
 	assertTrue(ScriptBuilderScreen.modal(screen), "Esc closes the panel, not the builder")
 	local shown = Serialize.tree(screen.scene.root)
-	assertEqual(shown, code(screen), "the opening key's 4 is not typed")
+	assertEqual(shown, code(screen), "the opening key's 3 is not typed")
 	Fake.tap(game, "1")
 	Fake.typeText(game, "1")
 	assertEqual("code", screen.tool, "1 picks no tool")
@@ -189,4 +189,16 @@ test("the wheel over the panel scrolls a long script, and typing keeps the curso
 	assertEqual(200 - layout.rows, screen.code.scroll, "typing on the last line scrolls back to it")
 	game:wheelmoved(0, -50)
 	assertEqual(200 - layout.rows, screen.code.scroll, "never past the end")
+end)
+
+test("clicking the Code slot with the panel open closes it and keeps the text", function()
+	local game, screen = builder()
+	openPanel(game)
+	Fake.typeText(game, "x")
+	local typed = code(screen)
+	local slot = ScriptBuilderScreen.topBar(screen)[3]
+	Fake.click(game, 1, slot.x + 2, slot.y + 2)
+	assertEqual("select", screen.tool)
+	assertEqual(nil, ScriptBuilderScreen.codePanel(screen))
+	assertEqual(typed, code(screen))
 end)

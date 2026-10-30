@@ -46,6 +46,11 @@ end
 
 -- Picks the Draw menu's row labelled `label`.
 local function pickCurve(game, screen, label)
+	if not ScriptBuilderScreen.shapeMenu(screen) then
+		-- A pick closed the menu; Draw off and on shows it again.
+		Fake.tap(game, "1")
+		Fake.tap(game, "1")
+	end
 	for _, row in ipairs(assert(ScriptBuilderScreen.shapeMenu(screen))) do
 		if row.item.label == label then
 			Fake.click(game, 1, row.x + 5, row.y + 5)
@@ -73,7 +78,7 @@ return group{ id = "root", shape{ id = "s", points = { { 0, 0 }, { 1, 0 }, { 1, 
 
 test("an arc takes centre, start and end clicks; a polyline takes clicks until Return", function()
 	local game, screen = openBuilder("rails", PROFILE)
-	Fake.tap(game, "2")
+	Fake.tap(game, "1")
 	assertEqual("draw", screen.tool)
 	pickCurve(game, screen, "Arc")
 	clickGround(game, screen, { { 0, 0 }, { 3, 0 }, { 0, 3 } })
@@ -100,7 +105,7 @@ end)
 
 test("right-click a shape, Sweep, click a path: the shape sweeps along it into a solid, one undo step", function()
 	local game, screen = openBuilder("beam", PROFILE)
-	Fake.tap(game, "2")
+	Fake.tap(game, "1")
 	pickCurve(game, screen, "Arc")
 	clickGround(game, screen, { { 0, 0 }, { 3, 0 }, { 0, 3 } })
 	Fake.tap(game, "escape")
@@ -168,7 +173,7 @@ end)
 
 test("Return and a double-click finish an open polyline; the hint says so", function()
 	local game, screen = openBuilder("dpoly", 'return group{ id = "root" }\n')
-	Fake.tap(game, "2")
+	Fake.tap(game, "1")
 	pickCurve(game, screen, "Polyline")
 	assertTrue(ScriptBuilderScreen.hint(screen):find("double%-click to finish"), "path hint")
 	clickGround(game, screen, { { 0, 0 }, { 2, 0 } })
@@ -204,7 +209,7 @@ end)
 
 test("select a path, Make 3D, Sweep a shape along this, click a shape: it sweeps", function()
 	local game, screen = openBuilder("beam", PROFILE)
-	Fake.tap(game, "2")
+	Fake.tap(game, "1")
 	pickCurve(game, screen, "Arc")
 	clickGround(game, screen, { { 0, 0 }, { 3, 0 }, { 0, 3 } })
 	Fake.tap(game, "escape")

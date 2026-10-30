@@ -4,7 +4,7 @@
 -- draw touches love.graphics.
 local ActionPanel = {}
 
-local MARGIN, WIDTH, ROW_H, PAD, GAP = 8, 220, 22, 6, 8
+local MARGIN, WIDTH, ROW_H, PAD = 8, 220, 22, 6
 
 ActionPanel.HINT = "Select something, or press 2 to draw."
 
@@ -12,27 +12,29 @@ local function inside(r, x, y)
 	return x >= r.x and x < r.x + r.width and y >= r.y and y < r.y + r.height
 end
 
--- The panel for `items` (labels, or nil for the hint) starting `treeBottom`
--- px down (the bottom of TreePanel.bounds): { x, y, width, height, hint?,
--- buttons = { { label, x, y, width, height }, ... } }.
-function ActionPanel.layout(items, treeBottom)
-	local y = treeBottom + GAP
-	local panel = { x = MARGIN, y = y, width = WIDTH, buttons = {} }
+-- The px height of the panel for `items` (labels, or nil for the hint).
+function ActionPanel.height(items)
+	return (items and #items or 1) * ROW_H + 2 * PAD
+end
+
+-- The panel for `items` (labels, or nil for the hint) whose content starts
+-- `top` px down: { x, y, width, height, hint?, buttons = { { label, x, y,
+-- width, height }, ... } }.
+function ActionPanel.layout(items, top)
+	local panel = { x = MARGIN, y = top, width = WIDTH, buttons = {}, height = ActionPanel.height(items) }
 	if not items then
 		panel.hint = ActionPanel.HINT
-		panel.height = ROW_H + 2 * PAD
 		return panel
 	end
 	for i, label in ipairs(items) do
 		panel.buttons[i] = {
 			label = label,
 			x = MARGIN,
-			y = y + PAD + (i - 1) * ROW_H,
+			y = top + PAD + (i - 1) * ROW_H,
 			width = WIDTH,
 			height = ROW_H,
 		}
 	end
-	panel.height = #items * ROW_H + 2 * PAD
 	return panel
 end
 

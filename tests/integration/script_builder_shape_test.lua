@@ -59,7 +59,7 @@ end
 
 test("four clicks and a click on the first point close a shape of four hard points, saved and reopened editable", function()
 	local game, screen = openBuilder("plot", EMPTY)
-	Fake.tap(game, "2")
+	Fake.tap(game, "1")
 	assertEqual("draw", screen.tool)
 	clickGround(game, screen, { { 0, 0 }, { 2, 0 }, { 2, 1 }, { 0, 1 }, { 0, 0 } })
 	local shape = screen.scene.root.children[1]
@@ -89,7 +89,7 @@ end)
 
 test("a path point dragged while placed turns smooth with Bézier handles; a rect takes two corner clicks", function()
 	local game, screen = openBuilder("arch", EMPTY)
-	Fake.tap(game, "2")
+	Fake.tap(game, "1")
 	clickGround(game, screen, { { 0, 0 } })
 	local ax, ay = pixel(screen, { 2, 0, 0 })
 	local bx, by = pixel(screen, { 2, 1, 0 })
@@ -135,24 +135,79 @@ return group{ id = "root", shape{ id = "s", points = { { 0, 0 }, { 1, 0 }, { 1, 
 	assertEqual("1 1", table.concat(screen.scene.root.children[1].points[3], " "))
 end)
 
-test("shapes draw on an XZ plane raised with ], and on a face of the model picked from the menu", function()
+-- Clicks the Work plane section's button for `plane`.
+local function pickPlane(game, screen, plane)
+	for _, b in ipairs(assert(ScriptBuilderScreen.workPlane(screen), "the section shows").buttons) do
+		if b.plane == plane then
+			Fake.click(game, 1, b.x + b.width / 2, b.y + b.height / 2)
+			return
+		end
+	end
+	error("no plane button " .. plane)
+end
+
+-- Clicks the section's Height - (step -1) or + (step 1) box.
+local function stepHeight(game, screen, step)
+	local s = assert(ScriptBuilderScreen.workPlane(screen).stepper, "an axis plane shows a stepper")
+	local box = step > 0 and s.plus or s.minus
+	Fake.click(game, 1, box.x + box.width / 2, box.y + box.height / 2)
+end
+
+test("picking a kind closes the Draw menu, and two view clicks make a rect with it closed", function()
+	local game, screen = openBuilder("plot", EMPTY)
+	Fake.tap(game, "1")
+	local rows = assert(ScriptBuilderScreen.shapeMenu(screen))
+	for _, r in ipairs(rows) do
+		assertTrue(r.item.plane == nil, "the menu lists kinds only")
+	end
+	Fake.click(game, 1, rows[2].x + 5, rows[2].y + 5)
+	assertEqual(nil, ScriptBuilderScreen.shapeMenu(screen))
+	assertEqual("draw", screen.tool)
+	clickGround(game, screen, { { 4, 3 }, { 3, 2.5 } })
+	assertEqual("shape", screen.scene.root.children[1].kind)
+	-- Draw again returns to select; picking it from select shows the menu again.
+	Fake.tap(game, "1")
+	assertEqual("select", screen.tool)
+	Fake.tap(game, "1")
+	assertTrue(ScriptBuilderScreen.shapeMenu(screen) ~= nil)
+end)
+
+test("the Work plane section picks XZ and steps its height; Esc drops a drawing before the tool", function()
 	local game, screen = openBuilder("wall", [[
 return group{ id = "root", box{ id = "b", size = { 2, 2, 1 } } }
 ]])
-	Fake.tap(game, "2")
-	local function menuRow(label)
-		for _, r in ipairs(ScriptBuilderScreen.shapeMenu(screen)) do
-			if r.item.label:find(label, 1, true) then
-				return r
-			end
-		end
-		error("no menu row " .. label)
-	end
-	local r = menuRow("XZ plane")
-	Fake.click(game, 1, r.x + 5, r.y + 5)
+	assertEqual(nil, ScriptBuilderScreen.workPlane(screen), "hidden while neither tool is on")
+	Fake.tap(game, "1")
+	assertEqual(nil, ScriptBuilderScreen.workPlane(screen).stepper, "ground has no height")
+	pickPlane(game, screen, "XZ")
+	assertEqual("XZ", screen.planeName)
+	stepHeight(game, screen, 1)
+	assertEqual(0.25, screen.planeHeight)
+	assertEqual(0.25, screen.plane.origin[2])
+	Fake.tap(game, "]")
+	assertEqual(0.5, screen.planeHeight, "the keys still step")
+	stepHeight(game, screen, -1)
+	assertEqual(0.25, screen.planeHeight)
+	-- Draw on it.
+	Fake.click(game, 1, pixel(screen, { 0, 0.25, 0 }))
+	assertTrue(screen.shape.drawing ~= nil)
+	Fake.tap(game, "escape")
+	assertEqual(nil, screen.shape.drawing)
+	assertEqual("draw", screen.tool)
+	Fake.tap(game, "escape")
+	assertEqual("select", screen.tool)
+	assertEqual(nil, ScriptBuilderScreen.workPlane(screen))
+end)
+
+test("shapes draw on an XZ plane raised with ], and on a face of the model picked in the section", function()
+	local game, screen = openBuilder("wall", [[
+return group{ id = "root", box{ id = "b", size = { 2, 2, 1 } } }
+]])
+	Fake.tap(game, "1")
+	pickPlane(game, screen, "XZ")
 	Fake.tap(game, "]")
 	Fake.tap(game, "]")
-	assertEqual("> XZ plane at 0.5", menuRow("XZ plane").item.label)
+	assertEqual(0.5, screen.planeHeight)
 	-- On the plane y = 0.5: points (x, z).
 	local function onPlane(points, y)
 		local out = {}
@@ -170,8 +225,12 @@ return group{ id = "root", box{ id = "b", size = { 2, 2, 1 } } }
 	assertEqual("0 0 1", table.concat(tri.plane.v, " "))
 	assertEqual("1 1", table.concat(tri.points[3], " "))
 	-- Pick the box's top face, then draw a triangle on it.
-	r = menuRow("Pick face")
-	Fake.click(game, 1, r.x + 5, r.y + 5)
+	pickPlane(game, screen, "Face")
+	assertTrue(screen.shape.picking)
+	-- A click on the section's own height row never ends picking.
+	local col = ScriptBuilderScreen.workPlane(screen)
+	Fake.click(game, 1, col.buttons[5].x + 2, col.buttons[5].y + 2)
+	assertTrue(screen.shape.picking, "a click on the section keeps picking")
 	Fake.click(game, 1, pixel(screen, { 1, 1, 1 }))
 	assertEqual("Face", screen.planeName)
 	assertEqual("0 0 1", table.concat(screen.plane.origin, " "))
@@ -215,7 +274,7 @@ end
 
 test("Return closes a polygon of three points; fewer than three refuses with a message", function()
 	local game, screen = openBuilder("ret", EMPTY)
-	Fake.tap(game, "2")
+	Fake.tap(game, "1")
 	clickGround(game, screen, { { 0, 0 }, { 2, 0 } })
 	Fake.tap(game, "return")
 	assertEqual(0, #screen.scene.root.children)
@@ -230,7 +289,7 @@ end)
 
 test("a double-click on the last point closes the polygon without adding a point", function()
 	local game, screen = openBuilder("dbl", EMPTY)
-	Fake.tap(game, "2")
+	Fake.tap(game, "1")
 	clickGround(game, screen, { { 0, 0 }, { 2, 0 } })
 	doubleClickGround(game, screen, { 2, 2 })
 	local shape = screen.scene.root.children[1]
@@ -241,7 +300,7 @@ end)
 
 test("a double-click after three points closes it on the first press's duplicate", function()
 	local game, screen = openBuilder("dbl3", EMPTY)
-	Fake.tap(game, "2")
+	Fake.tap(game, "1")
 	clickGround(game, screen, { { 0, 0 }, { 2, 0 }, { 2, 2 } })
 	doubleClickGround(game, screen, { 2, 2 })
 	assertEqual(3, #screen.scene.root.children[1].points)
@@ -249,7 +308,7 @@ end)
 
 test("the first point lights when the pointer is over it, and a hint shows per kind", function()
 	local game, screen = openBuilder("hint", EMPTY)
-	Fake.tap(game, "2")
+	Fake.tap(game, "1")
 	clickGround(game, screen, { { 0, 0 }, { 2, 0 }, { 2, 2 } })
 	local x, y = pixel(screen, { 0, 0, 0 })
 	game:mousemoved(x + 20, y, 0, 0)

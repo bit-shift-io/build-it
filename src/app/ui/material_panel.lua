@@ -6,20 +6,19 @@
 --
 --   row = { kind = "name" | "variant" | "scale" | "rotation", value, label,
 --           x, y, width, height, minus?, plus? }   minus/plus: stepper boxes
+local Dropdown = require("src.app.ui.dropdown")
+
 local MaterialPanel = {}
 
-local WIDTH, ROW_H, PAD, GAP, BOX_W = 150, 20, 6, 4, 20
+local ROW_H, PAD, GAP, BOX_W = 20, 6, 4, 20
 
 -- How far one - or + click steps the texture scale and rotation (degrees).
 MaterialPanel.SCALE_STEP = 0.25
 MaterialPanel.ROTATION_STEP = 15
 
 local BACKGROUND = { 0, 0, 0, 0.85 }
-local HOVER_COLOR = { 1, 1, 1, 0.15 }
-local CHOSEN_COLOR = { 0.3, 0.5, 0.85, 0.75 }
 local BOX_COLOR = { 0.24, 0.26, 0.3, 1 }
 local TEXT_COLOR = { 1, 1, 1, 1 }
-local HEADING_COLOR = { 0.75, 0.85, 1, 1 }
 
 local function inside(r, x, y)
 	return x >= r.x and x < r.x + r.width and y >= r.y and y < r.y + r.height
@@ -34,14 +33,21 @@ local function short(x)
 	return (string.format("%.2f", x):gsub("%.?0+$", ""))
 end
 
+-- The px the rows take: a dropdown each for material and variant, then the
+-- two steppers.
+function MaterialPanel.height()
+	return 4 * ROW_H
+end
+
 -- The panel's rows for `material` ({ name, variant, scale, rotation }) out
--- of `materials` (config.materials), under top bar slot `slot`
--- (TopBar.slots), top to bottom.
-function MaterialPanel.rows(material, materials, slot)
+-- of `materials` (config.materials), top to bottom in `content` (a column
+-- section's rect). The "name" and "variant" rows are dropdown boxes with
+-- `options` ({ value, label } each) to pick from.
+function MaterialPanel.rows(material, materials, content)
 	local rows = {}
 	local function add(row)
-		row.x, row.y = slot.x, slot.y + slot.height + GAP + #rows * ROW_H
-		row.width, row.height = WIDTH, ROW_H
+		row.x, row.y = content.x, content.y + #rows * ROW_H
+		row.width, row.height = content.width, ROW_H
 		rows[#rows + 1] = row
 		return row
 	end
@@ -50,12 +56,15 @@ function MaterialPanel.rows(material, materials, slot)
 		names[#names + 1] = name
 	end
 	table.sort(names)
+	local nameOptions, variantOptions = {}, {}
 	for _, name in ipairs(names) do
-		add({ kind = "name", value = name, label = capitalised(name) })
+		nameOptions[#nameOptions + 1] = { value = name, label = capitalised(name) }
 	end
 	for _, variant in ipairs(materials[material.name].variants) do
-		add({ kind = "variant", value = variant, label = "  " .. variant })
+		variantOptions[#variantOptions + 1] = { value = variant, label = capitalised(variant) }
 	end
+	add({ kind = "name", value = material.name, label = capitalised(material.name), options = nameOptions })
+	add({ kind = "variant", value = material.variant, label = capitalised(material.variant), options = variantOptions })
 	local steppers = {
 		{ kind = "scale", value = material.scale, label = "Scale " .. short(material.scale) },
 		{ kind = "rotation", value = material.rotation, label = "Rotation " .. short(material.rotation) },
@@ -67,6 +76,11 @@ function MaterialPanel.rows(material, materials, slot)
 		row.minus = { x = right - 2 * BOX_W - GAP, y = row.y + 2, width = BOX_W, height = ROW_H - 4 }
 	end
 	return rows
+end
+
+-- The dropdown box of a "name" or "variant" row (inset from the row).
+function MaterialPanel.box(row)
+	return { x = row.x + PAD, y = row.y + 1, width = row.width - 2 * PAD, height = row.height - 2 }
 end
 
 -- The row under screen point (x, y) and, on a stepper, which box ("minus"
@@ -116,28 +130,23 @@ function MaterialPanel.choose(material, materials, row, part)
 	return out
 end
 
--- Draws `rows` for `material`, its name and variant marked and the row
--- under `mouse` ({ x, y } or nil) lit.
-function MaterialPanel.draw(rows, material, mouse)
+-- Draws `rows`: a dropdown box each for material and variant, then the
+-- steppers.
+function MaterialPanel.draw(rows)
 	if not rows or #rows == 0 then
 		return
 	end
 	love.graphics.push("all")
 	local first = rows[1]
 	love.graphics.setColor(BACKGROUND)
-	love.graphics.rectangle("fill", first.x, first.y, WIDTH, #rows * ROW_H)
+	love.graphics.rectangle("fill", first.x, first.y, first.width, #rows * ROW_H)
 	for _, row in ipairs(rows) do
-		local chosen = (row.kind == "name" and row.value == material.name)
-			or (row.kind == "variant" and row.value == material.variant)
-		if chosen then
-			love.graphics.setColor(CHOSEN_COLOR)
-			love.graphics.rectangle("fill", row.x, row.y, row.width, row.height)
-		elseif mouse and inside(row, mouse.x, mouse.y) then
-			love.graphics.setColor(HOVER_COLOR)
-			love.graphics.rectangle("fill", row.x, row.y, row.width, row.height)
+		if row.options then
+			Dropdown.drawBox(Dropdown.layout(MaterialPanel.box(row), row.options, false), row.label)
+		else
+			love.graphics.setColor(TEXT_COLOR)
+			love.graphics.print(row.label, row.x + PAD, row.y + 3)
 		end
-		love.graphics.setColor(row.kind == "name" and HEADING_COLOR or TEXT_COLOR)
-		love.graphics.print(row.label, row.x + PAD, row.y + 3)
 		for _, part in ipairs({ "minus", "plus" }) do
 			local box = row[part]
 			if box then

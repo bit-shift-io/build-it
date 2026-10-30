@@ -100,3 +100,36 @@ test("a typed value clamps, digits typed pick no tool, a bool toggles and a choi
 	assertTrue(screen.message ~= nil, "a bad value is refused with why")
 	assertEqual(4, row(screen, "width").param.value)
 end)
+
+test("a locked script shows Params and hides Properties", function()
+	local _, screen = openBuilder("kit", KIT)
+	assertTrue(screen.locked)
+	assertTrue(#ScriptBuilderScreen.paramsPanel(screen) > 0, "params shown")
+	assertEqual(0, #ScriptBuilderScreen.properties(screen), "no properties when locked")
+end)
+
+test("with the code panel open a param click still lands", function()
+	local game, screen = openBuilder("ball", SPHERE)
+	Fake.tap(game, "3")
+	assertTrue(ScriptBuilderScreen.codePanel(screen) ~= nil, "the panel opens")
+	clickOn(game, row(screen, "radius").plus)
+	assertEqual(3.2, row(screen, "radius").param.value)
+end)
+
+test("editing a param while the column is scrolled edits that param", function()
+	local game, screen = openBuilder("kit", KIT)
+	local real = love.graphics.getDimensions
+	love.graphics.getDimensions = function()
+		local w = real()
+		return w, 200
+	end
+	screen.column.scroll = 1e6
+	local col = ScriptBuilderScreen.column(screen)
+	assertTrue(col.scroll > 0, "the column is scrolled")
+	local tall = row(screen, "tall")
+	assertTrue(tall.value.y >= col.y and tall.value.y < col.y + col.height, "the bool is visible")
+	clickOn(game, tall.value)
+	assertEqual(true, row(screen, "tall").param.value)
+	assertEqual(2, row(screen, "width").param.value, "width untouched")
+	love.graphics.getDimensions = real
+end)

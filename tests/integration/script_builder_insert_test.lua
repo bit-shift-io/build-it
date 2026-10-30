@@ -9,6 +9,7 @@ local Fake = require("tests.support.fake_input")
 local Config = require("src.game.config")
 local Sandbox = require("src.game.script.sandbox")
 local ScriptBuilderScreen = require("src.app.screens.script_builder")
+local Insert = require("src.game.builder.insert")
 local BuilderCamera = require("src.app.builder_camera")
 
 -- A game in the script builder, opened on design file `name`.lua in the
@@ -38,10 +39,32 @@ local function pixel(screen, p)
 	return BuilderCamera.project(ScriptBuilderScreen.view(screen), (p[1] - o[1]) * s, (p[2] - o[2]) * s, p[3] * s)
 end
 
--- Picks `label` from the Insert menu (key 3) and clicks the ground at
+-- Picks `label` from the Insert menu (key 2) and clicks the ground at
 -- design-space (x, y).
 local function insert(game, screen, label, x, y)
-	Fake.tap(game, "3")
+	Fake.tap(game, "2")
+	if label ~= "Box" and label ~= "Sphere" and label ~= "Cylinder" and label ~= "Cone" and label ~= "Wedge" then
+		local menu = ScriptBuilderScreen.insertMenu(screen)
+		local last = menu[#menu]
+		Fake.click(game, 1, last.x + last.width / 2, last.y + last.height / 2)
+		local layout = assert(ScriptBuilderScreen.libraryPanel(screen), "the picker is open")
+		for _, row in ipairs(layout.rows) do
+			if row.entry.name == label then
+				-- Scroll the row into the list, as the wheel would.
+				screen.insert.picker.scroll = layout.scroll + row.y - layout.list.y
+				layout = ScriptBuilderScreen.libraryPanel(screen)
+				for _, r in ipairs(layout.rows) do
+					if r.entry.name == label then
+						row = r
+					end
+				end
+				Fake.click(game, 1, row.x + row.width / 2, row.y + row.height / 2)
+				Fake.click(game, 1, pixel(screen, { x, y, 0 }))
+				return
+			end
+		end
+		error("no prefab " .. label)
+	end
 	local rows = assert(ScriptBuilderScreen.insertMenu(screen), "the insert menu is open")
 	for _, row in ipairs(rows) do
 		if row.item.label == label then
@@ -179,14 +202,110 @@ end)
 
 test("Esc puts the Insert tool away without leaving the builder; a locked script refuses it", function()
 	local game, screen = openBuilder("kit", EMPTY)
-	Fake.tap(game, "3")
+	Fake.tap(game, "2")
 	assertEqual("insert", screen.tool)
 	Fake.tap(game, "escape")
 	assertEqual("scriptBuilder", game.flow.screen)
 	assertEqual("select", screen.tool)
 	assertEqual(nil, ScriptBuilderScreen.insertMenu(screen))
 	game, screen = openBuilder("posts", 'local n = 2\nreturn box{ size = { n, 1, 1 } }\n')
-	Fake.tap(game, "3")
+	Fake.tap(game, "2")
 	assertEqual("select", screen.tool)
 	assertTrue(screen.message and screen.message:find("Locked", 1, true), tostring(screen.message))
+end)
+
+test("Insert shows the Work plane section and places on the chosen plane", function()
+	local game, screen = openBuilder("pad", EMPTY)
+	assertEqual(nil, ScriptBuilderScreen.workPlane(screen))
+	Fake.tap(game, "2")
+	local layout = assert(ScriptBuilderScreen.workPlane(screen), "the section shows with Insert on")
+	local function click(r)
+		Fake.click(game, 1, r.x + r.width / 2, r.y + r.height / 2)
+	end
+	for _, b in ipairs(layout.buttons) do
+		if b.plane == "XZ" then
+			click(b)
+		end
+	end
+	click(ScriptBuilderScreen.workPlane(screen).stepper.plus)
+	assertEqual("XZ", screen.planeName)
+	assertEqual(0.25, screen.planeHeight)
+	assertEqual("insert", screen.tool)
+	local row = ScriptBuilderScreen.insertMenu(screen)[1]
+	click(row)
+	Fake.click(game, 1, pixel(screen, { 1, 0.25, 1 }))
+	local node = screen.scene.root.children[1]
+	assertTrue(node ~= nil, tostring(screen.message))
+	assertEqual(0.25, node.transform.move[2])
+end)
+
+test("picking Box closes the menu, stays armed, and the next view click places it; Esc places nothing", function()
+	local game, screen = openBuilder("menu", EMPTY)
+	Fake.tap(game, "2")
+	local rows = ScriptBuilderScreen.insertMenu(screen)
+	assertEqual("Prefab…", rows[#rows].item.label)
+	for _, row in ipairs(rows) do
+		assertTrue(row.item.prefab == nil, "no prefab names in the menu")
+	end
+	Fake.click(game, 1, rows[#rows].x + 5, rows[#rows].y + 5)
+	assertEqual(nil, screen.insert.armed)
+	assertEqual(nil, ScriptBuilderScreen.insertMenu(screen))
+	Fake.tap(game, "escape")
+	Fake.tap(game, "2")
+	rows = ScriptBuilderScreen.insertMenu(screen)
+	Fake.click(game, 1, rows[1].x + 5, rows[1].y + 5)
+	assertEqual(nil, ScriptBuilderScreen.insertMenu(screen))
+	assertEqual("box", screen.insert.armed.kind)
+	Fake.click(game, 1, pixel(screen, { 1, 1, 0 }))
+	assertEqual(1, #screen.scene.root.children)
+	assertEqual("select", screen.tool)
+
+	Fake.tap(game, "2")
+	Fake.click(game, 1, ScriptBuilderScreen.insertMenu(screen)[1].x + 5, ScriptBuilderScreen.insertMenu(screen)[1].y + 5)
+	Fake.tap(game, "escape")
+	assertEqual("select", screen.tool)
+	assertEqual(1, #screen.scene.root.children)
+end)
+
+test("Insert > Prefab... opens a picker of every prefab, role prefabs included, with no tabs or buttons", function()
+	local game, screen = openBuilder("pick", EMPTY)
+	Fake.tap(game, "2")
+	local menu = ScriptBuilderScreen.insertMenu(screen)
+	local last = menu[#menu]
+	Fake.click(game, 1, last.x + 5, last.y + 5)
+	assertEqual(nil, screen.libraryOpen)
+	assertEqual(nil, ScriptBuilderScreen.insertMenu(screen))
+	local layout = ScriptBuilderScreen.libraryPanel(screen)
+	assertEqual("Pick a prefab", layout.header.text)
+	assertEqual(0, #layout.tabs)
+	assertEqual(nil, layout.new)
+	local names = {}
+	for _, row in ipairs(layout.rows) do
+		names[row.entry.name] = true
+		assertEqual(0, #row.buttons)
+	end
+	assertTrue(names.bed and names.saw and names.input_port, "bed, saw and a role prefab are listed")
+end)
+
+test("clicking the bed row arms it and closes the picker; the next view click places it, one undo removes it", function()
+	local game, screen = openBuilder("bedpick", EMPTY)
+	insert(game, screen, "bed", 1, 1)
+	assertEqual(nil, ScriptBuilderScreen.libraryPanel(screen))
+	assertEqual(1, #screen.scene.root.children)
+	assertEqual("bed", screen.scene.root.children[1].prefab)
+	withCtrl(game, "z")
+	assertEqual(0, #screen.scene.root.children)
+end)
+
+test("Esc in the picker arms nothing and puts Insert away", function()
+	local game, screen = openBuilder("pickesc", EMPTY)
+	Fake.tap(game, "2")
+	local menu = ScriptBuilderScreen.insertMenu(screen)
+	local last = menu[#menu]
+	Fake.click(game, 1, last.x + 5, last.y + 5)
+	Fake.tap(game, "escape")
+	assertEqual(nil, ScriptBuilderScreen.libraryPanel(screen))
+	assertEqual(nil, screen.insert)
+	assertEqual("select", screen.tool)
+	assertEqual(0, #screen.scene.root.children)
 end)

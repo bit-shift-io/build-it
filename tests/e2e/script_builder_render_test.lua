@@ -87,7 +87,7 @@ test("the Insert menu and the properties strip draw over the view, and an insert
 	Fake.tap(game, "b")
 	local screen = game.flow.scriptBuilder
 	assertEqual(false, screen.locked)
-	Fake.tap(game, "3")
+	Fake.tap(game, "2")
 	local rows = assert(ScriptBuilderScreen.insertMenu(screen))
 	local cone = rows[4]
 	assertEqual("Cone", cone.item.label)
@@ -124,7 +124,7 @@ test("a shape drawn with the Shape tool shows as an outline over the view, the g
 	local game = GameHarness.startSession({ width = 20, height = 20 }, { real = true, config = config })
 	Fake.tap(game, "b")
 	local screen = game.flow.scriptBuilder
-	Fake.tap(game, "2")
+	Fake.tap(game, "1")
 	for _, p in ipairs({ { 0.5, 0.5 }, { 1.5, 0.5 }, { 1.5, 1.5 }, { 0.5, 1.5 }, { 0.5, 0.5 } }) do
 		Fake.click(game, 1, pixelOf(screen, p[1], p[2], 0))
 	end
