@@ -1,6 +1,6 @@
 -- Lathe (docs/CONTEXT.md "Operation"): a shape revolved about its work
 -- plane's v axis through the plane origin. The plane's u coordinate is the
--- distance from the axis, so the profile must keep u >= 0; v is the height
+-- distance from the axis, so the profile must stay on one side of it; v is the height
 -- along the axis. A positive angle turns toward the plane's normal (u x v).
 -- A full 360 degrees is closed; a partial turn gets a cap at each end. Pure;
 -- plain LuaJIT.
@@ -16,15 +16,29 @@ local function unit(x, y, z)
 	return x / len, y / len, z / len
 end
 
--- Whether every point of `outline` lies on the axis or on the plane's u
--- side of it.
+-- Whether `outline` lies on one side of the axis (touching it is fine),
+-- either side: a profile drawn left of the axis turns the same ring.
 function Lathe.valid(outline)
+	local left, right = false, false
+	for _, p in ipairs(outline) do
+		left = left or p[1] < -EPSILON
+		right = right or p[1] > EPSILON
+	end
+	return not (left and right)
+end
+
+-- `outline` with u made non-negative: mirrored when it sits on the far side.
+local function nearSide(outline)
 	for _, p in ipairs(outline) do
 		if p[1] < -EPSILON then
-			return false
+			local out = {}
+			for i, q in ipairs(outline) do
+				out[i] = { -q[1], q[2] }
+			end
+			return out
 		end
 	end
-	return true
+	return outline
 end
 
 -- The solid of `shape` ({ points, plane = { origin, u, v } }) revolved
@@ -37,6 +51,7 @@ function Lathe.mesh(shape, angle, segments, color)
 	if not outline or not Lathe.valid(outline) then
 		return {}
 	end
+	outline = nearSide(outline)
 	local o, u, v = shape.plane.origin, shape.plane.u, shape.plane.v
 	local nx, ny, nz = unit(u[2] * v[3] - u[3] * v[2], u[3] * v[1] - u[1] * v[3], u[1] * v[2] - u[2] * v[1])
 	local ulen = math.sqrt(u[1] * u[1] + u[2] * u[2] + u[3] * u[3])

@@ -16,11 +16,14 @@ local radius = width / 2
 local cx, cz = post + radius, pier
 for i = 0, blocks - 1 do
 	local angle = math.pi * (i + 0.5) / blocks
-	local x = cx + math.cos(angle) * radius
-	local z = cz + math.sin(angle) * radius
+	-- The block's centre sits half a block out from the opening's edge; its
+	-- corner is placed so the turn about the corner lands the centre there.
+	local mid = radius + post / 2
 	local size = math.pi * radius / blocks + 0.03125
+	local x = cx + math.cos(angle) * mid - (size / 2) * math.sin(angle) - (post / 2) * math.cos(angle)
+	local z = cz + math.sin(angle) * mid + (size / 2) * math.cos(angle) - (post / 2) * math.sin(angle)
 	parts[#parts + 1] = box{ name = "Block", size = { size, depth, post },
-		transform = { move = { x - size / 2, 0, z }, rotate = { 0, -(math.deg(angle) - 90), 0 } } }
+		transform = { move = { x, 0, z }, rotate = { 0, -(math.deg(angle) - 90), 0 } } }
 end
 
 return group{ id = "arch", name = "Arch", unpack(parts) }

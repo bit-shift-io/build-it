@@ -152,3 +152,18 @@ test("Scene.lathe refuses a non-shape and a shape across the axis", function()
 	ok, why = Scene.lathe(scene)
 	assertTrue(not ok and why)
 end)
+
+test("a profile wholly on the far side of the axis lathes the same ring", function()
+	local mirrored = "{ { -1, 0 }, { -2, 0 }, { -2, 3 }, { -1, 3 } }"
+	local near = Mesh.ofTree(run(pillar("segments = 64, ")))
+	local far = Mesh.ofTree(run("return lathe{ segments = 64, shape{ points = " .. mirrored .. VERTICAL .. " } }"))
+	assertWatertight(far)
+	assertNear(volume(near), volume(far), 1e-6)
+end)
+
+test("Scene.lathe says how to place a shape that crosses the axis", function()
+	local scene = Scene.new(run("return group{ id = \"root\", shape{ id = \"s\", points = { { -1, 0 }, { 1, 0 }, { 1, 2 } } } }"))
+	Scene.select(scene, "s", false)
+	local _, why = Scene.lathe(scene)
+	assertTrue(why:find("one side", 1, true), why)
+end)

@@ -223,3 +223,19 @@ test("no starter building's port sits in front of its doorway", function()
 		end
 	end
 end)
+
+test("the arch's curve peaks at the piers' height plus the opening's radius and block thickness", function()
+	local Sandbox = require("src.game.script.sandbox")
+	local Mesh = require("src.game.geometry.mesh")
+	local result = assert(Sandbox.run(library.prefabs.arch, "arch"))
+	local tris = Mesh.ofTree(result.root)
+	local top = -math.huge
+	for _, v in ipairs(tris) do
+		-- blocks only: above the piers' top (0.75)
+		if v.z > 0.75 then
+			top = math.max(top, v.z)
+		end
+	end
+	-- Piers 0.75 + opening radius 0.5 + block thickness 0.1875.
+	assertNear(1.4375, top, 0.02)
+end)

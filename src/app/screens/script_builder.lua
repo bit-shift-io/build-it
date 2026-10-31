@@ -1457,6 +1457,8 @@ local function place(screen, x, y)
 		return
 	end
 	screen.insert, screen.tool = nil, "select"
+	-- A new node's handles move it, whatever transform key came last.
+	screen.gizmoMode = "move"
 	edit(screen, Scene.insert, Insert.node(armed, point))
 end
 
@@ -2698,7 +2700,12 @@ end
 -- Draws `blueprint`'s sprite (facing N, bake scale 1, as the building
 -- picker does) fitted into `rect`.
 local function drawThumbnail(screen, blueprint, rect, palette)
+	-- A first look bakes the sprite into a canvas, which the panel's list
+	-- scissor would clip to nothing.
+	local sx, sy, sw, sh = love.graphics.getScissor()
+	love.graphics.setScissor()
 	local sprite = BuildingsRender.sprite(screen.config, blueprint, "N", 1, nil, palette)
+	love.graphics.setScissor(sx, sy, sw, sh)
 	local iw, ih = sprite.image:getDimensions()
 	local scale = math.min(rect.width / iw, rect.height / ih)
 	love.graphics.push("all")

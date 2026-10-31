@@ -307,7 +307,7 @@ function Scene.lathe(scene)
 		return false, "the shape isn't closed"
 	end
 	if not Lathe.valid(outline) then
-		return false, "the shape crosses the lathe axis"
+		return false, "the lathe turns about the work plane's vertical line through its origin: draw the shape wholly on one side of it"
 	end
 	local lathe = {
 		kind = "lathe",
